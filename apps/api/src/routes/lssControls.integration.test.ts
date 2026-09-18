@@ -6,6 +6,7 @@ import jwt from 'jsonwebtoken';
 import { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { reconcilePumpLinkedInstruments } from '../lib/lssControls';
+import { projectLssIoSchedule } from '../lib/lssIoSchedule';
 import lssControlRoutes from './lssControls';
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -94,6 +95,9 @@ describeDatabase('LSS Control PostgreSQL integration', () => {
        VALUES('Integration pump flow switch',$1,'digital','input','pump_linked','Prove integration pump flow',9991) RETURNING id`,
       [`IFS-${suffix.slice(-6)}`],
     )).rows[0].id;
+    ids.controlValve = (await database.query(
+      `SELECT id FROM field_instrument_definitions WHERE tag_code='2BV' AND is_active=true`,
+    )).rows[0].id;
   });
 
   afterAll(async () => {
@@ -109,7 +113,10 @@ describeDatabase('LSS Control PostgreSQL integration', () => {
       }
       await database.query('DELETE FROM design_books WHERE id=$1', [ids.book]);
     }
-    if (ids.optional) await database.query('DELETE FROM field_instrument_definitions WHERE id = ANY($1::uuid[])', [[ids.optional, ids.pumpLinked]]);
+    if (ids.optional) await database.query(
+      'DELETE FROM field_instrument_definitions WHERE id = ANY($1::uuid[])',
+      [[ids.optional, ids.pumpLinked]],
+    );
     if (ids.productA) await database.query('DELETE FROM product_masters WHERE id = ANY($1::uuid[])', [[ids.productA, ids.productB]]);
     if (ids.project) await database.query('DELETE FROM projects WHERE id=$1', [ids.project]);
     if (ids.user) {
@@ -174,6 +181,94 @@ describeDatabase('LSS Control PostgreSQL integration', () => {
       range_min: '0', range_max: '10', unit: 'kPa', calibration_required: true,
       calibration_interval_days: 180, calibration_procedure: 'CAL-B', datasheet_reference: 'DS-B',
     });
+  });
+
+  it('keeps control-valve size groups distinct through save, reload, and I/O projection', async () => {
+    await database.query(
+      `UPDATE product_masters
+       SET product_name=CASE id
+         WHEN $1 THEN 'Snapshot product A'
+         WHEN $2 THEN 'Snapshot product B'
+       END
+       WHERE id = ANY($3::uuid[])`,
+      [ids.productA, ids.productB, [ids.productA, ids.productB]],
+    );
+    const instruments = [
+      ...await editableInstruments(0),
+      {
+        definition_id: ids.controlValve,
+        group_key: 'supply-dn50',
+        nominal_size: 'DN50',
+        quantity: 2,
+        product_master_id: ids.productA,
+      },
+      {
+        definition_id: ids.controlValve,
+        group_key: 'bypass-dn80',
+        nominal_size: 'DN80',
+        quantity: 1,
+        product_master_id: ids.productB,
+      },
+    ];
+    const saved = await request('PUT', `/api/v1/systems/${ids.system}/control`, {
+      design_book_id: ids.book,
+      panel_type: 'PLC',
+      instruments,
+    });
+    expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+
+    const loaded = await request('GET', `/api/v1/systems/${ids.system}/control?design_book_id=${ids.book}`);
+    expect(loaded.status, JSON.stringify(loaded.body)).toBe(200);
+    const valves = loaded.body.instruments.filter((item: any) => item.definition_id === ids.controlValve);
+    expect(valves).toHaveLength(3);
+
+    const supplyGroup = valves.filter((item: any) => item.group_key === 'supply-dn50');
+    const bypassGroup = valves.filter((item: any) => item.group_key === 'bypass-dn80');
+    expect([...new Set(valves.map((item: any) => item.group_key))].sort())
+      .toEqual(['bypass-dn80', 'supply-dn50']);
+    expect(supplyGroup).toHaveLength(2);
+    expect(bypassGroup).toHaveLength(1);
+    expect(supplyGroup).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        nominal_size: 'DN50',
+        product_master_id: ids.productA,
+        product_snapshot: expect.objectContaining({
+          id: ids.productA,
+          product_code: expect.stringMatching(/^LSS-PROD-A-/),
+          product_name: 'Snapshot product A',
+        }),
+        tag: expect.stringMatching(/-2BV-\d{2}$/),
+      }),
+    ]));
+    expect(bypassGroup).toEqual([
+      expect.objectContaining({
+        nominal_size: 'DN80',
+        product_master_id: ids.productB,
+        product_snapshot: expect.objectContaining({
+          id: ids.productB,
+          product_code: expect.stringMatching(/^LSS-PROD-B-/),
+          product_name: 'Snapshot product B',
+        }),
+        tag: expect.stringMatching(/-2BV-\d{2}$/),
+      }),
+    ]);
+    expect(new Set(valves.map((item: any) => item.tag)).size).toBe(3);
+
+    const schedule = projectLssIoSchedule(
+      [{ id: ids.system, system_code: 'LSS-CTRL', system_name: 'Control LSS' }],
+      [{ system_id: ids.system, control: loaded.body.control, instruments: valves }],
+    );
+    expect(schedule).toHaveLength(3);
+    expect(schedule.filter(row => row.nominal_size === 'DN50')).toHaveLength(2);
+    expect(schedule.filter(row => row.nominal_size === 'DN80')).toHaveLength(1);
+    expect(schedule.filter(row => row.nominal_size === 'DN50').map(row => row.assigned_product))
+      .toEqual([
+        expect.stringMatching(/^LSS-PROD-A-.* — Snapshot product A$/),
+        expect.stringMatching(/^LSS-PROD-A-.* — Snapshot product A$/),
+      ]);
+    expect(schedule.find(row => row.nominal_size === 'DN80')?.assigned_product)
+      .toMatch(/^LSS-PROD-B-.* — Snapshot product B$/);
+    expect(schedule.map(row => row.tag).sort()).toEqual(valves.map((item: any) => item.tag).sort());
   });
 
   it('reconciles pump-driven FS evidence and creates none when no pumps are configured', async () => {
