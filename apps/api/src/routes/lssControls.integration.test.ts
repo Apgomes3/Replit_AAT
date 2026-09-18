@@ -183,7 +183,7 @@ describeDatabase('LSS Control PostgreSQL integration', () => {
     });
   });
 
-  it('keeps control-valve size groups distinct through save, reload, and I/O projection', async () => {
+  it('keeps control-valve size-group rows, snapshots, tags, and I/O projections isolated through edits and deletes', async () => {
     await database.query(
       `UPDATE product_masters
        SET product_name=CASE id
@@ -269,6 +269,82 @@ describeDatabase('LSS Control PostgreSQL integration', () => {
     expect(schedule.find(row => row.nominal_size === 'DN80')?.assigned_product)
       .toMatch(/^LSS-PROD-B-.* — Snapshot product B$/);
     expect(schedule.map(row => row.tag).sort()).toEqual(valves.map((item: any) => item.tag).sort());
+
+    const bypassRowsBeforeEdit = (await database.query(
+      `SELECT * FROM design_book_lss_instruments
+        WHERE design_book_id=$1 AND system_id=$2 AND definition_id=$3 AND group_key='bypass-dn80'
+        ORDER BY sequence_number,id`,
+      [ids.book, ids.system, ids.controlValve],
+    )).rows;
+    const bypassScheduleBeforeEdit = projectLssIoSchedule(
+      [{ id: ids.system, system_code: 'LSS-CTRL', system_name: 'Control LSS' }],
+      [{ system_id: ids.system, control: loaded.body.control, instruments: bypassGroup }],
+    );
+
+    const edited = await request('PUT', `/api/v1/systems/${ids.system}/control`, {
+      design_book_id: ids.book,
+      panel_type: 'PLC',
+      instruments: [
+        ...await editableInstruments(0),
+        {
+          definition_id: ids.controlValve,
+          group_key: 'supply-dn50',
+          nominal_size: 'DN50',
+          quantity: 3,
+          product_master_id: ids.productB,
+        },
+        {
+          definition_id: ids.controlValve,
+          group_key: 'bypass-dn80',
+          nominal_size: 'DN80',
+          quantity: 1,
+        },
+      ],
+    });
+    expect(edited.status, JSON.stringify(edited.body)).toBe(200);
+
+    const valvesAfterEdit = edited.body.instruments.filter((item: any) => item.definition_id === ids.controlValve);
+    const supplyAfterEdit = valvesAfterEdit.filter((item: any) => item.group_key === 'supply-dn50');
+    expect(supplyAfterEdit).toHaveLength(3);
+    expect(supplyAfterEdit.every((item: any) =>
+      item.product_master_id === ids.productB
+      && item.product_snapshot?.id === ids.productB
+      && item.product_snapshot?.product_name === 'Snapshot product B')).toBe(true);
+    const bypassRowsAfterEdit = (await database.query(
+      `SELECT * FROM design_book_lss_instruments
+        WHERE design_book_id=$1 AND system_id=$2 AND definition_id=$3 AND group_key='bypass-dn80'
+        ORDER BY sequence_number,id`,
+      [ids.book, ids.system, ids.controlValve],
+    )).rows;
+    expect(bypassRowsAfterEdit).toEqual(bypassRowsBeforeEdit);
+
+    const deleted = await request('PUT', `/api/v1/systems/${ids.system}/control`, {
+      design_book_id: ids.book,
+      panel_type: 'PLC',
+      instruments: [
+        ...await editableInstruments(0),
+        {
+          definition_id: ids.controlValve,
+          group_key: 'bypass-dn80',
+          nominal_size: 'DN80',
+          quantity: 1,
+        },
+      ],
+    });
+    expect(deleted.status, JSON.stringify(deleted.body)).toBe(200);
+
+    const remainingValveRows = (await database.query(
+      `SELECT * FROM design_book_lss_instruments
+        WHERE design_book_id=$1 AND system_id=$2 AND definition_id=$3
+        ORDER BY sequence_number,id`,
+      [ids.book, ids.system, ids.controlValve],
+    )).rows;
+    expect(remainingValveRows).toEqual(bypassRowsBeforeEdit);
+    const remainingValves = deleted.body.instruments.filter((item: any) => item.definition_id === ids.controlValve);
+    expect(projectLssIoSchedule(
+      [{ id: ids.system, system_code: 'LSS-CTRL', system_name: 'Control LSS' }],
+      [{ system_id: ids.system, control: deleted.body.control, instruments: remainingValves }],
+    )).toEqual(bypassScheduleBeforeEdit);
   });
 
   it('reconciles pump-driven FS evidence and creates none when no pumps are configured', async () => {

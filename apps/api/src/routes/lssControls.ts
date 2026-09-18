@@ -404,7 +404,10 @@ router.put('/systems/:id/control', requireRole('admin', 'engineer'), requireModu
       }
       if (rows.length) {
         await client.query(
-          'UPDATE design_book_lss_instruments SET group_key=$1,nominal_size=$2,updated_by=$3,updated_at=NOW() WHERE id=ANY($4::uuid[])',
+          `UPDATE design_book_lss_instruments
+              SET group_key=$1,nominal_size=$2,updated_by=$3,updated_at=NOW()
+            WHERE id=ANY($4::uuid[])
+              AND (group_key IS DISTINCT FROM $1 OR nominal_size IS DISTINCT FROM $2)`,
           [requestedInstrument.group_key, requestedInstrument.nominal_size, req.user!.id, rows.map(row => row.id)],
         );
       }
