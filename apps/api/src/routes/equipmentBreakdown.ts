@@ -651,7 +651,35 @@ export async function createWorkbookBuffer(items: any[], hiddenColumns: string[]
     sheet.addRow(columns.map(column => column.label));
     sheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
     sheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E78' } };
-    rows.forEach(row => sheet.addRow(columns.map(column => safeCell(column.value(row)))));
+    const columnNumber = (key: string) => {
+      const index = columns.findIndex(column => column.key === key);
+      return index < 0 ? null : index + 1;
+    };
+    const quantityColumn = columnNumber('quantity');
+    const costColumn = columnNumber('unit_cost');
+    const markupColumn = columnNumber('markup');
+    const sellingColumn = columnNumber('selling_price');
+    const totalColumn = columnNumber('total_price');
+    rows.forEach(row => {
+      const excelRow = sheet.addRow(columns.map(column => safeCell(column.value(row))));
+      const rowNumber = excelRow.number;
+      if (sellingColumn && costColumn && markupColumn) {
+        const cost = sheet.getColumn(costColumn).letter;
+        const markup = sheet.getColumn(markupColumn).letter;
+        excelRow.getCell(sellingColumn).value = {
+          formula: `IF(OR(${cost}${rowNumber}="",${markup}${rowNumber}=""),"",ROUND(${cost}${rowNumber}*(1+${markup}${rowNumber}/100),2))`,
+          result: calculateEquipmentPricing(row).selling_price ?? '',
+        };
+      }
+      if (totalColumn && quantityColumn && sellingColumn) {
+        const quantity = sheet.getColumn(quantityColumn).letter;
+        const selling = sheet.getColumn(sellingColumn).letter;
+        excelRow.getCell(totalColumn).value = {
+          formula: `IF(OR(${quantity}${rowNumber}="",${selling}${rowNumber}=""),"",ROUND(${quantity}${rowNumber}*${selling}${rowNumber},2))`,
+          result: calculateEquipmentPricing(row).total_price ?? '',
+        };
+      }
+    });
     sheet.columns = columns.map(column => ({ header: column.label, width: Math.max(14, Math.min(34, column.label.length + 4, rows.reduce((n, row) => Math.max(n, String(column.value(row) || '').length + 2), 0))) }));
     sheet.views = [{ state: 'frozen', ySplit: 1 }];
     sheet.autoFilter = { from: 'A1', to: `${sheet.getColumn(columns.length).letter}${Math.max(1, rows.length + 1)}` };

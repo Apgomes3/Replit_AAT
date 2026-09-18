@@ -228,7 +228,7 @@ describe('equipment breakdown source normalization', () => {
     expect(workbook.getWorksheet('Summary')?.getRow(1).values).not.toContain('Total Price');
   });
 
-  it('exports calculated selling and total prices and leaves incomplete values blank', async () => {
+  it('exports selling and total prices as editable Excel formulas with cached results', async () => {
     const buffer = await createWorkbookBuffer([
       { system_code: 'LSS-01', description: 'Complete', quantity: 2, unit_cost: 10, markup: 25 },
       { system_code: 'LSS-01', description: 'Incomplete', quantity: 2, unit_cost: 10, markup: null },
@@ -239,9 +239,19 @@ describe('equipment breakdown source normalization', () => {
     const headers = (sheet.getRow(1).values as any[]).map(String);
     const sellingColumn = headers.indexOf('Selling Price');
     const totalColumn = headers.indexOf('Total Price');
-    expect(sheet.getRow(2).getCell(sellingColumn).value).toBe(12.5);
-    expect(sheet.getRow(2).getCell(totalColumn).value).toBe(25);
-    expect(sheet.getRow(3).getCell(sellingColumn).value).toBeNull();
-    expect(sheet.getRow(3).getCell(totalColumn).value).toBeNull();
+    expect(sheet.getRow(2).getCell(sellingColumn).value).toMatchObject({
+      formula: expect.stringContaining('*(1+'),
+      result: 12.5,
+    });
+    expect(sheet.getRow(2).getCell(totalColumn).value).toMatchObject({
+      formula: expect.stringContaining('*'),
+      result: 25,
+    });
+    expect(sheet.getRow(3).getCell(sellingColumn).value).toMatchObject({
+      formula: expect.stringContaining('IF(OR('),
+    });
+    expect(sheet.getRow(3).getCell(totalColumn).value).toMatchObject({
+      formula: expect.stringContaining('IF(OR('),
+    });
   });
 });
