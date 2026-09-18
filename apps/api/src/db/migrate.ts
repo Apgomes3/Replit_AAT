@@ -3108,6 +3108,7 @@ CREATE TABLE IF NOT EXISTS design_book_lss_instruments (
 );
  ALTER TABLE design_book_lss_instruments ADD COLUMN IF NOT EXISTS group_key VARCHAR(100);
  ALTER TABLE design_book_lss_instruments ADD COLUMN IF NOT EXISTS nominal_size VARCHAR(100);
+ALTER TABLE design_book_lss_instruments ADD COLUMN IF NOT EXISTS actuation_type VARCHAR(20) NOT NULL DEFAULT 'Electric';
 CREATE INDEX IF NOT EXISTS idx_design_book_lss_instruments_system
   ON design_book_lss_instruments(design_book_id, system_id);
 DROP TRIGGER IF EXISTS guard_released_design_book_lss_controls ON design_book_lss_controls;
@@ -3166,6 +3167,12 @@ UPDATE field_instrument_definitions SET name='High level float switch' WHERE tag
 UPDATE field_instrument_definitions SET name='Low level float switch' WHERE tag_code='FLS-LL';
 UPDATE field_instrument_definitions SET name='Additional float level switch' WHERE tag_code='FLS';
 UPDATE field_instrument_definitions SET name='Pressure sensor' WHERE tag_code='PS';
+-- Preserve the governed 2-way definition identity while correcting its code
+-- before the idempotent seed (tag_code is unique).
+UPDATE field_instrument_definitions
+SET name='2-way Electric Ball Valve', tag_code='2EBV'
+WHERE tag_code='2BV'
+  AND NOT EXISTS (SELECT 1 FROM field_instrument_definitions WHERE tag_code='2EBV');
 INSERT INTO field_instrument_definitions
   (name, tag_code, signal_type, signal_direction, requirement_rule, default_control_logic, sort_order)
 VALUES
@@ -3179,7 +3186,7 @@ VALUES
   ('Pressure sensor', 'PS', 'digital', 'input', 'optional', NULL, 80),
   ('Flow Meter', 'FM', 'analog', 'input', 'optional', NULL, 90),
   ('3-way Electric Ball Valve', '3EBV', 'digital', 'output', 'optional', NULL, 100),
-  ('2-way Ball Valve', '2BV', 'digital', 'output', 'optional', NULL, 110),
+  ('2-way Electric Ball Valve', '2EBV', 'digital', 'output', 'optional', NULL, 110),
   ('Ultrasonic Level Sensor', 'ULS', 'analog', 'input', 'optional', NULL, 120),
   ('Conductivity Sensor', 'CON', 'analog', 'input', 'optional', NULL, 130),
   ('Dissolved Oxygen Sensor', 'DO', 'analog', 'input', 'optional', NULL, 140),

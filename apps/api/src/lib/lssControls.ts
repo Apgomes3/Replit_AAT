@@ -11,6 +11,22 @@ export function buildInstrumentTag(systemCode: unknown, tagCode: unknown, sequen
   return `${systemNumberToken(systemCode)}-${code}-${String(number).padStart(2, '0')}`;
 }
 
+export type ValveActuationType = 'Electric' | 'Pneumatic';
+export function isControlValveCode(tagCode: unknown) {
+  return ['2BV', '2EBV', '2PBV', '3EBV', '3PBV'].includes(String(tagCode || '').toUpperCase());
+}
+export function valveEffectiveDefinition(definition: any, actuationType: ValveActuationType = 'Electric') {
+  if (!isControlValveCode(definition?.tag_code)) return definition;
+  const base = String(definition.tag_code).toUpperCase().startsWith('3') ? '3' : '2';
+  const pneumatic = actuationType === 'Pneumatic';
+  const code = `${base}${pneumatic ? 'PBV' : 'EBV'}`;
+  return {
+    ...definition,
+    name: `${base === '3' ? '3-way' : '2-way'} ${pneumatic ? 'Pneumatic' : 'Electric'} Ball Valve`,
+    tag_code: code,
+  };
+}
+
 export function requiredPumpLinkedQuantity(pumpRows: Array<{ project_equipment_item_id?: unknown; pump_quantity?: unknown }>) {
   return pumpRows.reduce((total, row) => {
     if (!row.project_equipment_item_id) return total;

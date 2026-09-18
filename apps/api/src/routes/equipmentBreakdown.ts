@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import pool, { query } from '../db';
 import { authenticate, AuthRequest, requireModuleAccess, requireModuleManage } from '../middleware/auth';
 import { isLifeSupportSystem } from '../lib/lssSystems';
+import { isControlValveCode } from '../lib/lssControls';
 
 const router = Router();
 router.use(authenticate, requireModuleAccess('design_books'));
@@ -153,7 +154,7 @@ export function groupEquipmentInstrumentSources(instruments: any[]) {
   for (const instrument of instruments) {
     const definition = instrument.definition_snapshot || {};
     const tagCode = String(definition.tag_code || instrument.tag_code || '').toUpperCase();
-    const isControlValve = ['2BV', '3EBV'].includes(tagCode);
+    const isControlValve = isControlValveCode(tagCode);
     const definitionId = instrument.definition_id || definition.id || tagCode;
     const nominalSize = String(instrument.nominal_size || '').trim();
     const productId = instrument.product_master_id || instrument.product_snapshot?.id || '';

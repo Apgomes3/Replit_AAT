@@ -6,7 +6,7 @@ import { isLifeSupportSystem } from '../lib/lssSystems';
 import { isRetiredSystem, systemLifecycleError } from '../lib/systemLifecycle';
 import {
   buildInstrumentTag, hasExplicitInstrumentProductOverride,
-  initialInstrumentControlLogic, initialInstrumentProduct,
+  initialInstrumentControlLogic, initialInstrumentProduct, isControlValveCode, valveEffectiveDefinition,
 } from '../lib/lssControls';
 import { logAudit } from '../db/audit';
 import { projectLssIoSchedule, renderLssIoSchedulePdf } from '../lib/lssIoSchedule';
@@ -258,6 +258,7 @@ router.put('/systems/:id/control', requireRole('admin', 'engineer'), requireModu
       const requested = new Map<string, Array<{
         quantity: number; product_master_id: string | null; product_supplied: boolean;
          group_key: string; nominal_size: string | null;
+         actuation_type: 'Electric' | 'Pneumatic';
         control_logic: string | null; control_logic_supplied: boolean;
         range_min: number | null; range_max: number | null; unit: string | null; range_supplied: boolean;
         calibration_required: boolean; calibration_interval_days: number | null;
@@ -274,7 +275,7 @@ router.put('/systems/:id/control', requireRole('admin', 'engineer'), requireModu
         await client.query('ROLLBACK');
         return res.status(400).json({ error: { code: 'VALIDATION', message: 'Each instrument needs an active definition and quantity from 0 to 99.' } });
       }
-      const isValve = ['2BV', '3EBV'].includes(String(definition.tag_code || '').toUpperCase());
+       const isValve = isControlValveCode(definition.tag_code);
       const groupKey = isValve ? String(item.group_key || '').trim() : definition.id;
       if (!groupKey || (requested.get(definition.id) || []).some(group => group.group_key === groupKey)) {
         await client.query('ROLLBACK');
@@ -311,7 +312,8 @@ router.put('/systems/:id/control', requireRole('admin', 'engineer'), requireModu
       }
       const group = {
         quantity, product_master_id: item.product_master_id || null,
-         group_key: groupKey, nominal_size: isValve ? String(item.nominal_size || '').trim() || null : null,
+          group_key: groupKey, nominal_size: isValve ? String(item.nominal_size || '').trim() || null : null,
+         actuation_type: (item.actuation_type === 'Pneumatic' ? 'Pneumatic' : 'Electric') as 'Electric' | 'Pneumatic',
         product_supplied: productSupplied,
           control_logic: String(item.control_logic || '').trim() || null,
           control_logic_supplied: Object.prototype.hasOwnProperty.call(item, 'control_logic'),
@@ -347,7 +349,7 @@ router.put('/systems/:id/control', requireRole('admin', 'engineer'), requireModu
     )).rows;
       for (const definition of definitions) {
       const groups = requested.get(definition.id) || [];
-      const valve = ['2BV', '3EBV'].includes(String(definition.tag_code || '').toUpperCase());
+       const valve = isControlValveCode(definition.tag_code);
       const allRows = existing.filter(row => row.definition_id === definition.id).sort((a, b) => a.sequence_number - b.sequence_number);
       const used = new Set<string>();
       let sequence = allRows.reduce((max, row) => Math.max(max, Number(row.sequence_number || 0)), 0);
@@ -372,7 +374,7 @@ router.put('/systems/:id/control', requireRole('admin', 'engineer'), requireModu
         // instance imports the active definition default unless the designer
         // deliberately supplied an override in this save; it must never inherit
         // a prior instance's product or a later catalogue edit.
-        const selectedProduct = initialInstrumentProduct(
+         const selectedProduct = initialInstrumentProduct(
           definition.default_product_master_id,
           requestedProduct,
         );
@@ -387,29 +389,41 @@ router.put('/systems/:id/control', requireRole('admin', 'engineer'), requireModu
         const calibrationInterval = requestedProduct?.calibration_supplied ? requestedProduct.calibration_interval_days : definition.default_calibration_interval_days;
         const calibrationProcedure = requestedProduct?.calibration_supplied ? requestedProduct.calibration_procedure : definition.default_calibration_procedure;
         const datasheetReference = requestedProduct?.calibration_supplied ? requestedProduct.datasheet_reference : definition.default_datasheet_reference;
-      for (let index = rows.length; index < desired; index++) {
+       const actuationType = requestedProduct.actuation_type;
+       const effectiveDefinition = valveEffectiveDefinition(definition, actuationType);
+       for (let index = rows.length; index < desired; index++) {
         sequence += 1;
         const product = await productSnapshot(client.query.bind(client), selectedProduct);
         await client.query(
           `INSERT INTO design_book_lss_instruments
-            (design_book_id,system_id,definition_id,tag,sequence_number,control_logic,range_min,range_max,unit,
+             (design_book_id,system_id,definition_id,tag,sequence_number,control_logic,range_min,range_max,unit,
              calibration_required,calibration_interval_days,calibration_procedure,datasheet_reference,
-             product_master_id,definition_snapshot,product_snapshot,group_key,nominal_size,created_by,updated_by)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16::jsonb,$17,$18,$19,$19)`,
-          [bookId, system.id, definition.id, buildInstrumentTag(system.system_code, definition.tag_code, sequence),
+              product_master_id,definition_snapshot,product_snapshot,group_key,nominal_size,actuation_type,created_by,updated_by)
+              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16::jsonb,$17,$18,$19,$20,$20)`,
+           [bookId, system.id, definition.id, buildInstrumentTag(system.system_code, effectiveDefinition.tag_code, sequence),
              sequence, controlLogic, rangeMin, rangeMax, unit, calibrationRequired, calibrationInterval,
-             calibrationProcedure, datasheetReference, selectedProduct, JSON.stringify(definition), JSON.stringify(product),
-             requestedInstrument.group_key, requestedInstrument.nominal_size, req.user!.id],
+              calibrationProcedure, datasheetReference, selectedProduct, JSON.stringify(effectiveDefinition), JSON.stringify(product),
+              requestedInstrument.group_key, requestedInstrument.nominal_size, actuationType, req.user!.id],
         );
       }
       if (rows.length) {
-        await client.query(
-          `UPDATE design_book_lss_instruments
-              SET group_key=$1,nominal_size=$2,updated_by=$3,updated_at=NOW()
-            WHERE id=ANY($4::uuid[])
-              AND (group_key IS DISTINCT FROM $1 OR nominal_size IS DISTINCT FROM $2)`,
-          [requestedInstrument.group_key, requestedInstrument.nominal_size, req.user!.id, rows.map(row => row.id)],
-        );
+        for (const row of rows) {
+          await client.query(
+            `UPDATE design_book_lss_instruments
+               SET group_key=$1,nominal_size=$2,actuation_type=$3,definition_snapshot=$4::jsonb,
+                   tag=$5,updated_by=$6,updated_at=NOW()
+              WHERE id=$7
+                AND (group_key IS DISTINCT FROM $1
+                  OR nominal_size IS DISTINCT FROM $2
+                  OR actuation_type IS DISTINCT FROM $3
+                  OR definition_snapshot IS DISTINCT FROM $4::jsonb
+                  OR tag IS DISTINCT FROM $5)`,
+            [requestedInstrument.group_key, requestedInstrument.nominal_size, actuationType,
+              JSON.stringify(effectiveDefinition),
+              buildInstrumentTag(system.system_code, effectiveDefinition.tag_code, row.sequence_number),
+              req.user!.id, row.id],
+          );
+        }
       }
       if (rows.length && requestedProduct?.product_supplied) {
         const product = await productSnapshot(client.query.bind(client), selectedProduct);

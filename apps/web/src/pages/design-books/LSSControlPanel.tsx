@@ -16,6 +16,7 @@ type DraftInstrument = {
   definition_id: string;
   group_key?: string;
   nominal_size?: string;
+  actuation_type?: 'Electric' | 'Pneumatic';
   quantity: number;
   product_master_id: string | null;
   /** Only send a product when the designer intentionally selected one. */
@@ -67,7 +68,12 @@ function definitionId(item: any) {
   return item?.definition_id || item?.field_instrument_definition_id || item?.id || item?.definition_snapshot?.id;
 }
 function isControlValve(item: any) {
-  return ['2BV', '3EBV'].includes(String(item?.tag_code || '').toUpperCase());
+  return ['2BV', '2EBV', '2PBV', '3EBV', '3PBV'].includes(String(item?.tag_code || '').toUpperCase());
+}
+function effectiveValve(definition: any, type: 'Electric' | 'Pneumatic' = 'Electric') {
+  if (!isControlValve(definition)) return definition;
+  const threeWay = String(definition.tag_code || '').startsWith('3');
+  return { ...definition, tag_code: `${threeWay ? '3' : '2'}${type === 'Pneumatic' ? 'PBV' : 'EBV'}`, name: `${threeWay ? '3-way' : '2-way'} ${type} Ball Valve` };
 }
 function instrumentKey(item: any) {
   return `${definitionId(item)}::${item?.group_key || 'legacy'}`;
@@ -278,6 +284,7 @@ export default function LSSControlPanel({ bookId, systemId, readOnly, canOverrid
         definition_id: id,
         group_key: item.group_key || (isControlValve({ ...item, ...(item.definition_snapshot || {}) }) ? 'legacy' : undefined),
         nominal_size: item.nominal_size || '',
+         actuation_type: item.actuation_type === 'Pneumatic' ? 'Pneumatic' : 'Electric',
         quantity: current ? current.quantity + 1 : Number(item.quantity || 1),
             product_master_id: productId(item),
         product_supplied: false,
@@ -343,10 +350,11 @@ export default function LSSControlPanel({ bookId, systemId, readOnly, canOverrid
         instruments: instruments
           .filter(item => item.quantity > 0)
            .map(({ product_supplied, control_logic_supplied, range_supplied, calibration_supplied,
-             product_master_id, control_logic, range_min, range_max, unit, calibration_required,
+             product_master_id, control_logic, range_min, range_max, unit, calibration_required, actuation_type,
              calibration_interval_days, calibration_procedure, datasheet_reference, group_key, nominal_size, ...item }) => ({
              ...item,
              ...(group_key ? { group_key, ...(nominal_size ? { nominal_size } : {}) } : {}),
+             ...(group_key ? { actuation_type: actuation_type || 'Electric' } : {}),
             ...(product_supplied ? { product_master_id } : {}),
             ...(control_logic_supplied ? { control_logic } : {}),
             ...(range_supplied ? {
@@ -454,7 +462,8 @@ export default function LSSControlPanel({ bookId, systemId, readOnly, canOverrid
              const instances = savedInstruments.filter(item => definitionId(item) === definitionId(definition)
                && (!isControlValve(definition) || (item.group_key || 'legacy') === (definition.group_key || 'legacy')));
             const draft = drafts.get(id);
-            const instrumentName = definition.name || 'Historical field instrument';
+            const displayDefinition = effectiveValve(definition, draft?.actuation_type);
+            const instrumentName = displayDefinition.name || 'Historical field instrument';
             const savedTags = instances.map(item => item.tag || item.instrument_tag).filter(Boolean);
             return <tbody key={id} className="border-b border-stone-100 last:border-0">
               <tr className="align-top">
@@ -462,7 +471,7 @@ export default function LSSControlPanel({ bookId, systemId, readOnly, canOverrid
                 <td className="px-3 py-3"><span className="block font-medium text-stone-700">{definition.signal_type || 'Unspecified'}</span><span className="text-[10px] uppercase tracking-wide text-stone-400">{signalDirection(definition.signal_direction)}</span></td>
                 <td className="px-3 py-3">{minimum > 0 ? <span className="inline-block rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">Required · min {minimum}</span> : <span className="text-stone-400">Optional</span>}</td>
                 <td className="px-3 py-3"><label className="sr-only" htmlFor={`instrument-quantity-${id}`}>Quantity for {instrumentName}</label><InstrumentQuantityField id={id} instrumentName={instrumentName} quantity={quantity} minimum={minimum} readOnly={readOnly} update={update} compact /></td>
-                <td className="px-3 py-3"><InstrumentProductField id={id} definition={definition} instrumentName={instrumentName} quantity={quantity} minimum={minimum} instances={instances} draft={draft} products={products} readOnly={readOnly} canOverrideProduct={canOverrideProduct} frozen={Boolean(control?.frozen)} update={update} compact /></td>
+                <td className="px-3 py-3">{isControlValve(definition) && <label className="block text-[11px] font-medium text-stone-500">Type<select aria-label={`Type for ${instrumentName}`} value={draft?.actuation_type || 'Electric'} disabled={readOnly} onChange={event => update(id, { actuation_type: event.target.value as 'Electric' | 'Pneumatic' })} className={`${inputClass} mt-1 px-2 py-1.5`}><option>Electric</option><option>Pneumatic</option></select></label>}<InstrumentProductField id={id} definition={definition} instrumentName={instrumentName} quantity={quantity} minimum={minimum} instances={instances} draft={draft} products={products} readOnly={readOnly} canOverrideProduct={canOverrideProduct} frozen={Boolean(control?.frozen)} update={update} compact /></td>
                 <td className="break-words px-3 py-3 font-mono text-[11px] text-stone-500">{savedTags.join(', ') || (instances.length > 0 ? 'Allocated on save' : '—')}</td>
               </tr>
               <tr>
@@ -486,13 +495,14 @@ export default function LSSControlPanel({ bookId, systemId, readOnly, canOverrid
              const instances = savedInstruments.filter(item => definitionId(item) === definitionId(definition)
                && (!isControlValve(definition) || (item.group_key || 'legacy') === (definition.group_key || 'legacy')));
             const draft = drafts.get(id);
-            const instrumentName = definition.name || 'Historical field instrument';
+            const displayDefinition = effectiveValve(definition, draft?.actuation_type);
+            const instrumentName = displayDefinition.name || 'Historical field instrument';
             const savedTags = instances.map(item => item.tag || item.instrument_tag).filter(Boolean);
             return <article key={id} className="overflow-hidden rounded-xl border border-stone-200 bg-white shadow-sm" aria-labelledby={`instrument-card-${id}`}>
               <div className="border-b border-stone-100 bg-stone-50/50 p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2"><h3 id={`instrument-card-${id}`} className="break-words font-semibold text-stone-800">{instrumentName}</h3><span className="rounded bg-stone-100 px-1.5 py-0.5 font-mono text-[10px] text-stone-600">{definition.tag_code || '—'}</span></div>
+                    <div className="flex flex-wrap items-center gap-2"><h3 id={`instrument-card-${id}`} className="break-words font-semibold text-stone-800">{instrumentName}</h3><span className="rounded bg-stone-100 px-1.5 py-0.5 font-mono text-[10px] text-stone-600">{displayDefinition.tag_code || '—'}</span></div>
                      <p className="mt-1 break-words text-xs text-stone-500">{definition.description || 'No catalog description.'}</p>
                      {isControlValve(definition) && <label className="mt-2 block text-xs font-medium text-stone-500">Nominal size<input aria-label={`Nominal size for ${instrumentName}`} value={draft?.nominal_size || ''} disabled={readOnly} onChange={event => update(id, { nominal_size: event.target.value })} placeholder="e.g. DN50" className={inputClass} /></label>}
                      {isControlValve(definition) && !readOnly && <div className="mt-2 flex gap-2"><button type="button" onClick={() => addValveGroup(definition)} className="text-xs font-semibold text-blue-700">＋ Add size</button>{definition.group_key !== 'legacy' && <button type="button" onClick={() => removeValveGroup(definition)} className="text-xs font-semibold text-red-600">Remove</button>}</div>}
@@ -506,7 +516,7 @@ export default function LSSControlPanel({ bookId, systemId, readOnly, canOverrid
                   <div><span className="block text-xs font-medium text-stone-500">Requirement</span><div className="mt-2">{minimum > 0 ? <span className="inline-block rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">Required · min {minimum}</span> : <span className="text-xs text-stone-400">Optional</span>}</div></div>
                   <label className="text-xs font-medium text-stone-500">Quantity<InstrumentQuantityField id={id} instrumentName={instrumentName} quantity={quantity} minimum={minimum} readOnly={readOnly} update={update} /></label>
                 </div>
-                <InstrumentProductField id={id} definition={definition} instrumentName={instrumentName} quantity={quantity} minimum={minimum} instances={instances} draft={draft} products={products} readOnly={readOnly} canOverrideProduct={canOverrideProduct} frozen={Boolean(control?.frozen)} update={update} visibleLabel />
+                {isControlValve(definition) && <label className="block text-xs font-medium text-stone-500">Type<select aria-label={`Type for ${instrumentName}`} value={draft?.actuation_type || 'Electric'} disabled={readOnly} onChange={event => update(id, { actuation_type: event.target.value as 'Electric' | 'Pneumatic' })} className={inputClass}><option>Electric</option><option>Pneumatic</option></select></label>}<InstrumentProductField id={id} definition={definition} instrumentName={instrumentName} quantity={quantity} minimum={minimum} instances={instances} draft={draft} products={products} readOnly={readOnly} canOverrideProduct={canOverrideProduct} frozen={Boolean(control?.frozen)} update={update} visibleLabel />
                 <div><span className="block text-xs font-medium text-stone-500">Saved tags</span><p className="mt-1 break-words font-mono text-xs text-stone-600">{savedTags.join(', ') || (instances.length > 0 ? 'Allocated on save' : '—')}</p></div>
                 <InstrumentDetailFields id={id} definition={definition} instrumentName={instrumentName} quantity={quantity} instances={instances} draft={draft} readOnly={readOnly} frozen={Boolean(control?.frozen)} update={update} layout="card" />
               </div>

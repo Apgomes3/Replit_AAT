@@ -96,7 +96,8 @@ describeDatabase('LSS Control PostgreSQL integration', () => {
       [`IFS-${suffix.slice(-6)}`],
     )).rows[0].id;
     ids.controlValve = (await database.query(
-      `SELECT id FROM field_instrument_definitions WHERE tag_code='2BV' AND is_active=true`,
+      `SELECT id FROM field_instrument_definitions WHERE tag_code IN ('2EBV','2BV') AND is_active=true
+       ORDER BY CASE WHEN tag_code='2EBV' THEN 0 ELSE 1 END LIMIT 1`,
     )).rows[0].id;
   });
 
@@ -237,7 +238,7 @@ describeDatabase('LSS Control PostgreSQL integration', () => {
           product_code: expect.stringMatching(/^LSS-PROD-A-/),
           product_name: 'Snapshot product A',
         }),
-        tag: expect.stringMatching(/-2BV-\d{2}$/),
+         tag: expect.stringMatching(/-2EBV-\d{2}$/),
       }),
     ]));
     expect(bypassGroup).toEqual([
@@ -249,7 +250,7 @@ describeDatabase('LSS Control PostgreSQL integration', () => {
           product_code: expect.stringMatching(/^LSS-PROD-B-/),
           product_name: 'Snapshot product B',
         }),
-        tag: expect.stringMatching(/-2BV-\d{2}$/),
+         tag: expect.stringMatching(/-2EBV-\d{2}$/),
       }),
     ]);
     expect(new Set(valves.map((item: any) => item.tag)).size).toBe(3);
