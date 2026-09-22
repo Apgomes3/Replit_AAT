@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Bio/Degas 3D Trial"
+description = "A technical 3D coordination viewer and parametric modeller for Bio/Degas plenum layouts, with selectable crate stacks, editable quantities, movable dispersion trays, live validation, local design saves, JSON export, and image snapshots."
+version = "1.0.0"
+id = "artifacts/bio-degas-3d"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 24936
+
+[services.development]
+run = "pnpm --filter @workspace/bio-degas-3d run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/bio-degas-3d", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/bio-degas-3d/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "24936"
+BASE_PATH = "/"
