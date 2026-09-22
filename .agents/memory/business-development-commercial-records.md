@@ -9,6 +9,12 @@ A Client is reusable master data. An Enquiry is the primary commercial record an
 
 **How to apply:** Let an Enquiry remain standalone, link it to an existing Project, or create a new Project from it. Project and Design Book references require access to those modules. Do not reintroduce Business Books or Opportunities.
 
+A Client represents an organization, not a person. Employee contacts belong underneath the Client as separate records, and the organization itself has no operational contact email.
+
+**Why:** One company may have several people involved in different enquiries, so storing one email on the company loses the relationship between a person and their contact details.
+
+**How to apply:** Store employee name, email, phone, job title, and optional primary status as Client contacts. Use the controlled country list for the organization. Preserve Enquiry contact details as snapshots rather than live references.
+
 Quote lines imported from a linked Design Book Equipment Breakdown are point-in-time snapshots. They may be replaced only while the quote is a draft.
 
 **Why:** Engineering and pricing continue to change, but issued customer commitments must remain reproducible.

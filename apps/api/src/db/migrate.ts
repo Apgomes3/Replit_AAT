@@ -3358,6 +3358,21 @@ ALTER TABLE clients ADD COLUMN IF NOT EXISTS contact_email VARCHAR(255);
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS contact_phone VARCHAR(100);
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS country VARCHAR(100);
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT true;
+CREATE TABLE IF NOT EXISTS client_contacts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  name VARCHAR(255) NOT NULL,
+  email VARCHAR(255) NOT NULL,
+  phone VARCHAR(100),
+  job_title VARCHAR(255),
+  is_primary BOOLEAN NOT NULL DEFAULT false,
+  created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  updated_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_client_contacts_client ON client_contacts(client_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_client_contacts_one_primary ON client_contacts(client_id) WHERE is_primary;
 CREATE TABLE IF NOT EXISTS enquiries (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(), enquiry_number VARCHAR(30) UNIQUE NOT NULL,
   client_id UUID NOT NULL REFERENCES clients(id) ON DELETE RESTRICT, title VARCHAR(255) NOT NULL, description TEXT,
@@ -3493,12 +3508,54 @@ export async function backfillLegacyBusinessDevelopment(client: any) {
   }
 }
 
+export async function backfillClientContacts(client: any) {
+  const key = 'client-contacts-v2';
+  await client.query('BEGIN');
+  try {
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [key]);
+    const marker = await client.query('SELECT 1 FROM platform_migration_markers WHERE migration_key=$1', [key]);
+    if (marker.rows[0]) {
+      await client.query('COMMIT');
+      return;
+    }
+    const rows = (await client.query(`SELECT id,contact_name,contact_email,email,contact_phone,phone,created_by
+      FROM clients WHERE NULLIF(BTRIM(contact_name),'') IS NOT NULL
+         OR NULLIF(BTRIM(contact_email),'') IS NOT NULL
+         OR NULLIF(BTRIM(email),'') IS NOT NULL
+         OR NULLIF(BTRIM(contact_phone),'') IS NOT NULL
+         OR NULLIF(BTRIM(phone),'') IS NOT NULL
+      ORDER BY id`)).rows;
+    let partial = false;
+    for (const row of rows) {
+      const name = String(row.contact_name || '').trim();
+      const email = String(row.contact_email || row.email || '').trim();
+      if (!name || !email) {
+        partial = true;
+        continue;
+      }
+      await client.query(`INSERT INTO client_contacts(client_id,name,email,phone,is_primary,created_by,updated_by)
+        VALUES($1,$2,$3,$4,true,$5,$5)
+        ON CONFLICT DO NOTHING`, [row.id, name, email, row.contact_phone || row.phone || null, row.created_by || null]);
+    }
+    if (partial) {
+      await client.query('COMMIT');
+      return;
+    }
+    await client.query('INSERT INTO platform_migration_markers(migration_key) VALUES($1)', [key]);
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  }
+}
+
 async function migrate() {
   const client = await pool.connect();
   try {
     console.log('Running migrations...');
     await client.query(schema);
     await backfillLegacyBusinessDevelopment(client);
+    await backfillClientContacts(client);
     const movedDocumentFiles = await migrateLegacyDocumentFiles(client);
     console.log(`Private document files ready (${movedDocumentFiles} legacy files moved).`);
     const adminResult = await client.query(
