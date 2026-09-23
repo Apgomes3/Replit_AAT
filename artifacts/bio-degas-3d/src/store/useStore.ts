@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 
+export const TOP_DOWN_SUPPORT_CLEARANCE = 180;
+
 export interface Envelope {
   length: number;
   width: number;
@@ -70,8 +72,10 @@ export interface ProjectState {
   nominalStackHeight: number;
   maxStackHeight: number;
   stackFillDirection: 'bottom' | 'top';
+  topDownTrayClearance: number;
   rows: number;
   trayCount: number;
+  trayCountAuto: boolean;
   trayGap: number;
   waterLevel: number;
   requiredCrates: number;
@@ -110,8 +114,10 @@ const DEFAULT_REFERENCE = {
   nominalStackHeight: 3,
   maxStackHeight: 4,
   stackFillDirection: 'bottom' as const,
+  topDownTrayClearance: 100,
   rows: 2,
   trayCount: 2,
+  trayCountAuto: true,
   trayGap: 100,
   waterLevel: 1590,
   requiredCrates: 58,
@@ -176,6 +182,32 @@ export function calculateWaterMatchedOutletLength(
   if (Math.abs(branchY) < 0.001) return null;
   const outletLength = (waterY - elbowEndY) / branchY;
   return outletLength > 0 ? outletLength * 1000 : null;
+}
+
+export function calculateTopDownCrateDatum(
+  envelope: Envelope,
+  wallThickness: number,
+  trays: Tray[],
+  clearance: number,
+) {
+  if (trays.length === 0) return null;
+  const internalHeight = envelope.height - wallThickness;
+  const lowestTrayUnderside = Math.min(...trays.map(tray => internalHeight - tray.height));
+  return lowestTrayUnderside - Math.max(0, clearance);
+}
+
+export function calculateTopDownSupportDatum(
+  envelope: Envelope,
+  wallThickness: number,
+  trays: Tray[],
+  clearance: number,
+  stacks: Stack[],
+  crateHeight: number,
+) {
+  const crateTopDatum = calculateTopDownCrateDatum(envelope, wallThickness, trays, clearance);
+  if (crateTopDatum === null) return null;
+  const tallestActiveStack = Math.max(0, ...stacks.map(stack => stack.quantity));
+  return crateTopDatum - tallestActiveStack * crateHeight;
 }
 
 function generateStacks(state: Partial<ProjectState>) {
@@ -263,6 +295,27 @@ function generateTrays(state: Partial<ProjectState>) {
   return newTrays;
 }
 
+function calculateAutomaticTrayCount(state: Partial<ProjectState>) {
+  const s = { ...DEFAULT_REFERENCE, ...state } as ProjectState;
+  const internalLength = s.envelope.length - 2 * s.wallThickness;
+  const availableLength = Math.max(0, internalLength - s.accessMin);
+  const standardTrayLength = 3405;
+  return Math.max(
+    0,
+    Math.min(4, Math.floor((availableLength + s.trayGap) / (standardTrayLength + s.trayGap))),
+  );
+}
+
+function reconcileAutomaticTrays(state: Partial<ProjectState>, existingTrays: Tray[]) {
+  const generated = generateTrays(state);
+  return generated.map((tray, index) => {
+    const existing = existingTrays[index];
+    return existing
+      ? { ...tray, ...existing, x: tray.x }
+      : tray;
+  });
+}
+
 export const useStore = create<ProjectState>((set, get) => ({
   ...DEFAULT_REFERENCE,
   stacks: generateStacks(DEFAULT_REFERENCE),
@@ -274,12 +327,18 @@ export const useStore = create<ProjectState>((set, get) => ({
     const next = { ...state, ...params };
     // If layout affecting params changed, we might need to regenerate
     const needsRegen = ['envelope', 'wallThickness', 'accessMin', 'crate', 'rows', 'requiredCrates', 'nominalStackHeight', 'maxStackHeight'].some(k => k in params);
-    const traysNeedRegen = ['trayCount', 'trayGap'].some(k => k in params);
+    const trayLengthInputsChanged = ['envelope', 'wallThickness', 'accessMin', 'trayGap'].some(k => k in params);
+    const autoTrayLayoutChanged = next.trayCountAuto
+      && (trayLengthInputsChanged || params.trayCountAuto === true);
+    if (autoTrayLayoutChanged) {
+      next.trayCount = calculateAutomaticTrayCount(next);
+      next.trays = reconcileAutomaticTrays(next, state.trays);
+    }
     
     if (needsRegen) {
       next.stacks = generateStacks(next);
     }
-    if (traysNeedRegen) {
+    if (!autoTrayLayoutChanged && ['trayCount', 'trayGap'].some(k => k in params)) {
       next.trays = generateTrays(next);
     }
     
@@ -360,6 +419,7 @@ export const useStore = create<ProjectState>((set, get) => ({
     return {
       trays: [...state.trays, tray],
       trayCount: state.trays.length + 1,
+      trayCountAuto: false,
       selectedId: tray.id,
     };
   }),
@@ -370,6 +430,7 @@ export const useStore = create<ProjectState>((set, get) => ({
     return {
       trays,
       trayCount: trays.length,
+      trayCountAuto: false,
       selectedId: state.selectedId === id ? null : state.selectedId,
     };
   }),
@@ -569,14 +630,37 @@ export function useValidation(): ValidationState {
   // 6. Stack Validation
   const cols = Math.floor((internalL - state.accessMin) / state.crate.width);
   const rows = Math.floor(internalW / state.crate.length);
+  const topDownCrateDatum = calculateTopDownCrateDatum(
+    state.envelope,
+    state.wallThickness,
+    state.trays,
+    state.topDownTrayClearance,
+  );
+  const topDownSupportDatum = calculateTopDownSupportDatum(
+    state.envelope,
+    state.wallThickness,
+    state.trays,
+    state.topDownTrayClearance,
+    state.stacks,
+    state.crate.height,
+  );
+
+  if (state.stackFillDirection === 'top' && topDownCrateDatum === null) {
+    errors.push('Top-down support configuration cannot be applied because no dispersion tray is available as the crate datum.');
+  } else if (
+    state.stackFillDirection === 'top'
+    && topDownSupportDatum !== null
+    && topDownSupportDatum < TOP_DOWN_SUPPORT_CLEARANCE
+  ) {
+    errors.push(
+      `Top-down support configuration cannot be applied: the tallest active stack cannot fit ${state.topDownTrayClearance}mm below the dispersion tray while leaving the required ${TOP_DOWN_SUPPORT_CLEARANCE}mm clearance beneath the shared FRP support level. Crates remain visible for reference, but supports are hidden.`,
+    );
+  }
   
   let validPositions = 0;
   state.stacks.forEach(s => {
     if (s.quantity > state.maxStackHeight) {
       errors.push(`Stack at row ${s.row}, col ${s.col} exceeds max height (${state.maxStackHeight}).`);
-    }
-    if (state.stackFillDirection === 'top' && s.quantity * state.crate.height > state.waterLevel) {
-      errors.push(`Stack at row ${s.row}, col ${s.col} is taller than the available top-down water-level datum.`);
     }
     if (s.col >= cols || s.row >= rows) {
       errors.push(`Stack at row ${s.row}, col ${s.col} is outside valid area.`);

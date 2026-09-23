@@ -1,8 +1,8 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls, Grid, GizmoHelper, GizmoViewport } from '@react-three/drei';
 import * as THREE from 'three';
-import { calculateWaterMatchedOutletLength, type PipeConnection, useStore, useValidation } from '@/store/useStore';
+import { calculateTopDownCrateDatum, calculateTopDownSupportDatum, calculateWaterMatchedOutletLength, TOP_DOWN_SUPPORT_CLEARANCE, type PipeConnection, useStore, useValidation } from '@/store/useStore';
 
 const VisualModeContext = createContext<'finished' | 'technical'>('finished');
 
@@ -36,6 +36,78 @@ function TankShell() {
           <lineBasicMaterial color="#64748b" opacity={0.4} transparent />
         )}
       </lineSegments>
+    </group>
+  );
+}
+
+function ScaleFigure() {
+  const mode = useContext(VisualModeContext);
+  const envelope = useStore(s => s.envelope);
+  const wallThickness = useStore(s => s.wallThickness);
+  const internalL = (envelope.length - 2 * wallThickness) / 1000;
+  const internalW = (envelope.width - 2 * wallThickness) / 1000;
+  const clothingColor = mode === 'finished' ? '#f97316' : '#2563eb';
+  const darkColor = mode === 'finished' ? '#1e293b' : '#334155';
+  const skinColor = '#d6a477';
+
+  return (
+    <group position={[internalL * 0.14, 0, internalW + 0.72]} rotation={[0, 0.18, 0]}>
+      <mesh position={[0, 1.6, 0]} scale={[0.92, 1.08, 0.9]} castShadow>
+        <sphereGeometry args={[0.125, 24, 18]} />
+        <meshStandardMaterial color={skinColor} roughness={0.8} />
+      </mesh>
+      <mesh position={[0, 1.72, 0]} scale={[1.08, 0.46, 1]} castShadow>
+        <sphereGeometry args={[0.145, 24, 12]} />
+        <meshStandardMaterial color="#facc15" roughness={0.58} />
+      </mesh>
+      <mesh position={[0, 1.695, 0.09]} castShadow>
+        <boxGeometry args={[0.32, 0.025, 0.075]} />
+        <meshStandardMaterial color="#eab308" roughness={0.58} />
+      </mesh>
+      <mesh position={[0, 1.43, 0]} castShadow>
+        <cylinderGeometry args={[0.07, 0.075, 0.12, 16]} />
+        <meshStandardMaterial color={skinColor} roughness={0.8} />
+      </mesh>
+      <mesh position={[0, 1.18, 0]} scale={[1.08, 1, 0.72]} castShadow>
+        <capsuleGeometry args={[0.19, 0.38, 10, 18]} />
+        <meshStandardMaterial color={clothingColor} roughness={0.72} />
+      </mesh>
+      <mesh position={[0, 1.19, 0.145]} castShadow>
+        <boxGeometry args={[0.34, 0.045, 0.025]} />
+        <meshStandardMaterial color="#fef08a" roughness={0.65} />
+      </mesh>
+      <mesh position={[-0.11, 0.53, 0]} rotation={[0, 0, -0.03]} castShadow>
+        <capsuleGeometry args={[0.073, 0.69, 8, 14]} />
+        <meshStandardMaterial color={darkColor} roughness={0.82} />
+      </mesh>
+      <mesh position={[0.11, 0.53, 0]} rotation={[0, 0, 0.03]} castShadow>
+        <capsuleGeometry args={[0.073, 0.69, 8, 14]} />
+        <meshStandardMaterial color={darkColor} roughness={0.82} />
+      </mesh>
+      <mesh position={[-0.255, 1.17, 0]} rotation={[0, 0, -0.16]} castShadow>
+        <capsuleGeometry args={[0.055, 0.48, 8, 14]} />
+        <meshStandardMaterial color={clothingColor} roughness={0.72} />
+      </mesh>
+      <mesh position={[0.255, 1.17, 0]} rotation={[0, 0, 0.16]} castShadow>
+        <capsuleGeometry args={[0.055, 0.48, 8, 14]} />
+        <meshStandardMaterial color={clothingColor} roughness={0.72} />
+      </mesh>
+      <mesh position={[-0.31, 0.88, 0]} castShadow>
+        <sphereGeometry args={[0.062, 14, 10]} />
+        <meshStandardMaterial color={skinColor} roughness={0.8} />
+      </mesh>
+      <mesh position={[0.31, 0.88, 0]} castShadow>
+        <sphereGeometry args={[0.062, 14, 10]} />
+        <meshStandardMaterial color={skinColor} roughness={0.8} />
+      </mesh>
+      <mesh position={[-0.13, 0.12, 0.06]} castShadow>
+        <boxGeometry args={[0.18, 0.1, 0.34]} />
+        <meshStandardMaterial color="#111827" roughness={0.9} />
+      </mesh>
+      <mesh position={[0.13, 0.12, 0.06]} castShadow>
+        <boxGeometry args={[0.18, 0.1, 0.34]} />
+        <meshStandardMaterial color="#111827" roughness={0.9} />
+      </mesh>
     </group>
   );
 }
@@ -105,6 +177,169 @@ function WaterVolume() {
   );
 }
 
+function FrpAnglePair({
+  x,
+  elevation,
+  z,
+  span,
+}: {
+  x: number;
+  elevation: number;
+  z: number;
+  span: number;
+}) {
+  const leg = 0.07;
+  const thickness = 0.008;
+  const color = '#475569';
+
+  return (
+    <group position={[x, elevation, z]}>
+      <mesh position={[-leg / 2, -thickness / 2, 0]}>
+        <boxGeometry args={[leg, thickness, span]} />
+        <meshStandardMaterial color={color} roughness={0.42} metalness={0.08} />
+      </mesh>
+      <mesh position={[-thickness / 2, leg / 2, 0]}>
+        <boxGeometry args={[thickness, leg, span]} />
+        <meshStandardMaterial color={color} roughness={0.42} metalness={0.08} />
+      </mesh>
+      <mesh position={[leg / 2, -thickness / 2, 0]}>
+        <boxGeometry args={[leg, thickness, span]} />
+        <meshStandardMaterial color={color} roughness={0.42} metalness={0.08} />
+      </mesh>
+      <mesh position={[thickness / 2, leg / 2, 0]}>
+        <boxGeometry args={[thickness, leg, span]} />
+        <meshStandardMaterial color={color} roughness={0.42} metalness={0.08} />
+      </mesh>
+    </group>
+  );
+}
+
+type BarPosition = [number, number, number];
+
+function InstancedBars({
+  size,
+  positions,
+  color,
+  emissive,
+  emissiveIntensity,
+}: {
+  size: [number, number, number];
+  positions: BarPosition[];
+  color: string;
+  emissive: string;
+  emissiveIntensity: number;
+}) {
+  const meshRef = useRef<THREE.InstancedMesh>(null);
+
+  useLayoutEffect(() => {
+    if (!meshRef.current) return;
+    const matrix = new THREE.Matrix4();
+    positions.forEach((position, index) => {
+      matrix.makeTranslation(position[0], position[1], position[2]);
+      meshRef.current?.setMatrixAt(index, matrix);
+    });
+    meshRef.current.instanceMatrix.needsUpdate = true;
+    meshRef.current.computeBoundingSphere();
+  }, [positions]);
+
+  return (
+    <instancedMesh ref={meshRef} args={[undefined, undefined, positions.length]} castShadow receiveShadow>
+      <boxGeometry args={size} />
+      <meshStandardMaterial
+        color={color}
+        emissive={emissive}
+        emissiveIntensity={emissiveIntensity}
+        roughness={0.62}
+        metalness={0.08}
+      />
+    </instancedMesh>
+  );
+}
+
+function BioCrate({
+  width,
+  height,
+  depth,
+  isSelected,
+}: {
+  width: number;
+  height: number;
+  depth: number;
+  isSelected: boolean;
+}) {
+  const color = isSelected ? '#3b82f6' : '#0757a6';
+  const emissive = isSelected ? '#1d4ed8' : '#000000';
+  const emissiveIntensity = isSelected ? 0.32 : 0;
+  const frame = Math.min(width, height, depth) * 0.075;
+  const slat = frame * 0.42;
+  const halfW = width / 2 - frame / 2;
+  const halfH = height / 2 - frame / 2;
+  const halfD = depth / 2 - frame / 2;
+  const wallSlatHeight = Math.max(frame, height - frame * 2.5);
+  const xSlatCount = Math.max(5, Math.round(width / 0.075));
+  const zSlatCount = Math.max(6, Math.round(depth / 0.09));
+  const xStep = (width - frame * 3) / (xSlatCount + 1);
+  const zStep = (depth - frame * 3) / (zSlatCount + 1);
+  const xSlats = Array.from({ length: xSlatCount }, (_, index) =>
+    -width / 2 + frame * 1.5 + xStep * (index + 1));
+  const zSlats = Array.from({ length: zSlatCount }, (_, index) =>
+    -depth / 2 + frame * 1.5 + zStep * (index + 1));
+  const ribHeights = [-height * 0.22, 0, height * 0.22];
+
+  const cornerPosts: BarPosition[] = [
+    [-halfW, 0, -halfD],
+    [-halfW, 0, halfD],
+    [halfW, 0, -halfD],
+    [halfW, 0, halfD],
+  ];
+  const xRails: BarPosition[] = [
+    [0, -halfH, -halfD],
+    [0, -halfH, halfD],
+    [0, halfH, -halfD],
+    [0, halfH, halfD],
+  ];
+  const zRails: BarPosition[] = [
+    [-halfW, -halfH, 0],
+    [halfW, -halfH, 0],
+    [-halfW, halfH, 0],
+    [halfW, halfH, 0],
+  ];
+  const frontBackSlats: BarPosition[] = xSlats.flatMap(x => [
+    [x, 0, -halfD],
+    [x, 0, halfD],
+  ]);
+  const sideSlats: BarPosition[] = zSlats.flatMap(z => [
+    [-halfW, 0, z],
+    [halfW, 0, z],
+  ]);
+  const xRibs: BarPosition[] = ribHeights.flatMap(y => [
+    [0, y, -halfD],
+    [0, y, halfD],
+  ]);
+  const zRibs: BarPosition[] = ribHeights.flatMap(y => [
+    [-halfW, y, 0],
+    [halfW, y, 0],
+  ]);
+  const floorSlats: BarPosition[] = xSlats
+    .filter((_, index) => index % 2 === 0)
+    .map(x => [x, -height / 2 + frame, 0]);
+
+  const materialProps = { color, emissive, emissiveIntensity };
+
+  return (
+    <group>
+      <InstancedBars size={[frame, height, frame]} positions={cornerPosts} {...materialProps} />
+      <InstancedBars size={[width, frame, frame]} positions={xRails} {...materialProps} />
+      <InstancedBars size={[frame, frame, depth]} positions={zRails} {...materialProps} />
+      <InstancedBars size={[slat, wallSlatHeight, slat]} positions={frontBackSlats} {...materialProps} />
+      <InstancedBars size={[slat, wallSlatHeight, slat]} positions={sideSlats} {...materialProps} />
+      <InstancedBars size={[width - frame * 2, slat, slat]} positions={xRibs} {...materialProps} />
+      <InstancedBars size={[slat, slat, depth - frame * 2]} positions={zRibs} {...materialProps} />
+      <InstancedBars size={[slat, frame * 0.55, depth - frame * 2]} positions={floorSlats} {...materialProps} />
+    </group>
+  );
+}
+
 function Stacks() {
   const mode = useContext(VisualModeContext);
   const isFinished = mode === 'finished';
@@ -112,8 +347,9 @@ function Stacks() {
   const crate = useStore(s => s.crate);
   const envelope = useStore(s => s.envelope);
   const wallThickness = useStore(s => s.wallThickness);
-  const waterLevel = useStore(s => s.waterLevel);
   const stackFillDirection = useStore(s => s.stackFillDirection);
+  const topDownTrayClearance = useStore(s => s.topDownTrayClearance);
+  const trays = useStore(s => s.trays);
   const selectedId = useStore(s => s.selectedId);
   const setSelectedId = useStore(s => s.setSelectedId);
   
@@ -121,21 +357,77 @@ function Stacks() {
   const w = crate.length / 1000;
   const h = crate.height / 1000;
   const internalW = (envelope.width - 2 * wallThickness) / 1000;
+  const sideBeamInset = 0.08;
+  const topDownSupportDatum = calculateTopDownSupportDatum(
+    envelope,
+    wallThickness,
+    trays,
+    topDownTrayClearance,
+    stacks,
+    crate.height,
+  );
+  const topDownConfigurationUsable = stackFillDirection !== 'top'
+    || (
+      topDownSupportDatum !== null
+      && topDownSupportDatum >= TOP_DOWN_SUPPORT_CLEARANCE
+    );
+  const supportFrames = Array.from(
+    new Map(
+      (topDownConfigurationUsable ? stacks : [])
+        .map(stack => ({
+          stack,
+          elevation: stackFillDirection === 'top'
+            ? Math.max(0, (topDownSupportDatum ?? 0) / 1000)
+            : 0,
+        }))
+        .filter(({ stack, elevation }) => stack.quantity > 0 && elevation > 0.01)
+        .map(({ stack, elevation }) => [
+          `${stack.col}-${Math.round(elevation * 1000)}`,
+          {
+            elevation,
+            leftX: stack.x / 1000,
+            rightX: stack.x / 1000 + l,
+          },
+        ]),
+    ).values(),
+  );
   
   return (
     <group>
+      {supportFrames.map((frame, frameIndex) => {
+        const frameLength = frame.rightX - frame.leftX;
+        const frameCenterX = frame.leftX + frameLength / 2;
+        return (
+          <group key={`crate-support-${frameIndex}`}>
+            <mesh position={[frameCenterX, frame.elevation - 0.11, sideBeamInset]}>
+              <boxGeometry args={[frameLength, 0.14, 0.10]} />
+              <meshStandardMaterial color="#334155" roughness={0.5} metalness={0.08} />
+            </mesh>
+            <mesh position={[frameCenterX, frame.elevation - 0.11, internalW - sideBeamInset]}>
+              <boxGeometry args={[frameLength, 0.14, 0.10]} />
+              <meshStandardMaterial color="#334155" roughness={0.5} metalness={0.08} />
+            </mesh>
+            <FrpAnglePair
+              x={frame.leftX}
+              elevation={frame.elevation}
+              z={internalW / 2}
+              span={internalW - sideBeamInset * 2}
+            />
+            <FrpAnglePair
+              x={frame.rightX}
+              elevation={frame.elevation}
+              z={internalW / 2}
+              span={internalW - sideBeamInset * 2}
+            />
+          </group>
+        );
+      })}
       {stacks.map(stack => {
         const isSelected = selectedId === stack.id;
         const color = isSelected ? "#3b82f6" : "#0284c7";
-        const emissive = isSelected ? "#2563eb" : "#000000";
         const supportHeight = stackFillDirection === 'top'
-          ? Math.max(0, waterLevel / 1000 - stack.quantity * h)
+          ? Math.max(0, (topDownSupportDatum ?? 0) / 1000)
           : 0;
-        const beamSize = Math.min(0.08, l * 0.1, w * 0.07);
-        const beamX = l * 0.42;
-        const railZ = w * 0.4;
-        const stackCenterZ = stack.y / 1000 + w / 2;
-        const wallSpanOffset = internalW / 2 - stackCenterZ;
         
         return (
           <group 
@@ -154,52 +446,15 @@ function Stacks() {
               )}
             </mesh>
 
-            {supportHeight > 0.01 && (
-              <group>
-                <mesh position={[-beamX, supportHeight - beamSize / 2, wallSpanOffset]}>
-                  <boxGeometry args={[beamSize, beamSize, internalW]} />
-                  <meshStandardMaterial color={isSelected ? '#f59e0b' : '#64748b'} roughness={0.45} metalness={0.7} />
-                </mesh>
-                <mesh position={[beamX, supportHeight - beamSize / 2, wallSpanOffset]}>
-                  <boxGeometry args={[beamSize, beamSize, internalW]} />
-                  <meshStandardMaterial color={isSelected ? '#f59e0b' : '#64748b'} roughness={0.45} metalness={0.7} />
-                </mesh>
-                <mesh position={[0, supportHeight - beamSize * 1.5, -railZ]}>
-                  <boxGeometry args={[l * 0.92, beamSize, beamSize]} />
-                  <meshStandardMaterial color={isSelected ? '#f59e0b' : '#64748b'} roughness={0.45} metalness={0.7} />
-                </mesh>
-                <mesh position={[0, supportHeight - beamSize * 1.5, railZ]}>
-                  <boxGeometry args={[l * 0.92, beamSize, beamSize]} />
-                  <meshStandardMaterial color={isSelected ? '#f59e0b' : '#64748b'} roughness={0.45} metalness={0.7} />
-                </mesh>
-              </group>
-            )}
-            
             {Array.from({ length: stack.quantity }).map((_, i) => (
-              <mesh key={i} position={[0, supportHeight + i * h + h / 2, 0]}>
-                <boxGeometry args={[l * 0.95, h * 0.95, w * 0.95]} />
-                {isFinished ? (
-                  <meshStandardMaterial 
-                    color={isSelected ? "#3b82f6" : "#0f172a"} 
-                    emissive={isSelected ? "#1d4ed8" : "#000000"} 
-                    emissiveIntensity={isSelected ? 0.2 : 0} 
-                    roughness={0.7} 
-                    metalness={0.1} 
-                  />
-                ) : (
-                  <meshStandardMaterial color={color} emissive={emissive} emissiveIntensity={isSelected ? 0.4 : 0} roughness={0.7} metalness={0.2} />
-                )}
-                {(!isFinished || isSelected) && (
-                  <lineSegments>
-                    <edgesGeometry args={[new THREE.BoxGeometry(l * 0.95, h * 0.95, w * 0.95)]} />
-                    {isFinished ? (
-                      <lineBasicMaterial color="#60a5fa" opacity={0.9} transparent />
-                    ) : (
-                      <lineBasicMaterial color="#ffffff" opacity={isSelected ? 0.8 : 0.3} transparent />
-                    )}
-                  </lineSegments>
-                )}
-              </mesh>
+              <group key={i} position={[0, supportHeight + i * h + h / 2, 0]}>
+                <BioCrate
+                  width={l * 0.95}
+                  height={h * 0.95}
+                  depth={w * 0.95}
+                  isSelected={isSelected}
+                />
+              </group>
             ))}
           </group>
         );
@@ -216,11 +471,29 @@ function Trays() {
   const wallThickness = useStore(s => s.wallThickness);
   const selectedId = useStore(s => s.selectedId);
   const setSelectedId = useStore(s => s.setSelectedId);
+  const internalL = (envelope.length - 2 * wallThickness) / 1000;
   const internalW = (envelope.width - 2 * wallThickness) / 1000;
   const internalH = (envelope.height - wallThickness) / 1000;
+  const supportBeamHeight = 0.05;
+  const supportBeamProjection = 0.10;
+  const supportLevels = Array.from(new Set(
+    trays.map(tray => Math.round((internalH - tray.height / 1000) * 1000) / 1000),
+  ));
   
   return (
     <group>
+      {supportLevels.map(elevation => (
+        <group key={`tray-wall-support-${elevation}`}>
+          <mesh position={[internalL / 2, elevation - supportBeamHeight / 2, supportBeamProjection / 2]}>
+            <boxGeometry args={[internalL, supportBeamHeight, supportBeamProjection]} />
+            <meshStandardMaterial color="#475569" roughness={0.48} metalness={0.1} />
+          </mesh>
+          <mesh position={[internalL / 2, elevation - supportBeamHeight / 2, internalW - supportBeamProjection / 2]}>
+            <boxGeometry args={[internalL, supportBeamHeight, supportBeamProjection]} />
+            <meshStandardMaterial color="#475569" roughness={0.48} metalness={0.1} />
+          </mesh>
+        </group>
+      ))}
       {trays.map((tray, i) => {
         const isSelected = selectedId === tray.id;
         const l = tray.length / 1000;
@@ -552,6 +825,8 @@ function TechnicalPlanFallback({ visualMode }: { visualMode: 'finished' | 'techn
   const trays = useStore(s => s.trays);
   const pipeConnections = useStore(s => s.pipeConnections);
   const crate = useStore(s => s.crate);
+  const stackFillDirection = useStore(s => s.stackFillDirection);
+  const topDownTrayClearance = useStore(s => s.topDownTrayClearance);
   const selectedId = useStore(s => s.selectedId);
   const setSelectedId = useStore(s => s.setSelectedId);
   const validation = useValidation();
@@ -562,6 +837,19 @@ function TechnicalPlanFallback({ visualMode }: { visualMode: 'finished' | 'techn
   const sx = (value: number) => (value / internalL) * 820;
   const sy = (value: number) => (value / internalW) * 380;
   const isFinished = visualMode === 'finished';
+  const topDownSupportDatum = calculateTopDownSupportDatum(
+    envelope,
+    wallThickness,
+    trays,
+    topDownTrayClearance,
+    stacks,
+    crate.height,
+  );
+  const topDownConfigurationUsable = stackFillDirection !== 'top'
+    || (
+      topDownSupportDatum !== null
+      && topDownSupportDatum >= TOP_DOWN_SUPPORT_CLEARANCE
+    );
 
   return (
     <div id="coordination-canvas" className={`flex h-full min-h-[480px] w-full flex-col ${isFinished ? 'bg-slate-300' : 'bg-[#f3f6f8]'}`}>
@@ -599,6 +887,32 @@ function TechnicalPlanFallback({ visualMode }: { visualMode: 'finished' | 'techn
           </text>
           <rect x="56" y="91" width="848" height="408" rx={isFinished ? 10 : 3} fill={isFinished ? '#334155' : '#dbeafe'} fillOpacity={isFinished ? 1 : .24} stroke={isFinished ? '#0f172a' : '#16395f'} strokeWidth={isFinished ? 8 : 4} />
           <rect x="70" y="105" width="820" height="380" rx={isFinished ? 5 : 0} fill={isFinished ? '#64748b' : '#e0f2fe'} fillOpacity={isFinished ? 1 : .35} stroke={isFinished ? '#94a3b8' : '#5c7790'} strokeWidth="1.5" />
+          <g transform="translate(923 370)" aria-label="1.75 metre human scale figure">
+            <ellipse cx="0" cy="39" rx="19" ry="4" fill="#0f172a" opacity=".18" />
+            <path d="M-8-51 C-8-59 8-59 8-51 L10-48 L-10-48 Z" fill="#facc15" stroke="#713f12" strokeWidth="1.5" />
+            <path d="M-12-49 Q0-53 12-49" fill="none" stroke="#713f12" strokeWidth="2.5" strokeLinecap="round" />
+            <ellipse cx="0" cy="-41" rx="8.5" ry="10.5" fill="#d6a477" stroke="#0f172a" strokeWidth="1.5" />
+            <path d="M-6-43 Q0-39 6-43" fill="none" stroke="#8b5e3c" strokeWidth="1" opacity=".7" />
+            <path d="M-13-29 Q0-35 13-29 L11 1 Q0 7-11 1 Z" fill="#f97316" stroke="#0f172a" strokeWidth="2" />
+            <path d="M-8-27 L-2 1 M8-27 L2 1" stroke="#fef08a" strokeWidth="2.5" />
+            <path d="M-9-24 Q-16-17-17-5 Q-18 2-14 9" fill="none" stroke="#f97316" strokeWidth="7" strokeLinecap="round" />
+            <path d="M9-24 Q16-17 17-5 Q18 2 14 9" fill="none" stroke="#f97316" strokeWidth="7" strokeLinecap="round" />
+            <circle cx="-14" cy="10" r="3.5" fill="#d6a477" stroke="#0f172a" strokeWidth="1" />
+            <circle cx="14" cy="10" r="3.5" fill="#d6a477" stroke="#0f172a" strokeWidth="1" />
+            <path d="M-9 1 L-10 31 L-3 35 L0 8 L3 35 L10 31 L9 1 Z" fill="#334155" stroke="#0f172a" strokeWidth="2" />
+            <path d="M-10 30 L-14 36 L-3 36 L-3 33 M10 30 L14 36 L3 36 L3 33" fill="#111827" stroke="#0f172a" strokeWidth="1.5" strokeLinejoin="round" />
+            <text
+              x="0"
+              y="58"
+              textAnchor="middle"
+              fill="#0f172a"
+              fontSize="10"
+              fontWeight="700"
+              transform="rotate(-90 0 58)"
+            >
+              PERSON 1.75 m
+            </text>
+          </g>
           <rect x="70" y="105" width={sx(accessMin)} height="380" fill={isFinished ? '#475569' : '#fbbf24'} fillOpacity={isFinished ? 1 : .25} stroke={isFinished ? '#64748b' : '#d97706'} strokeDasharray={isFinished ? undefined : '8 5'} />
           {!isFinished && (
             <text x={70 + sx(accessMin) / 2} y="306" textAnchor="middle" fill="#92400e" fontSize="12" fontWeight="700" transform={`rotate(-90 ${70 + sx(accessMin) / 2} 306)`}>{accessMin} ACCESS</text>
@@ -687,6 +1001,17 @@ function TechnicalPlanFallback({ visualMode }: { visualMode: 'finished' | 'techn
               </text>
             </g>
           ))}
+          {!topDownConfigurationUsable && (
+            <g>
+              <rect x="275" y="260" width="410" height="76" rx="6" fill="#fef2f2" stroke="#dc2626" strokeWidth="2" />
+              <text x="480" y="289" textAnchor="middle" fill="#991b1b" fontSize="14" fontWeight="700">
+                TOP-DOWN SUPPORT CANNOT BE APPLIED
+              </text>
+              <text x="480" y="314" textAnchor="middle" fill="#b91c1c" fontSize="11">
+                Crates shown for reference; tray-clearance supports are hidden.
+              </text>
+            </g>
+          )}
           {!isFinished && (
             <>
               <line x1="70" y1="522" x2="890" y2="522" stroke="#16395f" strokeWidth="1.5" />
@@ -738,6 +1063,7 @@ export function Scene({ viewMode = 'iso', visualMode = 'finished' }: { viewMode?
         
         <group position={[0, -1, -1]}>
           <TankShell />
+          <ScaleFigure />
           <AccessZone />
           <WaterVolume />
           <Stacks />

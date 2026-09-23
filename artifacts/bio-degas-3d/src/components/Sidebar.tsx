@@ -1,5 +1,5 @@
 import { calculateWaterMatchedOutletLength, PIPE_FACES, type PipeFace, useStore, useValidation, ProjectState } from '@/store/useStore';
-import { Settings, Save, FolderOpen, RefreshCcw, AlertTriangle, AlertCircle, CheckCircle2, Download, Camera, Plus, Trash2, Eye, CircleDot } from 'lucide-react';
+import { Settings, Save, FolderOpen, RefreshCcw, AlertTriangle, AlertCircle, CheckCircle2, Download, Camera, Plus, Trash2, Eye, CircleDot, ChevronDown, ChevronUp } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -64,19 +64,44 @@ export function Sidebar() {
                   className="mt-1 w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                 >
                   <option value="bottom">Bottom-up · floor supported</option>
-                  <option value="top">Top-down · align to water level</option>
+                  <option value="top">Top-down · below dispersion tray</option>
                 </select>
               </label>
+              {store.stackFillDirection === 'top' && (
+                <NumberInput
+                  label="Clearance Below Tray"
+                  value={store.topDownTrayClearance}
+                  min={0}
+                  onChange={(value) => handleParamChange('topDownTrayClearance', Math.max(0, value))}
+                />
+              )}
               <p className="text-[10px] leading-relaxed text-muted-foreground">
-                Top-down stacks use support bracing below the lowest crate where clear water space remains.
+                Top-down stacks align below the lowest dispersion tray underside, with 100 mm clearance by default.
               </p>
             </Section>
 
             <Section title="Dispersion Trays">
+              <label className="flex items-center justify-between gap-3 rounded-md border border-border bg-muted/30 px-3 py-2">
+                <span>
+                  <span className="block text-xs font-semibold text-foreground">Automatic quantity by tank length</span>
+                  <span className="block text-[10px] text-muted-foreground">
+                    Uses available length, 3405 mm trays, and the configured gap.
+                  </span>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={store.trayCountAuto}
+                  onChange={(event) => store.updateParams({ trayCountAuto: event.target.checked })}
+                  data-testid="checkbox-auto-tray-count"
+                  className="rounded border-border text-primary focus:ring-primary"
+                />
+              </label>
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-foreground">Tray items</p>
-                  <p className="text-xs text-muted-foreground">{store.trays.length} configured · max 4</p>
+                  <p className="text-xs text-muted-foreground">
+                    {store.trays.length} configured · max 4 · {store.trayCountAuto ? 'automatic' : 'manual'}
+                  </p>
                 </div>
                 <button
                   type="button"
@@ -493,6 +518,7 @@ function CompactPipeInput({
 
 function StatusPanel({ validation }: { validation: ReturnType<typeof useValidation> }) {
   const { isValid, errors, warnings } = validation;
+  const [expanded, setExpanded] = useState(false);
   
   if (isValid && warnings.length === 0) {
     return (
@@ -507,28 +533,55 @@ function StatusPanel({ validation }: { validation: ReturnType<typeof useValidati
   }
 
   return (
-    <div className="space-y-3">
-      {!isValid && (
-        <div className="flex items-start gap-3 text-destructive">
-          <AlertCircle className="mt-0.5 shrink-0" size={18} />
-          <div>
-            <p className="text-sm font-bold">Errors ({errors.length})</p>
-            <ul className="text-xs mt-1 space-y-1 opacity-90 list-disc pl-3">
-              {errors.map((e, i) => <li key={i}>{e}</li>)}
-            </ul>
-          </div>
-        </div>
-      )}
-      
-      {warnings.length > 0 && (
-        <div className="flex items-start gap-3 text-amber-600 dark:text-amber-500">
-          <AlertTriangle className="mt-0.5 shrink-0" size={18} />
-          <div>
-            <p className="text-sm font-bold">Warnings ({warnings.length})</p>
-            <ul className="text-xs mt-1 space-y-1 opacity-90 list-disc pl-3">
-              {warnings.map((w, i) => <li key={i}>{w}</li>)}
-            </ul>
-          </div>
+    <div>
+      <button
+        type="button"
+        onClick={() => setExpanded(current => !current)}
+        aria-expanded={expanded}
+        data-testid="button-toggle-validation"
+        className="flex w-full items-center gap-2 rounded-md text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+      >
+        {!isValid ? (
+          <AlertCircle className="shrink-0 text-destructive" size={18} />
+        ) : (
+          <AlertTriangle className="shrink-0 text-amber-600 dark:text-amber-500" size={18} />
+        )}
+        <span className="min-w-0 flex-1 text-sm font-bold text-foreground">
+          {errors.length > 0 && `${errors.length} error${errors.length === 1 ? '' : 's'}`}
+          {errors.length > 0 && warnings.length > 0 && ' · '}
+          {warnings.length > 0 && `${warnings.length} warning${warnings.length === 1 ? '' : 's'}`}
+        </span>
+        <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          {expanded ? 'Hide' : 'Show'}
+        </span>
+        {expanded ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+      </button>
+
+      {expanded && (
+        <div className="mt-3 max-h-[40vh] space-y-3 overflow-y-auto border-t border-border pt-3 pr-1">
+          {!isValid && (
+            <div className="flex items-start gap-3 text-destructive">
+              <AlertCircle className="mt-0.5 shrink-0" size={16} />
+              <div>
+                <p className="text-xs font-bold">Errors ({errors.length})</p>
+                <ul className="mt-1 space-y-1 pl-3 text-xs opacity-90 list-disc">
+                  {errors.map((error, index) => <li key={index}>{error}</li>)}
+                </ul>
+              </div>
+            </div>
+          )}
+
+          {warnings.length > 0 && (
+            <div className="flex items-start gap-3 text-amber-600 dark:text-amber-500">
+              <AlertTriangle className="mt-0.5 shrink-0" size={16} />
+              <div>
+                <p className="text-xs font-bold">Warnings ({warnings.length})</p>
+                <ul className="mt-1 space-y-1 pl-3 text-xs opacity-90 list-disc">
+                  {warnings.map((warning, index) => <li key={index}>{warning}</li>)}
+                </ul>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -556,8 +609,8 @@ function SaveManager() {
     const newSave = { id, name: saveName, date: new Date().toISOString() };
     
     // Extract store data to save
-    const { envelope, wallThickness, accessMin, crate, nominalStackHeight, maxStackHeight, stackFillDirection, rows, trayCount, trayGap, waterLevel, requiredCrates, stacks, trays, pipeConnections } = store;
-    const data = { envelope, wallThickness, accessMin, crate, nominalStackHeight, maxStackHeight, stackFillDirection, rows, trayCount, trayGap, waterLevel, requiredCrates, stacks, trays, pipeConnections };
+    const { envelope, wallThickness, accessMin, crate, nominalStackHeight, maxStackHeight, stackFillDirection, topDownTrayClearance, rows, trayCount, trayCountAuto, trayGap, waterLevel, requiredCrates, stacks, trays, pipeConnections } = store;
+    const data = { envelope, wallThickness, accessMin, crate, nominalStackHeight, maxStackHeight, stackFillDirection, topDownTrayClearance, rows, trayCount, trayCountAuto, trayGap, waterLevel, requiredCrates, stacks, trays, pipeConnections };
     
     localStorage.setItem(`biodegas_save_${id}`, JSON.stringify(data));
     localStorage.setItem('biodegas_saves', JSON.stringify([...list, newSave]));
@@ -581,8 +634,8 @@ function SaveManager() {
   };
 
   const exportJSON = () => {
-    const { envelope, wallThickness, accessMin, crate, nominalStackHeight, maxStackHeight, stackFillDirection, rows, trayCount, trayGap, waterLevel, requiredCrates, stacks, trays, pipeConnections } = store;
-    const data = { envelope, wallThickness, accessMin, crate, nominalStackHeight, maxStackHeight, stackFillDirection, rows, trayCount, trayGap, waterLevel, requiredCrates, stacks, trays, pipeConnections };
+    const { envelope, wallThickness, accessMin, crate, nominalStackHeight, maxStackHeight, stackFillDirection, topDownTrayClearance, rows, trayCount, trayCountAuto, trayGap, waterLevel, requiredCrates, stacks, trays, pipeConnections } = store;
+    const data = { envelope, wallThickness, accessMin, crate, nominalStackHeight, maxStackHeight, stackFillDirection, topDownTrayClearance, rows, trayCount, trayCountAuto, trayGap, waterLevel, requiredCrates, stacks, trays, pipeConnections };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
