@@ -9,6 +9,7 @@ import { exportCsv } from '../../lib/exportCsv';
 import QueryError from '../../components/ui/QueryError';
 import EmptyState from '../../components/ui/EmptyState';
 import SkeletonTable from '../../components/ui/SkeletonTable';
+import { supportError } from '../../lib/supportError';
 
 interface AuditLog {
   id: string;
@@ -306,6 +307,7 @@ export default function AdminAuditLog() {
   }, [entityId, actor, from, to]);
 
   const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
 
   const params = new URLSearchParams({ page: String(page), page_size: '50' });
   if (entityType) params.set('entity_type', entityType);
@@ -340,6 +342,7 @@ export default function AdminAuditLog() {
   const hasFilters = entityType || action || entityIdInput || actorInput || fromInput || toInput;
 
   const handleExport = async () => {
+    setExportError('');
     setExporting(true);
     try {
       // Fetch up to EXPORT_MAX_ROWS rows matching the current filters in one request.
@@ -373,7 +376,7 @@ export default function AdminAuditLog() {
         { header: 'Summary',     value: (r: AuditLog) => r.summary ?? r.details?.summary ?? JSON.stringify(r.details) ?? '' },
       ], rows);
     } catch (e) {
-      console.error('[export]', e);
+      setExportError(supportError(e, 'Could not export the audit log. Check your connection and retry.'));
     } finally {
       setExporting(false);
     }
@@ -411,6 +414,7 @@ export default function AdminAuditLog() {
           </div>
         }
       />
+      {exportError && <div role="alert" className="px-4 py-2 bg-red-50 text-red-700 text-sm">{exportError} <button type="button" className="underline" onClick={handleExport}>Retry export</button></div>}
 
       {/* Filter bar */}
       <div className="px-4 py-3 border-b border-stone-100 bg-stone-50/60 flex items-center gap-3 flex-wrap">

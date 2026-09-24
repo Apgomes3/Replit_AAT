@@ -1,7 +1,6 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import morgan from 'morgan';
 import path from 'path';
 import dotenv from 'dotenv';
 import { createProxyMiddleware } from 'http-proxy-middleware';
@@ -32,6 +31,9 @@ import clientRoutes from './routes/clients';
 import enquiryRoutes from './routes/enquiries';
 import uvEngineeringRoutes, { uvEngineeringConsumerRoutes } from './routes/uvEngineering';
 import { errorHandler, notFound } from './middleware/errors';
+import { observe, summary } from './lib/telemetry';
+import { authenticate, requireRole } from './middleware/auth';
+import { readiness } from './middleware/readiness';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -41,7 +43,7 @@ app.use(helmet({
   contentSecurityPolicy: false,
 }));
 app.use(cors({ origin: true, credentials: true }));
-app.use(morgan('dev'));
+app.use(observe);
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use((req, _res, next) => { if (req.body === undefined) req.body = {}; next(); });
@@ -73,16 +75,25 @@ app.use('/api/v1', ozoneCalculationRoutes);
 app.use('/api/v1/clients', clientRoutes);
 app.use('/api/v1/enquiries', enquiryRoutes);
 
-app.get('/api/health', (_, res) => res.json({ status: 'ok', timestamp: new Date() }));
+app.get('/api/live', (_, res) => res.json({ status: 'alive' }));
+app.get('/api/health', readiness());
+app.get('/api/ready', readiness());
+app.get('/api/v1/admin/operations', authenticate, requireRole('admin'), (req, res) => {
+  const minutes = Number(req.query.minutes ?? 15);
+  if (![5, 15, 60].includes(minutes)) return res.status(400).json({ error: { code: 'VALIDATION', message: 'Choose 5, 15 or 60 minutes' } });
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ windowMinutes: minutes, endpoints: summary(minutes) });
+});
+
+// Unknown API paths must not be proxied to the frontend.
+app.use('/api', notFound);
+app.use(errorHandler);
 
 app.use('/', createProxyMiddleware({
   target: 'http://localhost:5000',
   changeOrigin: true,
   ws: true,
 }));
-
-app.use(notFound);
-app.use(errorHandler);
 
 app.listen(PORT, () => {
   console.log(`EDP API running on port ${PORT}`);

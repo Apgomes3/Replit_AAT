@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import ShortcutMapModal from '../components/ui/ShortcutMapModal';
 import { moduleForPath, ROUTES } from '../lib/navigation';
+import { supportError } from '../lib/supportError';
 
 const ALL_QUICK_LINKS = [
   { label: 'Graph Explorer',  href: ROUTES.graph,               icon: 'Network'      },
@@ -88,23 +89,23 @@ export default function HomeHub() {
     setPinnedHrefs(prev => prev.filter(h => h !== href));
   };
 
-  const { data: stats } = useQuery({
+  const { data: stats, isError: statsError, error: statsFailure, refetch: retryStats } = useQuery({
     queryKey: ['stats'],
     queryFn: () => api.get('/admin/stats').then(r => r.data),
   });
 
-  const { data: posData } = useQuery({
+  const { data: posData, isError: posError, error: posFailure, refetch: retryPos } = useQuery({
     queryKey: ['po-summary'],
     queryFn: () => api.get('/purchase-orders?page_size=1').then(r => r.data),
     enabled: canSeeModule('orders'),
   });
-  const { data: workData } = useQuery({
+  const { data: workData, isError: workError, error: workFailure, refetch: retryWork } = useQuery({
     queryKey: ['work-summary', 'orders'],
     queryFn: () => api.get('/search/my-work?module=orders&page_size=1').then(r => r.data),
     enabled: canSeeModule('orders'),
   });
 
-  const { data: booksData } = useQuery({
+  const { data: booksData, isError: booksError, error: booksFailure, refetch: retryBooks } = useQuery({
     queryKey: ['design-books-summary'],
     queryFn: () => api.get('/design-books').then(r => r.data),
     enabled: canSeeModule('design_books'),
@@ -217,6 +218,18 @@ export default function HomeHub() {
   return (
     <div className="min-h-full" style={{ background: 'linear-gradient(160deg, #fafaf9 0%, #f5f3f0 100%)' }}>
       <div className="max-w-6xl mx-auto px-8 py-12">
+        {(statsError || posError || workError || booksError) && (
+          <div role="alert" className="mb-6 rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-900">
+            Some dashboard figures are unavailable or may be out of date.{' '}
+            {supportError(statsFailure || posFailure || workFailure || booksFailure, 'Please retry before relying on these figures.')}
+            <button type="button" className="ml-2 font-semibold underline" onClick={() => {
+              if (statsError) void retryStats();
+              if (posError) void retryPos();
+              if (workError) void retryWork();
+              if (booksError) void retryBooks();
+            }}>Retry figures</button>
+          </div>
+        )}
 
         <div className="mb-10 animate-fade-in-up">
           <h1

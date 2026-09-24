@@ -117,4 +117,16 @@ describe('TopBar notifications', () => {
       });
     });
   });
+  it('shows a safe reference and retries a failed notification refresh', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.get)
+      .mockRejectedValueOnce({ response: { headers: { 'x-correlation-id': '12345678-1234-1234-1234-123456789abc' } } })
+      .mockRejectedValueOnce({ response: { headers: { 'x-correlation-id': '12345678-1234-1234-1234-123456789abc' } } });
+    renderTopBar();
+    await user.click(screen.getByRole('button', { name: 'Notifications' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('12345678-1234-1234-1234-123456789abc');
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+    expect(await screen.findByText('Purchase order needs review')).toBeInTheDocument();
+  });
 });

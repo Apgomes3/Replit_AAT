@@ -6,6 +6,8 @@ import { SearchResult } from '../../types';
 import EntityCode from '../../components/ui/EntityCode';
 import StatusBadge from '../../components/ui/StatusBadge';
 import { currentReturnContext } from '../../lib/navigation';
+import QueryError from '../../components/ui/QueryError';
+import { supportError } from '../../lib/supportError';
 
 const labels: Record<string, string> = {
   project: 'Project', system: 'System', equipment: 'Equipment', product: 'Product',
@@ -35,7 +37,7 @@ export default function SearchPage({ work = false }: { work?: boolean }) {
     setParams(next);
   };
   const endpoint = work ? '/search/my-work' : '/search';
-  const { data, isLoading, isError } = useQuery<{ results: RecordRow[]; total: number; page_size: number; query: string }>({
+  const { data, isLoading, isError, error, refetch } = useQuery<{ results: RecordRow[]; total: number; page_size: number; query: string }>({
     queryKey: [endpoint, params.toString()],
     queryFn: () => api.get(`${endpoint}?${params}`).then(r => r.data),
     enabled: work || q.trim().length >= 2,
@@ -81,7 +83,7 @@ export default function SearchPage({ work = false }: { work?: boolean }) {
       </div>
       {!work && q.trim().length < 2 ? <p className="text-sm text-slate-500">Enter at least 2 characters to search.</p> :
         isLoading ? <p className="text-sm text-slate-500">Loading…</p> :
-        isError ? <p role="alert" className="text-sm text-red-600">Could not load records. Please try again.</p> :
+        isError ? <QueryError message="Could not load records" detail={supportError(error, 'Search results may be out of date.')} onRetry={() => void refetch()} /> :
         <>
           <p className="text-sm text-slate-500 mb-3">{data?.total ?? 0} {work ? 'items needing attention' : 'results'}</p>
           {data?.total === 0 && <p className="border rounded-lg p-8 text-center text-slate-500">{work ? 'No work matches these filters.' : 'No records match this search.'}</p>}

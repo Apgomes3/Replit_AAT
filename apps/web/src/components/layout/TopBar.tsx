@@ -6,6 +6,7 @@ import api from '../../lib/api';
 import toast from 'react-hot-toast';
 import { useModalFocus } from '../../hooks/useModalFocus';
 import { entityHref } from '../../lib/navigation';
+import { supportError } from '../../lib/supportError';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 interface Notification {
@@ -178,10 +179,10 @@ function NotificationBell() {
       setError(null);
       setStale(false);
       consecutiveFailures.current = 0;
-    } catch {
+    } catch (err) {
       if (currentRequest !== requestId.current) return;
       consecutiveFailures.current += 1;
-      setError('Could not refresh notifications. Check your connection and try again.');
+      setError(supportError(err, 'Could not refresh notifications. Check your connection and try again.'));
       setStale(hasNotifications.current);
     } finally {
       if (currentRequest === requestId.current) setLoading(false);
@@ -258,8 +259,8 @@ function NotificationBell() {
           unread_count: Math.max(0, prev.unread_count - 1),
         }));
         if (filter !== 'all') void fetchNotifications();
-      } catch {
-        setError('Could not mark this notification as read.');
+      } catch (err) {
+        setError(supportError(err, 'Could not mark this notification as read.'));
         return;
       }
     }
@@ -287,8 +288,8 @@ function NotificationBell() {
         ).length),
       }));
       void fetchNotifications();
-    } catch {
-      setError('Could not mark notifications as read.');
+    } catch (err) {
+      setError(supportError(err, 'Could not mark notifications as read.'));
     }
   };
 
@@ -306,8 +307,8 @@ function NotificationBell() {
         };
       });
       void fetchNotifications();
-    } catch {
-      setError('Could not dismiss this notification.');
+    } catch (err) {
+      setError(supportError(err, 'Could not dismiss this notification.'));
     }
   };
 
@@ -330,8 +331,8 @@ function NotificationBell() {
       }));
       setError(null);
       setStale(false);
-    } catch {
-      setError('Could not load more notifications. Try again.');
+    } catch (err) {
+      setError(supportError(err, 'Could not load more notifications. Try again.'));
     } finally {
       setLoadingMore(false);
     }
