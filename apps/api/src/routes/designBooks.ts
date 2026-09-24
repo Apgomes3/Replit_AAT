@@ -19,6 +19,7 @@ import {
 } from '../lib/designBookWorkflow';
 import {
   AQUARIUM_CALCULATION_VERSION,
+  calculateExhibitVolumeBasis,
   calculateExhibitHydraulics,
   calculateSystemEngineering,
   ALLOCATION_TOLERANCE_PCT,
@@ -3347,13 +3348,24 @@ router.put('/design-books/:id/exhibits/:exhibitId/substrate', authenticate, requ
     return res.status(400).json({ error: { code: 'VALIDATION', message: 'Theming percentage cannot exceed 100%.' } });
   }
   const tankVolumeResult = await query(
-    `SELECT SUM(COALESCE(t.operating_volume_m3, pm.operating_volume_m3, 0) * COALESCE(t.quantity, 1)) AS volume_m3
+    `SELECT t.*,
+            t.operating_volume_m3 AS project_operating_volume_m3,
+            pm.operating_volume_m3 AS pim_operating_volume_m3,
+            COALESCE(t.shape_type, pm.shape_type) AS eff_shape,
+            COALESCE(t.length_mm, pm.length_mm) AS eff_length_mm,
+            COALESCE(t.width_mm, pm.width_mm) AS eff_width_mm,
+            COALESCE(t.height_mm, pm.height_mm) AS eff_height_mm,
+            COALESCE(t.design_water_level_mm, pm.design_water_level_mm) AS eff_water_level_mm,
+            COALESCE(t.surface_area_m2, pm.surface_area_m2) AS surface_area_m2,
+            COALESCE(t.operating_volume_m3, pm.operating_volume_m3) AS design_volume_m3
      FROM tanks t
      LEFT JOIN product_masters pm ON pm.id=t.product_master_id
+     JOIN exhibits e ON e.id=t.exhibit_id
+     JOIN design_books db ON db.project_id=e.project_id AND db.id=$2
      WHERE t.exhibit_id=$1`,
-    [req.params.exhibitId],
+    [req.params.exhibitId, req.params.id],
   );
-  const grossOperatingVolume = Number(tankVolumeResult.rows[0]?.volume_m3);
+  const grossOperatingVolume = calculateExhibitVolumeBasis(tankVolumeResult.rows).gross_operating_volume_m3;
   if (theming_volume_pct != null && !(grossOperatingVolume > 0)) {
     return res.status(400).json({
       error: { code: 'VALIDATION', message: 'A known tank operating volume is required to use percentage-based theming displacement.' },
@@ -3385,8 +3397,9 @@ router.put('/design-books/:id/exhibits/:exhibitId/substrate', authenticate, requ
        updated_at          = NOW()
      RETURNING *`,
     [req.params.id, req.params.exhibitId,
-     substrate_type || null, substrate_height_mm ?? null, substrate_volume_m3 ?? null,
-     theming_type || null, theming_height_mm ?? null, resolvedThemingVolume,
+      substrate_type || null, substrate_height_mm ?? null, substrate_volume_m3 ?? null,
+      theming_type || null, theming_volume_pct != null ? null : (theming_height_mm ?? null),
+      theming_volume_pct != null ? null : resolvedThemingVolume,
      theming_volume_pct ?? null, notes || null]
   );
   res.json(result.rows[0]);

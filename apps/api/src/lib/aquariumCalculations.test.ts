@@ -639,6 +639,17 @@ describe('aquarium engineering calculations', () => {
     expect(calculation.results.total_return_flow_m3h).toBe(550);
     expect(calculation.aat_reference.inputs.effective_operating_volume_m3).toBe(275);
 
+    const savedPercentage = { substrate_volume_m3: 10, theming_volume_pct: 10, theming_volume_m3: 29 };
+    const withPercentage = calculateExhibitHydraulics(exhibit, [custom], hydraulics, savedPercentage);
+    expect(withPercentage.inputs.theming_source).toBe('operating volume × percentage');
+    expect(withPercentage.results.operating_volume_m3).toBe(251);
+    const changedLevel = calculateExhibitHydraulics(
+      exhibit, [{ ...custom, eff_water_level_mm: 2500, quantity: 3 }], hydraulics, savedPercentage,
+    );
+    expect(changedLevel.inputs.gross_operating_volume_m3).toBe(375);
+    expect(changedLevel.inputs.theming_volume_m3).toBe(37.5);
+    expect(changedLevel.results.operating_volume_m3).toBe(327.5);
+
     const updated = calculateExhibitHydraulics(
       exhibit, [{ ...custom, eff_water_level_mm: 2500 }], hydraulics, null,
     );

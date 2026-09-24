@@ -544,15 +544,6 @@ function computeTankOpVol(tank: any): number | null {
   return parseFloat(tank.design_volume_m3) || null;
 }
 
-// Returns raw op vol minus substrate + theming displacement.
-function computeEffectiveOpVol(tank: any, substrateData: any | null): number | null {
-  const raw = computeTankOpVol(tank);
-  if (raw == null) return null;
-  const sub  = parseFloat(substrateData?.substrate_volume_m3 || '0') || 0;
-  const them = parseFloat(substrateData?.theming_volume_m3   || '0') || 0;
-  return Math.max(0, raw - sub - them);
-}
-
 function DimTile({ label, val, inner }: { label: string; val: string; inner?: boolean }) {
   return (
     <div className={`rounded-lg px-3 py-2.5 border ${inner ? 'bg-teal-50 border-teal-100' : 'bg-stone-50 border-stone-100'}`}>
@@ -687,7 +678,7 @@ function TankDesignSheetDetails({ tank, projectId, overflowLevel, onOverflowChan
   );
 }
 
-function TankCard({ tank, projectId, substrateData, onRefresh, readOnly = false }: { tank: any; projectId: string; substrateData?: any | null; onRefresh: () => void; readOnly?: boolean }) {
+function TankCard({ tank, projectId, substrateData, exhibitTankCount, onRefresh, readOnly = false }: { tank: any; projectId: string; substrateData?: any | null; exhibitTankCount: number; onRefresh: () => void; readOnly?: boolean }) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<any>({});
@@ -757,8 +748,12 @@ function TankCard({ tank, projectId, substrateData, onRefresh, readOnly = false 
     : null;
   const savedDisplacementM3 =
     (parseFloat(substrateData?.substrate_volume_m3 || '0') || 0)
-    + (parseFloat(substrateData?.theming_volume_m3 || '0') || 0);
-  const customNetVolumeM3 = customOperatingVolumeM3 != null
+    + (substrateData?.theming_volume_pct != null && substrateData?.theming_height_mm == null
+      ? (customOperatingVolumeM3 ?? 0) * Number(substrateData.theming_volume_pct) / 100
+      : (parseFloat(substrateData?.theming_volume_m3 || '0') || 0));
+  // Displacement is exhibit-wide; a tank-level net only makes sense for one unit.
+  const showTankNet = exhibitTankCount === 1 && Number(tank.quantity || 1) === 1;
+  const customNetVolumeM3 = showTankNet && customOperatingVolumeM3 != null
     ? Math.max(0, customOperatingVolumeM3 - savedDisplacementM3)
     : null;
   const outerLengthForArea = Number(form.length_mm || tank.eff_length_mm || tank.product_length_mm);
@@ -1260,7 +1255,7 @@ function TankCard({ tank, projectId, substrateData, onRefresh, readOnly = false 
                 </p>
               </div>
             </div>
-            <div className="rounded-lg border border-teal-200 bg-teal-50 px-3 py-2">
+            {showTankNet && <div className="rounded-lg border border-teal-200 bg-teal-50 px-3 py-2">
               <div className="text-xs text-teal-600">Net Volume</div>
               <div className="font-mono text-sm font-semibold text-teal-800">
                 {customNetVolumeM3 != null ? `${customNetVolumeM3.toFixed(3)} m³` : '—'}
@@ -1268,7 +1263,7 @@ function TankCard({ tank, projectId, substrateData, onRefresh, readOnly = false 
               <p className="mt-0.5 text-xs text-teal-600">
                 Operating volume minus {savedDisplacementM3.toFixed(3)} m³ substrate and decoration.
               </p>
-            </div>
+            </div>}
           </div>
         ) : (
           <div className="flex items-center gap-4 bg-blue-50 rounded-lg px-4 py-3 border border-blue-100">
@@ -2001,10 +1996,11 @@ const SUBSTRATE_TYPES = [
   'Gravel', 'Crushed Coral', 'Concrete', 'Bare Bottom', 'Other',
 ];
 
-function SubstrateSection({ bookId, exhibitId, tank, substrateData, onRefresh }: {
+function SubstrateSection({ bookId, exhibitId, tank, calculation, substrateData, onRefresh }: {
   bookId: string;
   exhibitId: string;
   tank: any;
+  calculation: any | null;
   substrateData: any | null;
   onRefresh: () => void;
 }) {
@@ -2053,7 +2049,13 @@ function SubstrateSection({ bookId, exhibitId, tank, substrateData, onRefresh }:
   const subComputed  = calcVol(form.substrate_height_mm);
   const themComputed = calcVol(form.theming_height_mm);
 
-  const opVol = computeTankOpVol(tank) ?? 0;
+  // Use the same exhibit-wide, quantity-aware gross basis that the API uses
+  // for percentage saves and hydraulic results, not the first tank alone.
+  const opVol = Number(calculation?.inputs?.gross_operating_volume_m3) || 0;
+  const volumeBasisLabel = calculation?.inputs?.tanks?.some((item: any) =>
+    item.formula === 'Saved custom footprint area × operating water level ÷ 1,000')
+    ? 'Gross operating volume from saved custom footprint and water level'
+    : 'Gross operating volume of assigned tanks';
 
   // Effective volumes for the displaced preview
   const subEffVol  = editing
@@ -2066,7 +2068,9 @@ function SubstrateSection({ bookId, exhibitId, tank, substrateData, onRefresh }:
     ? (themVolumeMode === 'pct'    ? themPctVol
      : themVolumeMode === 'direct' ? (parseFloat(form.theming_volume_m3) || 0)
      : ((themComputed ?? parseFloat(form.theming_volume_m3)) || 0))
-    : (parseFloat(substrateData?.theming_volume_m3    || '') || 0);
+    : (substrateData?.theming_volume_pct != null && substrateData?.theming_height_mm == null
+      ? Number(calculation?.inputs?.theming_volume_m3) || 0
+      : (parseFloat(substrateData?.theming_volume_m3 || '') || 0));
 
   const displaced    = subEffVol + themEffVol;
   const effectiveVol = opVol > 0 ? Math.max(0, opVol - displaced) : null;
@@ -2101,7 +2105,7 @@ function SubstrateSection({ bookId, exhibitId, tank, substrateData, onRefresh }:
         : (subComputed  ?? (form.substrate_volume_m3  ? parseFloat(form.substrate_volume_m3)  : null));
       const finalThemPct = themVolumeMode === 'pct' ? (form.theming_volume_pct ? parseFloat(form.theming_volume_pct) : null) : null;
       const finalThemVol = themVolumeMode === 'pct'
-        ? (opVol > 0 && form.theming_volume_pct ? Math.round(opVol * parseFloat(form.theming_volume_pct) / 100 * 1e6) / 1e6 : null)
+        ? null // Percentage is the saved authority; the server derives current m³.
         : themVolumeMode === 'direct'
           ? (form.theming_volume_m3 ? parseFloat(form.theming_volume_m3) : null)
           : (themComputed ?? (form.theming_volume_m3 ? parseFloat(form.theming_volume_m3) : null));
@@ -2280,6 +2284,10 @@ function SubstrateSection({ bookId, exhibitId, tank, substrateData, onRefresh }:
 
                   {themVolumeMode === 'pct' && (
                     <div className="space-y-1.5">
+                      {opVol > 0 && <p className="text-xs text-stone-500">
+                        {volumeBasisLabel}: <span className="font-mono">{opVol.toFixed(4)} m³</span>
+                        {' '}before substrate and theming displacement.
+                      </p>}
                       <div className="relative">
                         <input type="number" step="0.1" min="0" max="100" placeholder="e.g. 15"
                           value={form.theming_volume_pct} onChange={e => setF('theming_volume_pct', e.target.value)}
@@ -2297,7 +2305,7 @@ function SubstrateSection({ bookId, exhibitId, tank, substrateData, onRefresh }:
                           </span>
                         </div>
                       ) : opVol === 0 ? (
-                        <p className="text-xs text-stone-400">Assign a tank with known dimensions first</p>
+                        <p className="text-xs text-stone-500">A stored operating volume or a valid tank footprint and water level is needed for percentages. You can still use Direct m³.</p>
                       ) : null}
                     </div>
                   )}
@@ -2314,7 +2322,7 @@ function SubstrateSection({ bookId, exhibitId, tank, substrateData, onRefresh }:
             {/* Volume impact preview */}
             {opVol > 0 && (subEffVol > 0 || themEffVol > 0) && (
               <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-sm">
-                <span className="text-stone-500">Operating</span>
+                <span className="text-stone-500" title={volumeBasisLabel}>Gross operating</span>
                 <span className="font-mono font-semibold text-stone-700">{opVol.toFixed(3)} m³</span>
                 <span className="text-stone-400">−</span>
                 <span className="text-stone-500">Displaced</span>
@@ -2361,10 +2369,8 @@ function SubstrateSection({ bookId, exhibitId, tank, substrateData, onRefresh }:
                 )}
                 {substrateData?.theming_volume_pct != null && parseFloat(substrateData.theming_volume_pct) > 0 ? (
                   <p className="text-sm text-stone-500 mt-0.5 font-mono">
-                    {parseFloat(substrateData.theming_volume_pct)}% of op. vol
-                    {substrateData.theming_volume_m3 && parseFloat(substrateData.theming_volume_m3) > 0
-                      ? ` = ${parseFloat(substrateData.theming_volume_m3).toFixed(4)} m³`
-                      : ''}{' '}displaced
+                    {parseFloat(substrateData.theming_volume_pct)}% of gross operating volume
+                    {opVol > 0 ? ` = ${themEffVol.toFixed(4)} m³` : ''}{' '}displaced
                   </p>
                 ) : substrateData?.theming_volume_m3 != null && parseFloat(substrateData.theming_volume_m3) > 0 ? (
                   <p className="text-sm text-stone-500 mt-0.5 font-mono">{parseFloat(substrateData.theming_volume_m3).toFixed(4)} m³ displaced</p>
@@ -2375,7 +2381,7 @@ function SubstrateSection({ bookId, exhibitId, tank, substrateData, onRefresh }:
             {/* Effective volume */}
             {opVol > 0 && displaced > 0 && (
               <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-sm">
-                <span className="text-stone-500">Operating</span>
+                <span className="text-stone-500" title={volumeBasisLabel}>Gross operating</span>
                 <span className="font-mono font-semibold text-stone-700">{opVol.toFixed(3)} m³</span>
                 <span className="text-stone-400">−</span>
                 <span className="text-stone-500">Displaced</span>
@@ -2981,9 +2987,9 @@ function WaterFlowTab({ bookId, exhibitId, tank, species, hydraulics, substrateD
     notes:               hydraulics?.notes || '',
   };
 
-  const opVol = !editing && calculation?.results?.operating_volume_m3 != null
+  const opVol = calculation?.results?.operating_volume_m3 != null
     ? calculation.results.operating_volume_m3
-    : editing ? computeEffectiveOpVol(tank, substrateData) ?? 0 : 0;
+    : 0;
   const turnover = parseFloat(src.target_turnover_rate) || 0;
   const skimPct  = parseFloat(src.surface_skim_pct) || 0;
   const drainPct = parseFloat(src.bottom_drain_pct) || 0;
@@ -3943,6 +3949,7 @@ export default function ExhibitDetail() {
               tank={exhibitTank}
               projectId={book.project_id}
               substrateData={substrateData}
+              exhibitTankCount={exhibitTanks.length}
               onRefresh={refresh}
               readOnly={readOnly}
             />
@@ -3951,6 +3958,7 @@ export default function ExhibitDetail() {
             bookId={book.id}
             exhibitId={exhibitId!}
             tank={tank}
+            calculation={engineeringCalculation}
             substrateData={substrateData}
             onRefresh={refresh}
           />

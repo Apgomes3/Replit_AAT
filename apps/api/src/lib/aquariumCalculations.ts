@@ -441,12 +441,40 @@ export function calculateTankOperatingVolume(tank: any): {
   };
 }
 
+export function calculateExhibitVolumeBasis(tanks: any[]) {
+  const tankDetails = (tanks || []).map(tank => {
+    const volume = calculateTankOperatingVolume(tank);
+    const quantity = Math.max(1, Number.parseInt(String(tank.quantity ?? 1), 10) || 1);
+    return { tank_id: tank.id, tank_code: tank.tank_code, quantity, ...volume,
+      total_value_m3: volume.value_m3 == null ? null : roundEngineering(volume.value_m3 * quantity, VOLUME_DECIMALS) };
+  });
+  return {
+    tanks: tankDetails,
+    gross_operating_volume_m3: roundEngineering(tankDetails.reduce(
+      (sum, tank) => sum + (tank.total_value_m3 || 0), 0), VOLUME_DECIMALS) || 0,
+    footprint_area_m2: tankDetails.reduce(
+      (sum, tank) => sum + (tank.footprint_area_m2 || 0) * tank.quantity, 0),
+  };
+}
+
 function displacementVolume(
   record: any,
   prefix: 'substrate' | 'theming',
   footprintAreaM2: number,
   operatingVolumeM3: number,
 ): { value_m3: number; source: string; input: number | null } {
+  // Percentage rows store the percentage as their authority. The derived m³
+  // changes with the current tank geometry, unlike a direct m³ override.
+  if (prefix === 'theming' && record?.theming_volume_pct != null &&
+      record?.theming_height_mm == null) {
+    const pct = positiveOrNull(record.theming_volume_pct);
+    if (pct != null && operatingVolumeM3 > 0) {
+      return { value_m3: operatingVolumeM3 * pct / 100, source: 'operating volume × percentage', input: pct };
+    }
+    if (Number(record.theming_volume_pct) === 0) {
+      return { value_m3: 0, source: 'operating volume × percentage', input: 0 };
+    }
+  }
   const direct = positiveOrNull(record?.[`${prefix}_volume_m3`]);
   if (direct != null) return { value_m3: direct, source: 'direct volume override', input: direct };
 
@@ -471,15 +499,10 @@ export function calculateExhibitHydraulics(
   substrate: any,
   calculatedAt = new Date().toISOString(),
 ) {
-  const tankDetails = (tanks || []).map(tank => {
-    const volume = calculateTankOperatingVolume(tank);
-    const quantity = Math.max(1, Number.parseInt(String(tank.quantity ?? 1), 10) || 1);
-    return { tank_id: tank.id, tank_code: tank.tank_code, quantity, ...volume,
-      total_value_m3: volume.value_m3 == null ? null : roundEngineering(volume.value_m3 * quantity, VOLUME_DECIMALS) };
-  });
-  const rawOperating = tankDetails.reduce((sum, tank) => sum + (tank.total_value_m3 || 0), 0);
-  const footprintArea = tankDetails.reduce(
-    (sum, tank) => sum + (tank.footprint_area_m2 || 0) * tank.quantity, 0);
+  const basis = calculateExhibitVolumeBasis(tanks);
+  const tankDetails = basis.tanks;
+  const rawOperating = basis.gross_operating_volume_m3;
+  const footprintArea = basis.footprint_area_m2;
   const substrateResult = displacementVolume(substrate, 'substrate', footprintArea, rawOperating);
   const themingResult = displacementVolume(substrate, 'theming', footprintArea, rawOperating);
   const displaced = substrateResult.value_m3 + themingResult.value_m3;
@@ -514,7 +537,7 @@ export function calculateExhibitHydraulics(
   if (substrateDirectVolume == null) {
     addInvalidInputReason('Substrate height', substrate?.substrate_height_mm);
   }
-  if (themingDirectVolume == null) {
+  if (themingDirectVolume == null && themingResult.source !== 'operating volume × percentage') {
     addInvalidInputReason('Theming height', substrate?.theming_height_mm);
   }
   if (substrateDirectVolume == null && substrateHeight != null && footprintArea <= 0) {
@@ -523,10 +546,10 @@ export function calculateExhibitHydraulics(
   if (themingDirectVolume == null && themingHeight != null && footprintArea <= 0) {
     reasons.push('Theming height requires tank footprint dimensions; enter a direct theming volume for custom tanks.');
   }
-  const themingPercentageIsActive = themingResult.source === 'operating volume × percentage';
+  const themingPercentageIsActive = substrate?.theming_volume_pct != null &&
+    substrate?.theming_height_mm == null;
   if (themingPercentageIsActive ||
-      (themingDirectVolume == null && themingHeight == null &&
-       substrate?.theming_volume_pct != null)) {
+      (themingDirectVolume == null && themingHeight == null && substrate?.theming_volume_pct != null)) {
     addInvalidInputReason('Theming percentage', substrate?.theming_volume_pct);
     if (numberOrNull(substrate?.theming_volume_pct) != null &&
         Number(substrate.theming_volume_pct) > 100) {
@@ -534,6 +557,9 @@ export function calculateExhibitHydraulics(
     }
   }
   if (rawOperating <= 0) reasons.push('Operating volume is missing or invalid.');
+  if (themingPercentageIsActive && rawOperating <= 0) {
+    reasons.push('A known tank operating volume is required to use percentage-based theming displacement.');
+  }
   if (rawOperating > 0 && displaced >= rawOperating) {
     reasons.push('Substrate and theming displacement must be less than gross operating volume.');
   }
