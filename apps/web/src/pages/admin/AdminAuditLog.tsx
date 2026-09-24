@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState, useEffect, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import api from '../../lib/api';
 import PageHeader from '../../components/ui/PageHeader';
 import { ChevronDown, ChevronRight, ClipboardList, RefreshCw, Download, ChevronUp } from 'lucide-react';
@@ -278,12 +278,13 @@ function AuditRow({ log }: { log: AuditLog }) {
 }
 
 export default function AdminAuditLog() {
+  const [urlFilters] = useSearchParams();
   const [page, setPage] = useState(1);
-  const [entityType, setEntityType] = useState('');
+  const [entityType, setEntityType] = useState(() => urlFilters.get('entity_type') ?? '');
   const [action, setAction] = useState('');
 
   // Raw (immediate) values for controlled inputs
-  const [entityIdInput, setEntityIdInput] = useState('');
+  const [entityIdInput, setEntityIdInput] = useState(() => urlFilters.get('entity_id') ?? '');
   const [actorInput, setActorInput] = useState('');
   const [fromInput, setFromInput] = useState('');
   const [toInput, setToInput] = useState('');

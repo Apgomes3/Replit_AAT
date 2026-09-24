@@ -59,7 +59,9 @@ export function entityHref(entity: SearchEntity): string {
     case 'system': return `/systems/${entity.id}`;
     case 'equipment': return entity.system_id ? `/systems/${entity.system_id}` : ROUTES.projects;
     case 'product': return `${ROUTES.products}/${entity.id}`;
-    case 'material': return ROUTES.materials;
+    case 'material': return `${ROUTES.materials}/${entity.id}`;
+    case 'notification': return ROUTES.orders;
+    case 'audit_event': return '/admin/audit-log';
     case 'document': return `${ROUTES.documents}/${entity.id}`;
     case 'purchase_order': return `${ROUTES.purchaseOrders}/${entity.id}`;
     case 'design_book': return `${ROUTES.designBooks}/${entity.id}`;

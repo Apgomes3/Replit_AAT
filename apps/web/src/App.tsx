@@ -59,6 +59,8 @@ import LSSCompactUnitsCatalog from './pages/design-books/LSSCompactUnitsCatalog'
 import SpeciesCatalog from './pages/design-books/SpeciesCatalog';
 import CommercialOverview from './pages/business-development/CommercialOverview';
 import ClientsList from './pages/business-development/ClientsList';
+import ClientDetail from './pages/business-development/ClientDetail';
+import MaterialDetail from './pages/knowledge/MaterialDetail';
 import EnquiriesList from './pages/business-development/EnquiriesList';
 import EnquiryDetail from './pages/business-development/EnquiryDetail';
 import { LEGACY_ROUTE_REDIRECTS } from './lib/navigation';
@@ -132,12 +134,14 @@ export default function App() {
             <Route path="products/tanks" element={<ModuleGuard moduleKey="pim"><TanksList /></ModuleGuard>} />
             <Route path="products/drawings" element={<ModuleGuard moduleKey="pim"><DrawingsLibrary /></ModuleGuard>} />
             <Route path="knowledge/materials" element={<ModuleGuard moduleKey="knowledge"><MaterialsList /></ModuleGuard>} />
+             <Route path="knowledge/materials/:id" element={<ModuleGuard moduleKey="knowledge"><MaterialDetail /></ModuleGuard>} />
             <Route path="knowledge/specifications" element={<ModuleGuard moduleKey="knowledge"><SpecificationsList /></ModuleGuard>} />
             <Route path="knowledge/design-rules" element={<ModuleGuard moduleKey="knowledge"><DesignRulesList /></ModuleGuard>} />
             <Route path="documents" element={<ModuleGuard moduleKey="documents"><DocumentsList /></ModuleGuard>} />
             <Route path="documents/:id" element={<ModuleGuard moduleKey="documents"><DocumentDetail /></ModuleGuard>} />
             <Route path="graph" element={<ModuleGuard moduleKey="graph"><GraphExplorer /></ModuleGuard>} />
             <Route path="search" element={<SearchPage />} />
+             <Route path="my-work" element={<SearchPage work />} />
             <Route path="admin/users" element={<AdminUsers />} />
              <Route path="admin" element={<Navigate to="/admin/users" replace />} />
             <Route path="admin/import" element={<ImportGuard><AdminImport /></ImportGuard>} />
@@ -168,6 +172,7 @@ export default function App() {
             <Route path="species-catalog" element={<ModuleGuard moduleKey="design_books"><SpeciesCatalog /></ModuleGuard>} />
               <Route path="business-development" element={<ModuleGuard moduleKey="business_development"><CommercialOverview /></ModuleGuard>} />
               <Route path="clients" element={<ModuleGuard moduleKey="business_development"><ClientsList /></ModuleGuard>} />
+               <Route path="clients/:id" element={<ModuleGuard moduleKey="business_development"><ClientDetail /></ModuleGuard>} />
               <Route path="enquiries" element={<ModuleGuard moduleKey="business_development"><EnquiriesList /></ModuleGuard>} />
               <Route path="enquiries/:id" element={<ModuleGuard moduleKey="business_development"><EnquiryDetail /></ModuleGuard>} />
           </Route>

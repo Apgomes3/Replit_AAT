@@ -1,49 +1,165 @@
 import { Router, Response } from 'express';
 import { query } from '../db';
 import { authenticate, AuthRequest } from '../middleware/auth';
-import { MODULE_ACCESS_KEYS, ModuleAccessKey } from '../lib/moduleAccess';
+import { ModuleAccessKey } from '../lib/moduleAccess';
 
 const router = Router();
+type RecordType = 'project' | 'system' | 'equipment' | 'product' | 'material' | 'document' | 'purchase_order' | 'client' | 'enquiry' | 'design_book' | 'notification' | 'audit_event';
+type Adapter = { type: RecordType; module: ModuleAccessKey | 'admin'; sql: string; searchOnly?: boolean };
 
-router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
-  const q = req.query.q as string;
-  if (!q || q.trim().length < 2) return res.json({ results: [], query: q });
+// Each adapter returns the same columns. Keep predicates here (not in the browser):
+// both the page and its count must operate on the same authorized set.
+const adapters: Adapter[] = [
+  { type: 'project', module: 'projects', sql: `SELECT p.id::text id, p.project_code::text code, p.project_name::text name, p.project_status::text status, NULL::text project_code, NULL::text system_id, p.created_by::text owner_id, NULL::date due_date, p.updated_at FROM projects p` },
+  { type: 'system', module: 'projects', sql: `SELECT s.id::text, s.system_code::text, s.system_name::text, s.status::text, p.project_code::text, s.id::text, NULL::text, NULL::date, s.updated_at FROM systems s JOIN projects p ON p.id=s.project_id` },
+  { type: 'equipment', module: 'projects', sql: `SELECT pei.id::text, pei.equip_code::text, COALESCE(pei.description,pm.product_name,pei.equip_code)::text, pei.status::text, p.project_code::text, COALESCE(pei.system_id::text,'project:' || pei.project_id::text), NULL::text, NULL::date, pei.updated_at FROM project_equipment_items pei JOIN projects p ON p.id=pei.project_id LEFT JOIN product_masters pm ON pm.id=pei.product_master_id` },
+  { type: 'product', module: 'pim', sql: `SELECT pm.id::text, pm.product_code::text, pm.product_name::text, pm.standard_status::text, NULL::text, NULL::text, NULL::text, NULL::date, pm.updated_at FROM product_masters pm` },
+  { type: 'material', module: 'knowledge', sql: `SELECT m.id::text, m.material_code::text, m.material_name::text, m.status::text, NULL::text, NULL::text, NULL::text, NULL::date, m.updated_at FROM materials m` },
+  { type: 'document', module: 'documents', sql: `SELECT d.id::text, d.document_code::text, d.document_title::text, d.status::text, NULL::text, NULL::text, d.created_by::text, NULL::date, d.updated_at FROM documents d` },
+  { type: 'purchase_order', module: 'orders', sql: `SELECT po.id::text, po.po_code::text, COALESCE(proj.project_name,po.po_code)::text, po.status::text, proj.project_code::text, NULL::text, po.created_by::text, COALESCE(po.stage_due_date,po.required_by_date)::date, po.updated_at FROM purchase_orders po LEFT JOIN projects proj ON proj.id=po.project_id WHERE ($1::boolean OR po.created_by=$2::uuid OR EXISTS (SELECT 1 FROM po_designated_users pd WHERE pd.po_id=po.id AND pd.user_id=$2::uuid) OR EXISTS (SELECT 1 FROM po_stage_assignees psa WHERE psa.stage=po.status AND psa.user_id=$2::uuid))` },
+  { type: 'client', module: 'business_development', sql: `SELECT c.id::text, c.client_code::text, c.name::text, c.status::text, NULL::text, NULL::text, c.created_by::text, NULL::date, c.updated_at FROM clients c` },
+  { type: 'enquiry', module: 'business_development', sql: `SELECT e.id::text, e.enquiry_number::text, e.title::text, e.status::text, NULL::text, NULL::text, e.created_by::text, e.due_date::date, e.updated_at FROM enquiries e` },
+  { type: 'design_book', module: 'design_books', sql: `SELECT db.id::text, db.book_code::text, db.book_title::text, db.status::text, p.project_code::text, NULL::text, db.created_by::text, NULL::date, db.updated_at FROM design_books db LEFT JOIN projects p ON p.id=db.project_id` },
+  // Only PO notifications whose target is still visible are searchable. A deleted or
+  // subsequently restricted PO must not leak its old notification title.
+  { type: 'notification', module: 'orders', searchOnly: true, sql: `SELECT n.id::text, po.po_code::text, n.title::text, CASE WHEN n.is_read THEN 'read' ELSE 'unread' END::text, NULL::text, po.id::text, n.user_id::text, NULL::date, n.created_at FROM notifications n JOIN purchase_orders po ON n.entity_type='purchase_order' AND n.entity_id=po.id WHERE n.user_id=$2::uuid AND ($1::boolean OR po.created_by=$2::uuid OR EXISTS (SELECT 1 FROM po_designated_users pd WHERE pd.po_id=po.id AND pd.user_id=$2::uuid) OR EXISTS (SELECT 1 FROM po_stage_assignees psa WHERE psa.stage=po.status AND psa.user_id=$2::uuid))` },
+  { type: 'audit_event', module: 'admin', searchOnly: true, sql: `SELECT al.id::text, al.entity_id::text, al.action::text, al.action::text, NULL::text, al.entity_type::text, al.actor_id::text, NULL::date, al.created_at FROM audit_logs al` },
+];
 
-  const term = `%${q.trim()}%`;
-  const accessResult = await query(
-    `SELECT rma.module_key, rma.access_level
-     FROM users u
-     LEFT JOIN roles r ON r.name=u.role
-     LEFT JOIN role_module_access rma ON rma.role_id=r.id
-     WHERE u.id=$1`,
+function pageNumber(value: unknown, fallback: number, max: number) {
+  const n = Number(value);
+  return Number.isSafeInteger(n) && n >= 1 ? Math.min(n, max) : fallback;
+}
+
+async function access(req: AuthRequest) {
+  const result = await query(
+    `SELECT u.can_see_all_pos, rma.module_key, rma.access_level
+     FROM users u LEFT JOIN roles r ON r.name=u.role
+     LEFT JOIN role_module_access rma ON rma.role_id=r.id WHERE u.id=$1`,
     [req.user!.id],
   );
-  const hidden = new Set<ModuleAccessKey>(
-    accessResult.rows
-      .filter(row => row.access_level === 'hidden' && MODULE_ACCESS_KEYS.includes(row.module_key))
-      .map(row => row.module_key),
-  );
-  const empty = { rows: [] as any[] };
+  return {
+    allPOs: result.rows[0]?.can_see_all_pos === true,
+    hidden: new Set(result.rows.filter(r => r.access_level === 'hidden').map(r => r.module_key)),
+    readOnly: new Set(result.rows.filter(r => r.access_level === 'view').map(r => r.module_key)),
+  };
+}
 
-  const [projects, systems, equipment, products, materials, documents] = await Promise.all([
-    hidden.has('projects') ? empty : query(`SELECT 'project' as type, id::text, project_code as code, project_name as name, project_status as status FROM projects WHERE project_name ILIKE $1 OR project_code ILIKE $1 LIMIT 10`, [term]),
-    hidden.has('projects') ? empty : query(`SELECT 'system' as type, s.id::text, s.system_code as code, s.system_name as name, s.status, p.project_code FROM systems s JOIN projects p ON s.project_id=p.id WHERE s.system_name ILIKE $1 OR s.system_code ILIKE $1 LIMIT 10`, [term]),
-    hidden.has('projects') ? empty : query(`SELECT 'equipment' as type, pei.id::text, pei.equip_code as code, COALESCE(pei.description, pm.product_name, pei.equip_code) as name, pei.status, p.project_code, pei.system_id FROM project_equipment_items pei LEFT JOIN product_masters pm ON pei.product_master_id=pm.id JOIN projects p ON pei.project_id=p.id WHERE pei.equip_code ILIKE $1 OR pm.product_name ILIKE $1 LIMIT 10`, [term]),
-    hidden.has('pim') ? empty : query(`SELECT 'product' as type, id::text, product_code as code, product_name as name, standard_status as status FROM product_masters WHERE product_name ILIKE $1 OR product_code ILIKE $1 OR EXISTS (SELECT 1 FROM unnest(synonyms) s WHERE s ILIKE $1) LIMIT 10`, [term]),
-    hidden.has('knowledge') ? empty : query(`SELECT 'material' as type, id::text, material_code as code, material_name as name, status FROM materials WHERE material_name ILIKE $1 OR material_code ILIKE $1 LIMIT 10`, [term]),
-    hidden.has('documents') ? empty : query(`SELECT 'document' as type, d.id::text, d.document_code as code, d.document_title as name, d.status, p.project_code FROM documents d LEFT JOIN systems s ON d.system_id=s.id LEFT JOIN projects p ON s.project_id=p.id WHERE d.document_title ILIKE $1 OR d.document_code ILIKE $1 LIMIT 10`, [term]),
-  ]);
+// Shared search/work contract: type, module, id, code, name, status, project_code,
+// system_id (equipment route), owner_id, due_date, updated_at and canonical href.
+function source(available: Adapter[]) {
+  return available.length ? available.map(a => `SELECT '${a.type}'::text AS type, '${a.module}'::text AS module, r.* FROM (${a.sql}) r(id,code,name,status,project_code,system_id,owner_id,due_date,updated_at)`).join(' UNION ALL ') :
+    `SELECT NULL::text type, NULL::text module, NULL::text id, NULL::text code, NULL::text name, NULL::text status, NULL::text project_code, NULL::text system_id, NULL::text owner_id, NULL::date due_date, NULL::timestamptz updated_at WHERE false`;
+}
 
-  const results = [
-    ...projects.rows,
-    ...systems.rows,
-    ...equipment.rows,
-    ...products.rows,
-    ...materials.rows,
-    ...documents.rows,
-  ];
+function href(row: any): string {
+  const roots: Record<RecordType, string> = {
+    project: '/projects', system: '/systems', equipment: '/systems', product: '/products/masters',
+    material: '/knowledge/materials', document: '/documents', purchase_order: '/purchase-orders',
+    client: '/clients', enquiry: '/enquiries', design_book: '/design-books',
+    notification: '/purchase-orders', audit_event: '/admin/audit-log',
+  };
+  return row.type === 'equipment' ? row.system_id?.startsWith('project:') ? `/projects/${row.system_id.slice(8)}?equipment=${row.id}` : `/systems/${row.system_id}?equipment=${row.id}` :
+    row.type === 'notification' ? `/purchase-orders/${row.system_id}` :
+    row.type === 'audit_event' ? `/admin/audit-log?entity_type=${encodeURIComponent(row.system_id || '')}&entity_id=${encodeURIComponent(row.code || '')}` :
+    `${roots[row.type as RecordType]}/${row.id}`;
+}
 
-  res.json({ results, query: q, total: results.length });
-});
+function filters(req: AuthRequest, allowed: Adapter[], work: boolean) {
+  const q = String(req.query.q ?? '').trim().slice(0, 200);
+  const type = String(req.query.type ?? '');
+  const module = String(req.query.module ?? '');
+  const status = String(req.query.status ?? '');
+  const owner = String(req.query.owner ?? '');
+  const due = String(req.query.due ?? '');
+  const permitted = allowed.filter(a => (!type || a.type === type) && (!module || a.module === module));
+  const conditions: string[] = [];
+  const params: any[] = [];
+  if (q) {
+    params.push(`%${q}%`);
+    conditions.push(`(code ILIKE $${params.length + 2} OR name ILIKE $${params.length + 2})`);
+  }
+  if (status) {
+    params.push(status);
+    conditions.push(`LOWER(status)=LOWER($${params.length + 2})`);
+  }
+  if (owner === 'mine') conditions.push(`owner_id=$2::text`);
+  if (owner === 'assigned') conditions.push(`(type='purchase_order' AND EXISTS (SELECT 1 FROM po_stage_assignees psa WHERE psa.stage=status AND psa.user_id=$2::uuid))`);
+  else if (owner && /^[0-9a-f-]{36}$/i.test(owner)) {
+    params.push(owner);
+    conditions.push(`owner_id=$${params.length + 2}`);
+  }
+  if (due === 'overdue') conditions.push('due_date < CURRENT_DATE');
+  if (due === 'today') conditions.push('due_date = CURRENT_DATE');
+  if (due === 'upcoming') conditions.push('due_date > CURRENT_DATE');
+  if (work) conditions.push(`(
+    (type='purchase_order' AND (
+      (status='draft' AND owner_id=$2::text AND $${params.length + 3}::boolean)
+      OR (status='pending_approval' AND (
+        EXISTS (SELECT 1 FROM po_stage_assignees WHERE stage='pending_approval' AND user_id=$2::uuid)
+        OR (NOT EXISTS (SELECT 1 FROM po_stage_assignees WHERE stage='pending_approval') AND $${params.length + 4}::boolean)
+      ))
+      OR (status='purchase_order' AND (owner_id=$2::text OR $${params.length + 4}::boolean OR EXISTS (SELECT 1 FROM po_stage_assignees WHERE stage='purchase_order' AND user_id=$2::uuid)))
+      OR (status IN ('po_review','engineering_review') AND EXISTS (SELECT 1 FROM po_stage_assignees WHERE stage=status AND user_id=$2::uuid))
+    ))
+    OR (type='design_book' AND (
+      (status IN ('Draft','In Progress') AND owner_id=$2::text AND $${params.length + 3}::boolean)
+      OR (status='For Review' AND $${params.length + 5}::boolean)
+      OR (status='Approved' AND $${params.length + 5}::boolean)
+    ))
+    OR (type='enquiry' AND status IN ('new','in_review') AND owner_id=$2::text AND $${params.length + 6}::boolean)
+    OR (type='document' AND LOWER(status)='draft' AND owner_id=$2::text AND $${params.length + 7}::boolean)
+  )`);
+  return { permitted, conditions, params, q };
+}
+
+async function listing(req: AuthRequest, res: Response, work: boolean) {
+  try {
+    const { hidden, readOnly, allPOs } = await access(req);
+    const allowed = adapters.filter(a => !hidden.has(a.module) && (!work || !a.searchOnly) &&
+      (a.module !== 'admin' || ['admin', 'engineer'].includes(req.user!.role)));
+    const { permitted, conditions, params, q } = filters(req, allowed, work);
+    const page = pageNumber(req.query.page, 1, 1000000);
+    const page_size = pageNumber(req.query.page_size, 25, 100);
+    if (!work && q.length < 2) return res.json({ results: [], query: q, total: 0, page, page_size });
+    const manage = (key: ModuleAccessKey) => !hidden.has(key) && !readOnly.has(key);
+    const baseValues = [allPOs, req.user!.id, ...params];
+    const values = work ? [...baseValues, manage('orders') && ['admin','engineer','hq_manager'].includes(req.user!.role),
+      ['admin','hq_manager'].includes(req.user!.role), ['admin','hq_manager','pmo'].includes(req.user!.role),
+      manage('business_development'), manage('documents')] : baseValues;
+    // Work predicates reference the trailing role flags by position; search never uses them.
+    const offset = 3 + params.length;
+    const sqlSource = source(permitted);
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const cte = `WITH auth_params AS (SELECT $1::boolean AS all_pos, $2::uuid AS user_id), records AS (${sqlSource}), selected AS (SELECT * FROM records ${where})`;
+    const count = await query(`${cte} SELECT COUNT(*)::int AS total FROM selected`, values);
+    const order = work
+      ? `ORDER BY (due_date < CURRENT_DATE) DESC NULLS LAST, due_date ASC NULLS LAST, updated_at DESC NULLS LAST, type, id`
+      : `ORDER BY CASE WHEN LOWER(code)=LOWER($${offset}) THEN 0 WHEN LOWER(name)=LOWER($${offset}) THEN 1 WHEN code ILIKE $${offset + 1} THEN 2 ELSE 3 END, updated_at DESC NULLS LAST, type, id`;
+    const orderValues = work ? values : [...values, q, `${q}%`];
+    const rows = await query(`${cte} SELECT * FROM selected ${order} LIMIT $${orderValues.length + 1} OFFSET $${orderValues.length + 2}`,
+      [...orderValues, page_size, (page - 1) * page_size]);
+    const drafts = work ? rows.rows.filter(r => r.type === 'purchase_order' && r.status === 'draft').map(r => r.id) : [];
+    const latest = drafts.length ? await query(
+      `SELECT DISTINCT ON (po_id) po_id::text, from_status FROM po_lifecycle_history
+       WHERE po_id=ANY($1::uuid[]) ORDER BY po_id, changed_at DESC, id DESC`,
+      [drafts],
+    ) : { rows: [] };
+    const rejected = new Set(latest.rows.filter(r => r.from_status === 'pending_approval').map(r => r.po_id));
+    res.json({ results: rows.rows.map(r => ({
+      ...r, href: href(r),
+      ...(work ? { attention: rejected.has(r.id) ? 'Rejected — revise draft' :
+        r.type === 'purchase_order' && r.status === 'pending_approval' ? 'Approval needed' :
+        r.type === 'design_book' && r.status === 'For Review' ? 'Review needed' :
+        r.type === 'design_book' && r.status === 'Approved' ? 'Ready for release' : 'Needs attention' } : {}),
+    })), query: q, total: count.rows[0].total, page, page_size });
+  } catch (err) {
+    // Express 5 propagates rejected async handlers, but keep this explicit for tests.
+    throw err;
+  }
+}
+
+router.get('/', authenticate, (req: AuthRequest, res: Response) => listing(req, res, false));
+router.get('/my-work', authenticate, (req: AuthRequest, res: Response) => listing(req, res, true));
 
 export default router;

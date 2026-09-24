@@ -6,7 +6,7 @@ import api from '../lib/api';
 import {
   Package, ShoppingCart, FolderOpen, ArrowRight, ChevronRight,
   Network, FileText, Search, Ruler, BookOpen, BookMarked, Plus, X, Settings,
-  Users, LayoutGrid, GitBranch, Layers, Wrench, Keyboard,
+  Users, LayoutGrid, GitBranch, Layers, Wrench, Keyboard, ClipboardCheck,
 } from 'lucide-react';
 import ShortcutMapModal from '../components/ui/ShortcutMapModal';
 import { moduleForPath, ROUTES } from '../lib/navigation';
@@ -15,6 +15,7 @@ const ALL_QUICK_LINKS = [
   { label: 'Graph Explorer',  href: ROUTES.graph,               icon: 'Network'      },
   { label: 'Documents',       href: ROUTES.documents,           icon: 'FileText'     },
   { label: 'Search',          href: ROUTES.search,              icon: 'Search'       },
+  { label: 'My Work',         href: '/my-work',                  icon: 'ClipboardCheck' },
   { label: 'Design Rules',    href: ROUTES.designRules,         icon: 'Ruler'        },
   { label: 'Purchase Orders', href: ROUTES.purchaseOrders,      icon: 'ShoppingCart' },
   { label: 'Products',        href: ROUTES.products,            icon: 'Package'      },
@@ -28,7 +29,7 @@ const ALL_QUICK_LINKS = [
 ];
 
 const ICON_MAP: Record<string, any> = {
-  Network, FileText, Search, Ruler, ShoppingCart, Package,
+  Network, FileText, Search, Ruler, ShoppingCart, Package, ClipboardCheck,
   FolderOpen, Layers, Wrench, Settings, Users, GitBranch, BookMarked,
 };
 
@@ -94,7 +95,12 @@ export default function HomeHub() {
 
   const { data: posData } = useQuery({
     queryKey: ['po-summary'],
-    queryFn: () => api.get('/purchase-orders?page_size=200').then(r => r.data),
+    queryFn: () => api.get('/purchase-orders?page_size=1').then(r => r.data),
+    enabled: canSeeModule('orders'),
+  });
+  const { data: workData } = useQuery({
+    queryKey: ['work-summary', 'orders'],
+    queryFn: () => api.get('/search/my-work?module=orders&page_size=1').then(r => r.data),
     enabled: canSeeModule('orders'),
   });
 
@@ -104,9 +110,8 @@ export default function HomeHub() {
     enabled: canSeeModule('design_books'),
   });
 
-  const poTotal = posData?.total ?? posData?.items?.length ?? 0;
-  const activeStatuses = ['pending_approval', 'purchase_order', 'po_review', 'engineering_review'];
-  const activePOs = posData?.items?.filter((p: any) => activeStatuses.includes(p.status)).length ?? 0;
+  const poTotal = posData?.pagination?.total ?? 0;
+  const activePOs = workData?.total ?? 0;
 
   const firstName = user?.firstName || user?.email?.split('@')[0] || 'there';
 
@@ -152,7 +157,7 @@ export default function HomeHub() {
       },
       stats: [
         { label: 'Total POs',   value: poTotal   },
-        { label: 'In Progress', value: activePOs },
+         { label: 'Need Action', value: activePOs },
       ],
     },
     {

@@ -163,6 +163,10 @@ export default function OrderManagementDashboard() {
     queryKey: ['all-purchase-orders'],
     queryFn: () => api.get('/purchase-orders?page_size=200').then(r => r.data),
   });
+  const { data: workSummary } = useQuery({
+    queryKey: ['work-summary', 'orders'],
+    queryFn: () => api.get('/search/my-work?module=orders&page_size=1').then(r => r.data),
+  });
 
   const submitMutation = useMutation({
     mutationFn: (id: string) => api.post(`/purchase-orders/${id}/submit`, {}),
@@ -219,6 +223,7 @@ export default function OrderManagementDashboard() {
   });
 
   const items: any[] = posData?.items ?? [];
+  const hasMorePOs = (posData?.pagination?.total ?? 0) > items.length;
 
   const countsByStatus: Record<string, number> = {};
   for (const item of items) {
@@ -321,7 +326,7 @@ export default function OrderManagementDashboard() {
                   className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border transition-colors hover:opacity-80 ${s.color}`}
                 >
                   {s.label}
-                  <span className="font-bold">{count}</span>
+                   <span className="font-bold">{hasMorePOs ? `${count}+` : count}</span>
                 </button>
               );
             })}
@@ -352,22 +357,22 @@ export default function OrderManagementDashboard() {
       {/* Progress banner */}
       <div className="bg-blue-50/60 border-b border-blue-100 px-5 py-2 flex items-center gap-3 shrink-0">
         <span className="text-xs font-medium text-slate-600 whitespace-nowrap">
-          Released: <strong className="text-slate-800">{released.length} of {items.length}</strong> POs
+          {hasMorePOs ? 'Loaded sample: ' : 'Released: '}
+          <strong className="text-slate-800">{hasMorePOs ? `${items.length} of ${posData.pagination.total}` : `${released.length} of ${items.length}`}</strong> POs
         </span>
-        <div className="flex gap-0.5 flex-1 max-w-xs">
+        {!hasMorePOs && <div className="flex gap-0.5 flex-1 max-w-xs">
           {Array.from({ length: 14 }).map((_, i) => (
             <div
               key={i}
               className={`h-1.5 flex-1 rounded-full ${i < progressFilled ? 'bg-blue-500' : 'bg-slate-200'}`}
             />
           ))}
-        </div>
-        <span className="text-xs font-bold text-blue-600 whitespace-nowrap">{progressPct}%</span>
-        {needsAction.length > 0 && (
-          <span className="ml-auto text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full whitespace-nowrap">
-            {needsAction.length} need{needsAction.length === 1 ? 's' : ''} your action
-          </span>
-        )}
+        </div>}
+        {!hasMorePOs && <span className="text-xs font-bold text-blue-600 whitespace-nowrap">{progressPct}%</span>}
+        <button onClick={() => navigate('/my-work?module=orders')}
+          className="ml-auto text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full whitespace-nowrap">
+          {workSummary?.total ?? '—'} need your action · View all work →
+        </button>
       </div>
 
       {/* Body: inbox list + reading pane */}
@@ -392,7 +397,7 @@ export default function OrderManagementDashboard() {
                   {tab.label}
                   <span className={`ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${
                     activeTab === tab.key ? 'bg-blue-100 text-blue-700' : 'bg-slate-200 text-slate-600'
-                  }`}>{tabCounts[tab.key]}</span>
+                   }`}>{hasMorePOs ? `${tabCounts[tab.key]}+` : tabCounts[tab.key]}</span>
                 </div>
                 <div className="text-[10px] text-slate-400 mt-0.5 leading-none">{tab.subtitle}</div>
               </button>
@@ -426,7 +431,7 @@ export default function OrderManagementDashboard() {
                 <span className="text-xs text-blue-600 font-medium">{selectedPOs.size} selected</span>
               )}
               <span className="text-xs text-slate-400">
-                {filteredItems.length} item{filteredItems.length !== 1 ? 's' : ''}
+                 {filteredItems.length} loaded item{filteredItems.length !== 1 ? 's' : ''}
               </span>
             </div>
           </div>

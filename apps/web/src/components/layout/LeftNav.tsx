@@ -437,6 +437,11 @@ export default function LeftNav({ collapsed, onToggleCollapsed, onNavigate }: Le
               ⌘K
             </kbd>}
           </button>
+           <NavLink to="/my-work" title={collapsed ? 'My Work' : undefined}
+             className={({ isActive }) => clsx(navLinkClass({ isActive }), collapsed && 'justify-center px-3')}>
+             <ClipboardCheck className="w-4 h-4 shrink-0 text-stone-400" />
+             {!collapsed && <span>My Work</span>}
+           </NavLink>
         </div>
 
         {visibleSections.map((section, index) => (

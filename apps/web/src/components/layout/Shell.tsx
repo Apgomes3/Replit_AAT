@@ -1,13 +1,17 @@
-import { Outlet } from 'react-router-dom';
+import { Link, Outlet, useLocation } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import LeftNav from './LeftNav';
 import TopBar from './TopBar';
 import { usePageTitle } from '../../hooks/usePageTitle';
+import { safeReturnTo } from '../../lib/navigation';
 
 const NAV_COLLAPSED_KEY = 'nav-sidebar-collapsed';
 
 export default function Shell() {
   usePageTitle();
+  const location = useLocation();
+  const returnTo = safeReturnTo(location.state?.returnTo, '');
+  const isWorkReturn = returnTo.startsWith('/search?') || returnTo.startsWith('/my-work');
   const [navCollapsed, setNavCollapsed] = useState(() => {
     try {
       return localStorage.getItem(NAV_COLLAPSED_KEY) === 'true';
@@ -48,6 +52,9 @@ export default function Shell() {
       <div className="flex flex-col flex-1 min-w-0">
         <TopBar onOpenNavigation={() => setMobileNavOpen(true)} />
         <main className="flex-1 overflow-auto">
+          {isWorkReturn && <div className="bg-blue-50 border-b border-blue-100 px-6 py-2 text-sm">
+            <Link to={returnTo} className="text-blue-700 hover:underline">← Return to {location.state?.returnLabel === 'My Work' ? 'My Work' : 'Search'}</Link>
+          </div>}
           <Outlet />
         </main>
       </div>

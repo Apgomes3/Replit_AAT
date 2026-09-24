@@ -75,6 +75,11 @@ export default function SystemDetail() {
     queryFn: () => api.get(`/systems/${id}`).then(r => r.data),
   });
   useRecordTitle(system?.system_name);
+  useEffect(() => {
+    const equipmentId = new URLSearchParams(location.search).get('equipment');
+    if (!equipmentId || !system?.equipment?.some((item: any) => item.id === equipmentId)) return;
+    requestAnimationFrame(() => document.getElementById(`equipment-${equipmentId}`)?.scrollIntoView({ block: 'center' }));
+  }, [location.search, system?.equipment]);
 
   const openPurchaseOrder = (poId: string) => navigate(`/purchase-orders/${poId}`, {
     state: {
@@ -728,6 +733,7 @@ export default function SystemDetail() {
                 return (
                   <tr
                     key={eq.id}
+                    id={`equipment-${eq.id}`}
                     className={`group ${isEditing ? 'bg-blue-50/40' : isSelected ? 'bg-blue-50 hover:bg-blue-50/80' : 'hover:bg-slate-50'} ${!isEditing ? 'cursor-pointer' : ''}`}
                     onClick={() => { if (!isEditing) startInlineEdit(eq); }}
                     onContextMenu={e => handleContextMenu(e, eq, 'equipment')}

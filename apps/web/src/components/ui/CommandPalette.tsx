@@ -18,6 +18,7 @@ const MAX_RECENT = 6;
 type SearchResult = {
   id: number | string;
   type: string;
+  href?: string;
   code: string | null;
   name: string;
   status?: string;
@@ -77,7 +78,7 @@ export default function CommandPalette() {
     staleTime: 10000,
   });
 
-  const results: SearchResult[] = (data?.results ?? []).filter((result: SearchResult) => canSeeHref(entityHref(result)));
+  const results: SearchResult[] = (data?.results ?? []).filter((result: SearchResult) => canSeeHref(result.href || entityHref(result)));
 
   const grouped = results.reduce((acc: Record<string, SearchResult[]>, r) => {
     (acc[r.type] = acc[r.type] || []).push(r);
@@ -86,7 +87,7 @@ export default function CommandPalette() {
 
   const flatResults: { result: SearchResult; href: string }[] = Object.values(grouped)
     .flat()
-    .map(r => ({ result: r, href: entityHref(r) }));
+    .map(r => ({ result: r, href: r.href || entityHref(r) }));
 
   useEffect(() => {
     if (!isOpen) { setQuery(''); setCursor(-1); return; }
@@ -282,7 +283,7 @@ export default function CommandPalette() {
                 {items.map(r => {
                   flatIdx++;
                   const idx = flatIdx;
-                  const href = entityHref(r);
+                  const href = r.href || entityHref(r);
                   const isHighlighted = cursor === idx;
                   return (
                     <button
