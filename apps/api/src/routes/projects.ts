@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import pool, { query, withTransaction } from '../db';
 import { authenticate, requireRole, requireModuleAccess, requireModuleManage, AuthRequest } from '../middleware/auth';
 import { logAudit } from '../db/audit';
+import { emitNotification } from '../db/notifications';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
@@ -447,11 +448,25 @@ router.put('/projects/:id', authenticate, async (req: AuthRequest, res: Response
   const toDate = (v: any) => (v === '' || v == null) ? null : v;
   const toNum  = (v: any) => (v === '' || v == null) ? null : Number(v);
   const toStr  = (v: any) => (v === '' || v == null) ? null : String(v);
-  const result = await query(
+  const result = await withTransaction(async db => {
+    const updated = await db.query(
     `UPDATE projects SET project_name=$1, client_name=$2, site_name=$3, country=$4, city=$5, latitude=$6, longitude=$7, project_status=$8, start_date=$9, target_completion_date=$10, project_manager=$11, engineering_manager=$12, qa_owner=$13, notes=$14, project_scopes=COALESCE($15, project_scopes), updated_at=NOW()
      WHERE id=$16 RETURNING *`,
     [toStr(project_name), toStr(client_name), toStr(site_name), toStr(country), toStr(city), toNum(latitude), toNum(longitude), project_status, toDate(start_date), toDate(target_completion_date), toStr(project_manager), toStr(engineering_manager), toStr(qa_owner), toStr(notes), Array.isArray(project_scopes) ? project_scopes : null, req.params.id]
-  );
+    );
+    if (updated.rows[0]) {
+      await emitNotification(db, {
+        eventKey: `project-update:${updated.rows[0].id}:${updated.rows[0].updated_at.toISOString()}`,
+        type: 'project_updated',
+        title: `Project ${updated.rows[0].project_code} updated`,
+        entityType: 'project',
+        entityId: String(updated.rows[0].id),
+        actorId: req.user!.id,
+        recipientIds: [],
+      });
+    }
+    return updated;
+  });
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Project not found' } });
   await logAudit(req.user!.id, 'project', result.rows[0].id, 'UPDATE', {
     summary: 'Project details updated',

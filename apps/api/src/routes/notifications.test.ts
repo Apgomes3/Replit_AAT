@@ -179,4 +179,47 @@ describe('notifications API', () => {
     expect((await request('GET', '/api/v1/notifications?offset=-1')).status).toBe(400);
     expect((await request('GET', '/api/v1/notifications?filter=unknown')).status).toBe(400);
   });
+
+  it('checks module and record visibility before revealing follow status or changing it', async () => {
+    const recordId = '11111111-1111-4111-8111-111111111111';
+    const ownSubscriptions = new Set<string>();
+    let visible = true;
+    state.query.mockImplementation(async (sql: string, params: any[] = []) => {
+      if (sql.includes('FROM purchase_orders record')) {
+        expect(sql).toContain("access.access_level IS DISTINCT FROM 'hidden'");
+        expect(sql).toContain('u.can_see_all_pos');
+        expect(sql).toContain('po_designated_users');
+        expect(sql).toContain('po_stage_assignees');
+        expect(params).toEqual([recordId, userId, 'orders']);
+        return { rowCount: visible ? 1 : 0 };
+      }
+      if (sql.includes('DELETE FROM notification_subscriptions')) {
+        ownSubscriptions.delete(recordId);
+        return { rowCount: 1 };
+      }
+      if (sql.includes('FROM notification_subscriptions')) {
+        expect(params).toEqual([userId, 'purchase_order', recordId]);
+        return { rowCount: ownSubscriptions.has(recordId) ? 1 : 0 };
+      }
+      if (sql.includes('INTO notification_subscriptions')) {
+        ownSubscriptions.add(recordId);
+        return { rowCount: 1 };
+      }
+      throw new Error(`Unexpected SQL: ${sql}`);
+    });
+    const path = `/api/v1/notifications/subscriptions/purchase_order/${recordId}`;
+    expect(await request('GET', path)).toMatchObject({ status: 200, json: { following: false } });
+    expect(await request('PUT', path)).toMatchObject({ status: 200, json: { following: true } });
+    expect(await request('GET', path)).toMatchObject({ status: 200, json: { following: true } });
+    visible = false;
+    expect((await request('GET', path)).status).toBe(404);
+    expect((await request('PUT', path)).status).toBe(404);
+    expect((await request('DELETE', path)).status).toBe(404);
+    expect(ownSubscriptions.has(recordId)).toBe(true);
+    visible = true;
+    expect(await request('DELETE', path)).toMatchObject({ status: 200, json: { following: false } });
+    expect(await request('GET', path)).toMatchObject({ status: 200, json: { following: false } });
+    expect((await request('GET', '/api/v1/notifications/subscriptions/purchase_order/not-an-id')).status).toBe(400);
+    expect((await request('GET', `/api/v1/notifications/subscriptions/unknown/${recordId}`)).status).toBe(400);
+  });
 });

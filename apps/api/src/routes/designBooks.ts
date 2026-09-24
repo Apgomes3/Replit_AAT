@@ -3883,8 +3883,7 @@ router.post(
         { query: client.query.bind(client) as DbRunner },
         context,
       )).filter(id => id !== req.user!.id && id !== reviewerId);
-      if (infoRecipients.length) {
-        await emitNotification(client, {
+      await emitNotification(client, {
           eventKey: `design-book-transition-info:${transition.rows[0].id}`,
           type: 'design_book_review_submitted',
           title: `Design Book ${context.book_code} was submitted for review`,
@@ -3893,10 +3892,10 @@ router.post(
           entityId: String(req.params.id),
           actorId: req.user!.id,
           recipientIds: infoRecipients,
+          excludeUserIds: [reviewerId],
           actionRequired: false,
           href: `/design-books/${req.params.id}?tab=review`,
-        });
-      }
+      });
       await insertAudit(client.query.bind(client) as DbRunner, req.user!.id, 'design_book', routeParam(req.params.id), 'SUBMIT_REVIEW', {
         summary: `Design Book submitted for review${comment ? `: ${comment}` : ''}`,
         comment,
@@ -3945,8 +3944,7 @@ router.post(
         { query: client.query.bind(client) as DbRunner },
         result.rows[0],
       )).filter(id => id !== req.user!.id);
-      if (recipients.length) {
-        await emitNotification(client, {
+      await emitNotification(client, {
           eventKey: `design-book-transition:${transition.rows[0].id}`,
           type: 'design_book_approved',
           title: `Design Book ${result.rows[0].book_code} approved`,
@@ -3956,8 +3954,7 @@ router.post(
           actorId: req.user!.id,
           recipientIds: recipients,
           href: `/design-books/${req.params.id}`,
-        });
-      }
+      });
       await insertAudit(client.query.bind(client) as DbRunner, req.user!.id, 'design_book', routeParam(req.params.id), 'APPROVE', {
         summary: `Design Book approved${approvalNotes ? `: ${approvalNotes}` : ''}`,
         approval_notes: approvalNotes,
@@ -4102,8 +4099,7 @@ router.post(
         { query: client.query.bind(client) as DbRunner },
         updated.rows[0],
       )).filter(id => id !== req.user!.id);
-      if (recipients.length) {
-        await emitNotification(client, {
+      await emitNotification(client, {
           eventKey: `design-book-transition:${transition.rows[0].id}`,
           type: 'design_book_released',
           title: `Design Book ${context.book_code} Rev ${revision.trim()} released`,
@@ -4113,8 +4109,7 @@ router.post(
           actorId: req.user!.id,
           recipientIds: recipients,
           href: `/design-books/${req.params.id}`,
-        });
-      }
+      });
       await client.query('COMMIT');
       res.json({
         ...updated.rows[0],

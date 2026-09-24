@@ -3,6 +3,7 @@ import { useLocation, useParams, useNavigate, Link } from 'react-router-dom';
 import { useState, lazy, Suspense, useRef, useEffect, Fragment } from 'react';
 import api from '../../lib/api';
 import PageHeader from '../../components/ui/PageHeader';
+import FollowRecordButton from '../../components/ui/FollowRecordButton';
 import QueryError from '../../components/ui/QueryError';
 import MetadataPanel from '../../components/ui/MetadataPanel';
 import StatusBadge from '../../components/ui/StatusBadge';
@@ -1135,6 +1136,7 @@ export default function ProjectDetail() {
         crumbs={[{ label: 'Projects', href: '/projects' }, { label: project.project_code }]}
         actions={
           <div className="flex gap-2">
+            <FollowRecordButton entityType="project" entityId={project.id} />
             {(linkedDesignBooks?.items?.length > 0) && (
               <Button size="sm" onClick={() => navigate(`/design-books/${linkedDesignBooks.items[0].id}`)}>
                 <BookMarked className="w-3.5 h-3.5" />Design Book

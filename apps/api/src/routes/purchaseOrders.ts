@@ -4,7 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import { query, withTransaction } from '../db';
 import { authenticate, requireModuleAccess, AuthRequest } from '../middleware/auth';
-import { createNotification, notifyAdminsAndManagers } from '../db/notifications';
+import { createNotification, emitNotification } from '../db/notifications';
 import { logAudit } from '../db/audit';
 import { versionMatches, versionConflict, withVersion } from '../lib/concurrency';
 import { createKeyError, findCreateRetry } from '../lib/createIdempotency';
@@ -19,6 +19,22 @@ const uploadDoc = multer({ storage: docStorage, limits: { fileSize: 20 * 1024 * 
 
 const router = Router();
 router.use(authenticate, requireModuleAccess('orders'));
+
+async function notifyPOFollowers(
+  historyId: string, poId: string, actorId: string, title: string, body: string,
+  recipientIds: string[] = [], type = 'po_transitioned',
+) {
+  await withTransaction(db => emitNotification(db, {
+    eventKey: `po-transition:${historyId}`,
+    type,
+    title,
+    body,
+    entityType: 'purchase_order',
+    entityId: poId,
+    actorId,
+    recipientIds,
+  }));
+}
 
 const STAGES = ['draft', 'pending_approval', 'purchase_order', 'po_review', 'engineering_review', 'released'];
 
@@ -334,8 +350,11 @@ router.get('/purchase-orders/:id', authenticate, async (req: AuthRequest, res: R
      LEFT JOIN projects proj ON po.project_id=proj.id
      LEFT JOIN users u ON po.created_by=u.id
      LEFT JOIN users a ON po.approved_by=a.id
-     WHERE po.id=$1`,
-    [id]
+     JOIN users viewer ON viewer.id=$2
+     WHERE po.id=$1 AND (viewer.can_see_all_pos OR po.created_by=$2
+       OR EXISTS (SELECT 1 FROM po_designated_users d WHERE d.po_id=po.id AND d.user_id=$2)
+       OR EXISTS (SELECT 1 FROM po_stage_assignees a WHERE a.stage=po.status AND a.user_id=$2))`,
+    [id, req.user!.id]
   );
   if (!poRes.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'PO not found' } });
   const po = poRes.rows[0];
@@ -482,8 +501,8 @@ router.post('/purchase-orders/:id/submit', authenticate, async (req: AuthRequest
   } else {
     await query(`UPDATE purchase_orders SET status=$1, stage_due_date=now()+interval '1 day', updated_at=now() WHERE id=$2`, [newStatus, id]);
   }
-  await query(
-    `INSERT INTO po_lifecycle_history (po_id,from_status,to_status,changed_by,comment) VALUES ($1,$2,$3,$4,$5)`,
+  const followEvent = await query(
+    `INSERT INTO po_lifecycle_history (po_id,from_status,to_status,changed_by,comment) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
     [id, 'draft', newStatus, user.id, user.role === 'hq_manager' ? 'Self-approved by HQ Manager' : 'Submitted for approval']
   );
   await logAudit(user.id, 'purchase_order', String(id), 'STATE_TRANSITION', {
@@ -496,14 +515,13 @@ router.post('/purchase-orders/:id/submit', authenticate, async (req: AuthRequest
     const actorRes = await query('SELECT first_name, last_name FROM users WHERE id=$1', [user.id]);
     const actor = actorRes.rows[0];
     const actorName = actor ? `${actor.first_name} ${actor.last_name}`.trim() : user.email;
-    await notifyAdminsAndManagers({
-      type: 'po_submitted',
-      title: 'PO Pending Approval',
-      body: `PO #${po.po_code} has been submitted for approval by ${actorName}.`,
-      entityType: 'purchase_order',
-      entityId: String(id),
-      excludeUserId: user.id,
-    });
+    const approvers = await query("SELECT id FROM users WHERE role IN ('admin','hq_manager') AND is_active=true AND id <> $1", [user.id]);
+    await notifyPOFollowers(followEvent.rows[0].id, String(id), user.id, 'PO Pending Approval',
+      `PO #${po.po_code} has been submitted for approval by ${actorName}.`,
+      approvers.rows.map(row => row.id), 'po_submitted');
+  } else {
+    await notifyPOFollowers(followEvent.rows[0].id, String(id), user.id, 'PO Stage Updated',
+      `PO #${po.po_code} moved to ${newStatus.replace(/_/g, ' ')}.`);
   }
   res.json({ status: newStatus });
 });
@@ -532,8 +550,8 @@ router.post('/purchase-orders/:id/approve', authenticate, async (req: AuthReques
     `UPDATE purchase_orders SET status='purchase_order', approved_by=$1, approved_at=now(), stage_due_date=now()+interval '1 day', updated_at=now() WHERE id=$2`,
     [user.id, id]
   );
-  await query(
-    `INSERT INTO po_lifecycle_history (po_id,from_status,to_status,changed_by,comment) VALUES ($1,$2,$3,$4,$5)`,
+  const followEvent = await query(
+    `INSERT INTO po_lifecycle_history (po_id,from_status,to_status,changed_by,comment) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
     [id, 'pending_approval', 'purchase_order', user.id, comment || 'Approved']
   );
   await logAudit(user.id, 'purchase_order', String(id), 'STATE_TRANSITION', {
@@ -542,16 +560,8 @@ router.post('/purchase-orders/:id/approve', authenticate, async (req: AuthReques
     to: 'purchase_order',
     comment: comment || 'Approved',
   });
-  if (poRes.rows[0].created_by) {
-    await createNotification({
-      userId: poRes.rows[0].created_by,
-      type: 'po_approved',
-      title: 'PO Approved',
-      body: `Your PO #${poRes.rows[0].po_code} has been approved.`,
-      entityType: 'purchase_order',
-      entityId: String(id),
-    });
-  }
+  await notifyPOFollowers(followEvent.rows[0].id, String(id), user.id, 'PO Approved',
+    `PO #${poRes.rows[0].po_code} has been approved.`, [poRes.rows[0].created_by].filter(Boolean), 'po_approved');
   res.json({ status: 'purchase_order' });
 });
 
@@ -576,8 +586,8 @@ router.post('/purchase-orders/:id/reject', authenticate, async (req: AuthRequest
   if (!poRes.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'PO not found' } });
   const fromStatus = poRes.rows[0].status;
   await query(`UPDATE purchase_orders SET status='draft', updated_at=now() WHERE id=$1`, [id]);
-  await query(
-    `INSERT INTO po_lifecycle_history (po_id,from_status,to_status,changed_by,comment) VALUES ($1,$2,'draft',$3,$4)`,
+  const followEvent = await query(
+    `INSERT INTO po_lifecycle_history (po_id,from_status,to_status,changed_by,comment) VALUES ($1,$2,'draft',$3,$4) RETURNING id`,
     [id, fromStatus, user.id, comment || 'Sent back for corrections']
   );
   await logAudit(user.id, 'purchase_order', String(id), 'STATE_TRANSITION', {
@@ -586,16 +596,9 @@ router.post('/purchase-orders/:id/reject', authenticate, async (req: AuthRequest
     to: 'draft',
     comment: comment || 'Sent back for corrections',
   });
-  if (poRes.rows[0].created_by) {
-    await createNotification({
-      userId: poRes.rows[0].created_by,
-      type: 'po_rejected',
-      title: 'PO Sent Back for Corrections',
-      body: `Your PO #${poRes.rows[0].po_code} was sent back for corrections${comment ? `: ${comment}` : '.'}`,
-      entityType: 'purchase_order',
-      entityId: String(id),
-    });
-  }
+  await notifyPOFollowers(followEvent.rows[0].id, String(id), user.id, 'PO Sent Back for Corrections',
+    `PO #${poRes.rows[0].po_code} was sent back for corrections${comment ? `: ${comment}` : '.'}`,
+    [poRes.rows[0].created_by].filter(Boolean), 'po_rejected');
   res.json({ status: 'draft' });
 });
 
@@ -651,8 +654,8 @@ router.post('/purchase-orders/:id/transition', authenticate, async (req: AuthReq
   } else {
     await query(`UPDATE purchase_orders SET status=$1, stage_due_date=now()+interval '1 day', updated_at=now() WHERE id=$2`, [next, id]);
   }
-  await query(
-    `INSERT INTO po_lifecycle_history (po_id,from_status,to_status,changed_by,comment) VALUES ($1,$2,$3,$4,$5)`,
+  const followEvent = await query(
+    `INSERT INTO po_lifecycle_history (po_id,from_status,to_status,changed_by,comment) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
     [id, po.status, next, user.id, comment || null]
   );
   await logAudit(user.id, 'purchase_order', String(id), 'STATE_TRANSITION', {
@@ -661,16 +664,8 @@ router.post('/purchase-orders/:id/transition', authenticate, async (req: AuthReq
     to: next,
     comment: comment || null,
   });
-  if (po.created_by && po.created_by !== user.id) {
-    await createNotification({
-      userId: po.created_by,
-      type: 'po_transitioned',
-      title: 'PO Stage Updated',
-      body: `Your PO #${po.po_code} has moved to stage: ${next.replace(/_/g, ' ')}.`,
-      entityType: 'purchase_order',
-      entityId: String(id),
-    });
-  }
+  await notifyPOFollowers(followEvent.rows[0].id, String(id), user.id, 'PO Stage Updated',
+    `PO #${po.po_code} moved to ${next.replace(/_/g, ' ')}.`, [po.created_by].filter(Boolean));
   const updated = await query('SELECT fo_number FROM purchase_orders WHERE id=$1', [id]);
   res.json({ status: next, fo_number: updated.rows[0]?.fo_number ?? null });
 });
@@ -703,8 +698,8 @@ router.post('/purchase-orders/bulk-transition', authenticate, async (req: AuthRe
       } else {
         await query(`UPDATE purchase_orders SET status=$1, stage_due_date=now()+interval '1 day', updated_at=now() WHERE id=$2`, [next, id]);
       }
-      await query(
-        `INSERT INTO po_lifecycle_history (po_id,from_status,to_status,changed_by,comment) VALUES ($1,$2,$3,$4,$5)`,
+      const followEvent = await query(
+        `INSERT INTO po_lifecycle_history (po_id,from_status,to_status,changed_by,comment) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
         [id, po.status, next, user.id, 'Bulk transition']
       );
       await logAudit(user.id, 'purchase_order', String(id), 'STATE_TRANSITION', {
@@ -713,16 +708,8 @@ router.post('/purchase-orders/bulk-transition', authenticate, async (req: AuthRe
         to: next,
         comment: 'Bulk transition',
       });
-      if (po.created_by && po.created_by !== user.id) {
-        await createNotification({
-          userId: po.created_by,
-          type: 'po_transitioned',
-          title: 'PO Stage Updated',
-          body: `Your PO #${po.po_code} has moved to stage: ${next.replace(/_/g, ' ')}.`,
-          entityType: 'purchase_order',
-          entityId: id,
-        });
-      }
+      await notifyPOFollowers(followEvent.rows[0].id, String(id), user.id, 'PO Stage Updated',
+        `PO #${po.po_code} moved to ${next.replace(/_/g, ' ')}.`, [po.created_by].filter(Boolean));
       results.push({ id, po_code: po.po_code, status: next });
     } catch (e: any) {
       results.push({ id, error: e?.message || 'Failed' });
@@ -857,6 +844,22 @@ router.delete('/purchase-orders/:id/designated-users/:userId', authenticate, asy
 });
 
 // COMMENTS — LIST
+// These subresources include author/uploader identities; access must not depend
+// on whether the caller happens to load the parent detail page first.
+router.use(['/purchase-orders/:id/comments', '/purchase-orders/:id/attachments'], async (req: AuthRequest, res: Response, next) => {
+  try {
+    const visible = await query(
+      `SELECT 1 FROM purchase_orders po JOIN users viewer ON viewer.id=$2
+       WHERE po.id=$1 AND (viewer.can_see_all_pos OR po.created_by=$2
+         OR EXISTS (SELECT 1 FROM po_designated_users d WHERE d.po_id=po.id AND d.user_id=$2)
+         OR EXISTS (SELECT 1 FROM po_stage_assignees a WHERE a.stage=po.status AND a.user_id=$2))`,
+      [req.params.id, req.user!.id],
+    );
+    if (!visible.rowCount) return res.status(404).json({ error: { code: 'NOT_FOUND' } });
+    next();
+  } catch (error) { next(error); }
+});
+
 router.get('/purchase-orders/:id/comments', authenticate, async (req: AuthRequest, res: Response) => {
   const { id } = req.params;
   const r = await query(

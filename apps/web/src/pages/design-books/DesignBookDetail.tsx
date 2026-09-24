@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
+import FollowRecordButton from '../../components/ui/FollowRecordButton';
 import { useEffect, useState, type ChangeEvent } from 'react';
 import api from '../../lib/api';
 import StatusBadge from '../../components/ui/StatusBadge';
@@ -5077,6 +5078,7 @@ export default function DesignBookDetail() {
               </div>
             </div>
             <div className="flex items-center gap-2">
+              <FollowRecordButton entityType="design_book" entityId={book.id} />
               {isReleased ? (
                 isDesigner && (
                   <button onClick={() => setShowNewRevision(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-violet-600 text-white rounded-lg hover:bg-violet-700 font-medium">

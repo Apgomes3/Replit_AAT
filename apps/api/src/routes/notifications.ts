@@ -32,43 +32,60 @@ const subscriptionEntities: Record<string, { table: string; module: string }> = 
   purchase_order: { table: 'purchase_orders', module: 'orders' },
 };
 
+async function subscriptionAccess(req: AuthRequest, res: Response): Promise<boolean> {
+  const entityType = String(req.params.entityType);
+  const entityId = String(req.params.entityId);
+  const entity = subscriptionEntities[entityType];
+  if (!entity || !uuid.test(entityId)) {
+    res.status(400).json({ error: { code: 'VALIDATION' } });
+    return false;
+  }
+  // The table name comes only from the fixed allowlist above. Check record visibility
+  // before reading even the caller's subscription, to avoid leaking restricted POs.
+  const record = await query(
+    `SELECT 1 FROM ${entity.table} record
+     JOIN users u ON u.id=$2 AND u.is_active=true
+     LEFT JOIN roles r ON r.name=u.role
+     LEFT JOIN role_module_access access ON access.role_id=r.id AND access.module_key=$3
+     WHERE record.id=$1 AND access.access_level IS DISTINCT FROM 'hidden'
+     ${entityType === 'purchase_order' ? `AND (u.can_see_all_pos OR record.created_by=u.id
+       OR EXISTS (SELECT 1 FROM po_designated_users d WHERE d.po_id=record.id AND d.user_id=u.id)
+       OR EXISTS (SELECT 1 FROM po_stage_assignees a WHERE a.stage=record.status AND a.user_id=u.id))` : ''}`,
+    [entityId, req.user!.id, entity.module],
+  );
+  if (!record.rowCount) {
+    res.status(404).json({ error: { code: 'NOT_FOUND' } });
+    return false;
+  }
+  return true;
+}
+
+router.get('/notifications/subscriptions/:entityType/:entityId', authenticate, async (req: AuthRequest, res: Response, next) => {
+  try {
+    if (!await subscriptionAccess(req, res)) return;
+    const result = await query(
+      'SELECT 1 FROM notification_subscriptions WHERE user_id=$1 AND entity_type=$2 AND entity_id=$3',
+      [req.user!.id, req.params.entityType, req.params.entityId],
+    );
+    res.json({ following: !!result.rowCount });
+  } catch (error) { next(error); }
+});
+
 router.put('/notifications/subscriptions/:entityType/:entityId', authenticate, async (req: AuthRequest, res: Response, next) => {
   try {
-    const entityType = String(req.params.entityType);
-    const entityId = String(req.params.entityId);
-    const entity = subscriptionEntities[entityType];
-    if (!entity || !uuid.test(entityId)) return res.status(400).json({ error: { code: 'VALIDATION' } });
-    const access = await query(
-      `SELECT 1 FROM users u LEFT JOIN roles r ON r.name = u.role
-       LEFT JOIN role_module_access a ON a.role_id = r.id AND a.module_key = $2
-       WHERE u.id = $1 AND u.is_active = true AND a.access_level IS DISTINCT FROM 'hidden'`,
-      [req.user!.id, entity.module],
-    );
-    if (!access.rowCount) return res.status(404).json({ error: { code: 'NOT_FOUND' } });
-    const record = await query(
-      entityType === 'purchase_order'
-        ? `SELECT 1 FROM purchase_orders po JOIN users u ON u.id=$2 WHERE po.id=$1
-            AND (u.can_see_all_pos OR po.created_by=$2
-              OR EXISTS (SELECT 1 FROM po_designated_users d WHERE d.po_id=po.id AND d.user_id=$2)
-              OR EXISTS (SELECT 1 FROM po_stage_assignees a WHERE a.stage=po.status AND a.user_id=$2))`
-        : `SELECT 1 FROM ${entity.table} WHERE id=$1`,
-      entityType === 'purchase_order' ? [entityId, req.user!.id] : [entityId],
-    );
-    if (!record.rowCount) return res.status(404).json({ error: { code: 'NOT_FOUND' } });
+    if (!await subscriptionAccess(req, res)) return;
     await query(`INSERT INTO notification_subscriptions(user_id, entity_type, entity_id)
-      VALUES($1,$2,$3) ON CONFLICT DO NOTHING`, [req.user!.id, entityType, entityId]);
-    res.json({ ok: true });
+      VALUES($1,$2,$3) ON CONFLICT DO NOTHING`, [req.user!.id, req.params.entityType, req.params.entityId]);
+    res.json({ following: true });
   } catch (error) { next(error); }
 });
 
 router.delete('/notifications/subscriptions/:entityType/:entityId', authenticate, async (req: AuthRequest, res: Response, next) => {
   try {
-    if (!subscriptionEntities[String(req.params.entityType)] || !uuid.test(String(req.params.entityId))) {
-      return res.status(400).json({ error: { code: 'VALIDATION' } });
-    }
+    if (!await subscriptionAccess(req, res)) return;
     await query('DELETE FROM notification_subscriptions WHERE user_id=$1 AND entity_type=$2 AND entity_id=$3',
       [req.user!.id, req.params.entityType, req.params.entityId]);
-    res.json({ ok: true });
+    res.json({ following: false });
   } catch (error) { next(error); }
 });
 

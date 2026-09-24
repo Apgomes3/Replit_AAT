@@ -4,6 +4,7 @@ import { useRecordTitle } from '../../hooks/usePageTitle';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../../lib/api';
 import PageHeader from '../../components/ui/PageHeader';
+import FollowRecordButton from '../../components/ui/FollowRecordButton';
 import QueryError from '../../components/ui/QueryError';
 import ProtectedDraftBar, { clearRecoveryDraft, readRecoveryDraft } from '../../components/ui/ProtectedDraftBar';
 import { safeReturnTo } from '../../lib/navigation';
@@ -715,6 +716,7 @@ export default function PurchaseOrderDetail() {
         ]}
         actions={
           <div className="flex items-center gap-2">
+            <FollowRecordButton entityType="purchase_order" entityId={po.id} />
             <select
               value={displayCurrency}
               onChange={e => setDisplayCurrency(e.target.value)}

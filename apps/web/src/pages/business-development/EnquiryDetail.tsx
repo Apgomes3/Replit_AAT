@@ -6,6 +6,7 @@ import toast from 'react-hot-toast';
 import api from '../../lib/api';
 import { useAuthStore } from '../../store/authStore';
 import ProtectedDraftBar, { readRecoveryDraft } from '../../components/ui/ProtectedDraftBar';
+import FollowRecordButton from '../../components/ui/FollowRecordButton';
 
 const pretty = (s: string) => s?.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) || '—';
 const list = (data: any) => data?.items || data?.data || data || [];
@@ -146,6 +147,7 @@ export default function EnquiryDetail() {
          </div>
        </div>
        <div className="flex gap-2">
+         <FollowRecordButton entityType="enquiry" entityId={d.id} />
          {canManage && <button onClick={beginEdit} className="px-3 py-2 rounded-lg border border-[#dce7e2] bg-white text-sm font-bold">Edit enquiry</button>}
           {d.project_id || d.project ? canViewProjects ? (
            <Link to={`/projects/${d.project_id || d.project.id}`} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-[#20333a] text-white text-sm font-bold">

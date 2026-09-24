@@ -205,8 +205,7 @@ router.patch('/:id', requireModuleManage('business_development'), referenceModul
             project_id: effectiveProject,
             design_book_id: effectiveDesign,
           })).filter(id => id !== req.user!.id);
-          if (recipients.length) {
-            await emitNotification(db, {
+          await emitNotification(db, {
               eventKey: `enquiry-activity:${activityId}`,
               type: 'enquiry_status_changed',
               title: `Enquiry ${current.enquiry_number || req.params.id} moved to ${b.status}`,
@@ -216,8 +215,7 @@ router.patch('/:id', requireModuleManage('business_development'), referenceModul
               actorId: req.user!.id,
               recipientIds: recipients,
               href: `/enquiries/${req.params.id}`,
-            });
-          }
+          });
         }
         return updatedRow;
       });
@@ -237,8 +235,7 @@ router.post('/:id/create-project', requireModuleManage('business_development'), 
        const u=await db.query('UPDATE enquiries SET project_id=$1,updated_by=$2,updated_at=NOW() WHERE id=$3 RETURNING *',[p.id,req.user!.id,req.params.id]);
        const activityId = await record(db,req.params.id,req.user!.id,'project_created',{project_id:p.id});
        const recipients = (await enquiryStakeholders(db, { ...e, project_id: p.id }, p.created_by)).filter(id => id !== req.user!.id);
-       if (recipients.length) {
-         await emitNotification(db, {
+       await emitNotification(db, {
            eventKey: `enquiry-activity:${activityId}`,
            type: 'enquiry_project_created',
            title: `Project ${p.project_code} created from enquiry ${e.enquiry_number}`,
@@ -247,8 +244,7 @@ router.post('/:id/create-project', requireModuleManage('business_development'), 
            actorId: req.user!.id,
            recipientIds: recipients,
            href: `/enquiries/${req.params.id}`,
-         });
-       }
+       });
        return{project:p,enquiry:u.rows[0]};
      });res.status(201).json(result);
   }catch(e:any){if(e.status)return res.status(e.status).json({error:{code:e.code,message:e.message}});if(e.code==='23505')return res.status(409).json({error:{code:'CONFLICT',message:'A project with this code already exists.'}});next(e);}
@@ -284,9 +280,8 @@ router.patch('/:id/quote', requireModuleManage('business_development'), async (r
            current.updated_by,
            ...(await enquiryStakeholders(db, enquiry)),
          ).filter(id => id !== req.user!.id);
-         if (recipients.length) {
-           const quoteNumber = current.quote_number || updated.rows[0].quote_number || enquiry.enquiry_number || enquiryId;
-           await emitNotification(db, {
+         const quoteNumber = current.quote_number || updated.rows[0].quote_number || enquiry.enquiry_number || enquiryId;
+         await emitNotification(db, {
              eventKey: `enquiry-activity:${activityId}`,
              type: `quote_${status}`,
              title: `Quote ${quoteNumber} ${status}`,
@@ -296,8 +291,7 @@ router.patch('/:id/quote', requireModuleManage('business_development'), async (r
              actorId: req.user!.id,
              recipientIds: recipients,
              href: `/enquiries/${enquiryId}`,
-           });
-         }
+         });
        }
        return updated.rows[0];
     });
