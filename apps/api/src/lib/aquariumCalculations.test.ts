@@ -605,6 +605,86 @@ describe('aquarium engineering calculations', () => {
     expect(calculated.results.total_return_flow_m3h).toBe(37.5);
   });
 
+  it('sizes custom-tank water flow from its saved footprint and operating water level', () => {
+    const footprint = {
+      units: 'mm', closed: true,
+      segments: [
+        { type: 'line', start: { x: 0, y: 0 }, end: { x: 10000, y: 0 } },
+        { type: 'line', start: { x: 10000, y: 0 }, end: { x: 10000, y: 5000 } },
+        { type: 'line', start: { x: 10000, y: 5000 }, end: { x: 0, y: 5000 } },
+        { type: 'line', start: { x: 0, y: 5000 }, end: { x: 0, y: 0 } },
+      ],
+    };
+    const custom = {
+      id: 'custom-project-tank', eff_shape: 'Custom',
+      custom_footprint: footprint, surface_area_m2: 40, // stale cached area
+      eff_water_level_mm: 2900, project_operating_volume_m3: null,
+      operating_volume_m3: null, quantity: 2,
+    };
+    const hydraulics = { target_turnover_rate: 2, surface_skim_pct: 30, bottom_drain_pct: 70 };
+    const calculation = calculateExhibitHydraulics(
+      exhibit, [custom], hydraulics, { substrate_volume_m3: 10, theming_volume_m3: 5 },
+    );
+
+    expect(calculation.status).toBe('valid');
+    expect(calculation.inputs.tanks[0]).toMatchObject({
+      source: 'dimensions',
+      formula: 'Saved custom footprint area × operating water level ÷ 1,000',
+      footprint_area_m2: 50,
+      value_m3: 145,
+      total_value_m3: 290,
+    });
+    expect(calculation.inputs.gross_operating_volume_m3).toBe(290);
+    expect(calculation.results.operating_volume_m3).toBe(275);
+    expect(calculation.results.total_return_flow_m3h).toBe(550);
+    expect(calculation.aat_reference.inputs.effective_operating_volume_m3).toBe(275);
+
+    const updated = calculateExhibitHydraulics(
+      exhibit, [{ ...custom, eff_water_level_mm: 2500 }], hydraulics, null,
+    );
+    expect(updated.inputs.gross_operating_volume_m3).toBe(250);
+    expect(updated.results.total_return_flow_m3h).toBe(500);
+  });
+
+  it('keeps a custom tank invalid without a water level or stored volume', () => {
+    const custom = {
+      eff_shape: 'Custom', custom_footprint: { closed: false, segments: [] },
+      surface_area_m2: 50, eff_water_level_mm: 2900,
+    };
+    const invalid = calculateExhibitHydraulics(
+      exhibit, [custom],
+      { target_turnover_rate: 2, surface_skim_pct: 30, bottom_drain_pct: 70 },
+      null,
+    );
+    expect(invalid.reasons).toContain('Operating volume is missing or invalid.');
+    expect(invalid.results.total_return_flow_m3h).toBeNull();
+
+    const missingLevel = calculateExhibitHydraulics(
+      exhibit, [{
+        eff_shape: 'Custom',
+        custom_footprint: {
+          closed: true, units: 'mm',
+          segments: [
+            { type: 'line', start: { x: 0, y: 0 }, end: { x: 2000, y: 0 } },
+            { type: 'line', start: { x: 2000, y: 0 }, end: { x: 2000, y: 2000 } },
+            { type: 'line', start: { x: 2000, y: 2000 }, end: { x: 0, y: 2000 } },
+            { type: 'line', start: { x: 0, y: 2000 }, end: { x: 0, y: 0 } },
+          ],
+        },
+      }],
+      { target_turnover_rate: 2, surface_skim_pct: 30, bottom_drain_pct: 70 },
+      null,
+    );
+    expect(missingLevel.reasons).toContain('Operating volume is missing or invalid.');
+
+    const stored = calculateExhibitHydraulics(
+      exhibit, [{ ...custom, operating_volume_m3: 120 }],
+      { target_turnover_rate: 2, surface_skim_pct: 30, bottom_drain_pct: 70 },
+      null,
+    );
+    expect(stored.inputs.tanks[0]).toMatchObject({ source: 'stored', value_m3: 120 });
+  });
+
   it('prefers a stored project-tank operating volume over complete dimensions', () => {
     const calculated = calculateExhibitHydraulics(
       exhibit,

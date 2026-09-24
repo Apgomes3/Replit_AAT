@@ -6,6 +6,7 @@
  * any engineering logic of its own.
  */
 import { resolveLoopFlows } from './flowRoute';
+import { summarizeCustomFootprint } from './customFootprint';
 
 export const AQUARIUM_CALCULATION_VERSION = 'aquarium-hydraulics-v1';
 export const TURNOVER_UNIT = 'cycles_per_hour';
@@ -363,9 +364,19 @@ export function calculateTankOperatingVolume(tank: any): {
   let footprintArea: number | null = null;
   let formula = '';
   if (shape === 'custom') {
-    calculated = storedOperatingVolume ?? positiveOrNull(tank?.design_volume_m3);
-    footprintArea = positiveOrNull(tank?.surface_area_m2);
-    formula = 'Stored operating volume (custom tank)';
+    // A saved outline is the governed water footprint. Recompute its area
+    // rather than trusting a cached surface area that might predate an edit.
+    const footprint = tank?.custom_footprint
+      ? summarizeCustomFootprint(tank.custom_footprint)
+      : null;
+    footprintArea = footprint?.valid ? positiveOrNull(footprint.area_m2) : positiveOrNull(tank?.surface_area_m2);
+    if (footprint?.valid && footprintArea != null && waterLevel != null) {
+      calculated = footprintArea * waterLevel / 1000;
+      formula = 'Saved custom footprint area × operating water level ÷ 1,000';
+    } else {
+      calculated = storedOperatingVolume ?? positiveOrNull(tank?.design_volume_m3);
+      formula = 'Stored operating volume (custom tank)';
+    }
   } else if (storedOperatingVolume != null) {
     calculated = storedOperatingVolume;
     footprintArea = positiveOrNull(tank?.surface_area_m2);
