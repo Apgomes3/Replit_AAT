@@ -29,6 +29,33 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS notifications (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  body TEXT,
+  entity_type TEXT,
+  entity_id TEXT,
+  is_read BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS event_key TEXT;
+ALTER TABLE notifications ALTER COLUMN entity_id TYPE TEXT USING entity_id::text;
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS href TEXT;
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS action_required BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS severity TEXT NOT NULL DEFAULT 'info';
+CREATE UNIQUE INDEX IF NOT EXISTS notifications_event_recipient_unique
+  ON notifications (event_key, user_id) WHERE event_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS notifications_inbox_idx ON notifications(user_id, created_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS notification_subscriptions (
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  entity_type TEXT NOT NULL,
+  entity_id TEXT NOT NULL,
+  PRIMARY KEY (user_id, entity_type, entity_id)
+);
+
 -- PROJECT DOMAIN
 CREATE TABLE IF NOT EXISTS projects (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -1039,6 +1066,7 @@ ALTER TABLE design_books ADD COLUMN IF NOT EXISTS released_at TIMESTAMPTZ;
 ALTER TABLE design_books ADD COLUMN IF NOT EXISTS release_snapshot JSONB;
 ALTER TABLE design_books ADD COLUMN IF NOT EXISTS review_submitted_by UUID REFERENCES users(id);
 ALTER TABLE design_books ADD COLUMN IF NOT EXISTS review_submitted_at TIMESTAMPTZ;
+ALTER TABLE design_books ADD COLUMN IF NOT EXISTS review_reviewer_id UUID REFERENCES users(id) ON DELETE SET NULL;
 ALTER TABLE design_books ADD COLUMN IF NOT EXISTS approved_by UUID REFERENCES users(id);
 ALTER TABLE design_books ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ;
 ALTER TABLE design_books ADD COLUMN IF NOT EXISTS approval_notes TEXT;
@@ -2658,6 +2686,8 @@ CREATE TABLE IF NOT EXISTS uv_engineering_revisions (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(catalog_id, revision_number)
 );
+ALTER TABLE uv_engineering_revisions
+  ADD COLUMN IF NOT EXISTS reviewer_id UUID REFERENCES users(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_uv_engineering_revisions_catalog ON uv_engineering_revisions(catalog_id, revision_number DESC);
 ALTER TABLE uv_engineering_revisions DROP CONSTRAINT IF EXISTS uv_engineering_positive_values;
 ALTER TABLE uv_engineering_revisions ADD CONSTRAINT uv_engineering_positive_values CHECK (

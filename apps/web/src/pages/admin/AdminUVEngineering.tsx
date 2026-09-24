@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, CopyPlus, LayoutGrid, List, RefreshCw, ShieldCheck, Sun, X } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useSearchParams } from 'react-router-dom';
 import api from '../../lib/api';
 import Button from '../../components/ui/Button';
 import PageHeader from '../../components/ui/PageHeader';
@@ -190,13 +191,27 @@ function EngineeringForm({ product, revision, onClose, onSaved }: any) {
 
 export default function AdminUVEngineering() {
   const queryClient = useQueryClient();
+  const [searchParams] = useSearchParams();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingRevision, setEditingRevision] = useState<any | null>(null);
   const [reconciling, setReconciling] = useState(false);
+  const [reviewingRevision, setReviewingRevision] = useState<any | null>(null);
+  const [reviewerId, setReviewerId] = useState('');
   const [viewMode, setViewMode] = useState<'list' | 'cards'>('list');
   const { data = { items: [] }, isLoading } = useQuery({
     queryKey: ['uv-engineering', 'admin'],
     queryFn: () => api.get('/admin/uv-engineering', { params: { include_history: true } }).then(response => response.data),
+  });
+  const revisionId = searchParams.get('revision');
+  const linkedRevisionQuery = useQuery({
+    queryKey: ['uv-engineering', 'revision', revisionId],
+    queryFn: () => api.get(`/admin/uv-engineering/revisions/${encodeURIComponent(revisionId!)}`).then(response => response.data),
+    enabled: Boolean(revisionId),
+    retry: false,
+  });
+  const reviewersQuery = useQuery({
+    queryKey: ['uv-engineering', 'reviewers'],
+    queryFn: () => api.get('/admin/uv-engineering/reviewers').then(response => response.data),
   });
   const products = data.items || [];
   const selected = useMemo(() => products.find((product: any) => product.id === selectedId) || null, [products, selectedId]);
@@ -216,13 +231,15 @@ export default function AdminUVEngineering() {
     }
   };
 
-  const changeStatus = async (revision: any, status: string) => {
+  const changeStatus = async (revision: any, status: string, details: Record<string, unknown> = {}) => {
     try {
-      await api.patch(`/admin/uv-engineering/revisions/${revision.id}/status`, { status });
+      await api.patch(`/admin/uv-engineering/revisions/${revision.id}/status`, { status, ...details });
       toast.success(`UV revision marked ${status}`);
       refresh();
+      return true;
     } catch (error: any) {
       toast.error(error?.response?.data?.error?.message || 'Revision status could not be changed');
+      return false;
     }
   };
 
@@ -235,9 +252,56 @@ export default function AdminUVEngineering() {
         <p>PIM controls identity and active status. Only complete, approved engineering revisions linked to an active PFM-UV product are available to calculations. Approved revisions cannot be edited.</p>
       </div>
 
+      {revisionId && (
+        <section aria-label="Linked UV engineering revision" className="rounded-xl border border-violet-200 bg-white shadow-sm">
+          {linkedRevisionQuery.isLoading ? (
+            <p className="p-5 text-sm text-stone-500">Loading linked UV engineering revision…</p>
+          ) : linkedRevisionQuery.isError ? (
+            <p role="alert" className="p-5 text-sm text-red-700">The linked UV engineering revision could not be loaded. It may no longer exist or you may not have access.</p>
+          ) : linkedRevisionQuery.data ? (() => {
+            const { product, revision } = linkedRevisionQuery.data;
+            return (
+              <>
+                <div className="flex flex-wrap items-start justify-between gap-3 border-b border-violet-100 bg-violet-50/70 px-5 py-4">
+                  <div>
+                    <h2 className="text-sm font-semibold text-stone-800">Linked UV engineering revision</h2>
+                    <p className="mt-1 text-xs text-stone-500">{product.product_name} · {product.product_code}</p>
+                    <p className="mt-1 font-mono text-[11px] text-stone-400">Revision ID: {revision.id}</p>
+                  </div>
+                  <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusClass(revision.status)}`}>
+                    r{revision.revision_number} · {revision.status}
+                  </span>
+                </div>
+                <dl className="grid gap-4 p-5 text-xs sm:grid-cols-2 lg:grid-cols-4">
+                  <div><dt className="text-stone-400">Effective reactor volume</dt><dd className="mt-1 font-medium text-stone-700">{revision.effective_reactor_volume_l ?? 'Missing'} L</dd></div>
+                  <div><dt className="text-stone-400">85%T irradiance</dt><dd className="mt-1 font-medium text-stone-700">{revision.irradiance_85t_mw_cm2 ?? 'Missing'} mW/cm²</dd></div>
+                  <div><dt className="text-stone-400">95%T irradiance</dt><dd className="mt-1 font-medium text-stone-700">{revision.irradiance_95t_mw_cm2 ?? 'Missing'} mW/cm²</dd></div>
+                  <div><dt className="text-stone-400">Flow exception per lamp</dt><dd className="mt-1 font-medium text-stone-700">{revision.approved_per_lamp_flow_exception_m3h ?? 'Not set'} m³/h</dd></div>
+                  <div><dt className="text-stone-400">Source basis</dt><dd className="mt-1 font-medium text-stone-700">{revision.source_basis || 'Not set'}</dd></div>
+                  <div><dt className="text-stone-400">Source evidence</dt><dd className="mt-1 font-medium text-stone-700">{revision.source_evidence || 'Not set'}</dd></div>
+                  <div className="sm:col-span-2"><dt className="text-stone-400">Revision notes</dt><dd className="mt-1 whitespace-pre-wrap font-medium text-stone-700">{revision.notes || 'None'}</dd></div>
+                  <div className="sm:col-span-2 lg:col-span-4">
+                    <dt className="text-stone-400">Compatibility for this revision (material defaults are current)</dt>
+                    <dd className="mt-2 flex flex-wrap gap-2">
+                      {(product.compatibility_options || []).map((option: any) => (
+                        <span key={option.water_type} className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] text-stone-600">
+                          {option.water_type}: {option.allowed ? 'Allowed' : 'Not allowed'}{option.is_override ? ' (revision override)' : ' (current material default)'}
+                        </span>
+                      ))}
+                    </dd>
+                  </div>
+                </dl>
+                <p className="border-t border-stone-100 px-5 py-3 text-[11px] text-stone-400">Read-only notification context. This view is pinned to the linked revision, not the product’s latest revision.</p>
+              </>
+            );
+          })() : null}
+        </section>
+      )}
+
       {editingRevision && selected && <EngineeringForm product={selected} revision={editingRevision === true ? currentRevision : editingRevision}
         onClose={() => setEditingRevision(null)} onSaved={refresh} />}
 
+      {!revisionId && <>
       <div className="flex justify-end gap-1">
         <button type="button" aria-label="List view" onClick={() => setViewMode('list')} className={`rounded-lg border p-2 ${viewMode === 'list' ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-stone-200 text-stone-500'}`}><List className="h-4 w-4" /></button>
         <button type="button" aria-label="Card view" onClick={() => setViewMode('cards')} className={`rounded-lg border p-2 ${viewMode === 'cards' ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-stone-200 text-stone-500'}`}><LayoutGrid className="h-4 w-4" /></button>
@@ -291,7 +355,40 @@ export default function AdminUVEngineering() {
                     <td className="px-4 py-3 text-xs">{product.calculation_enabled || product.selectable ? <span className="font-semibold text-emerald-700">Calculation enabled</span> : <span className="font-semibold text-amber-700">{product.completeness_message || 'Incomplete or unavailable'}</span>}</td>
                     <td className="px-4 py-3"><div className="flex justify-end gap-2">
                       {(!revision || ['Draft', 'In Review'].includes(revision.status)) && <button onClick={() => { setSelectedId(product.id); setEditingRevision(revision || {}); }} className="text-xs font-semibold text-blue-600 hover:underline">{revision ? 'Edit' : 'Complete'}</button>}
-                      {revision?.status === 'Draft' && <button onClick={() => changeStatus(revision, 'In Review')} className="text-xs font-semibold text-blue-600 hover:underline">Review</button>}
+                       {revision?.status === 'Draft' && (reviewingRevision?.id === revision.id ? (
+                         <div className="flex items-center gap-1">
+                           <label className="sr-only" htmlFor={`uv-reviewer-${revision.id}`}>Reviewer for UV revision {revision.revision_number}</label>
+                           <select
+                             id={`uv-reviewer-${revision.id}`}
+                             aria-label={`Reviewer for UV revision ${revision.revision_number}`}
+                             className="max-w-40 rounded border border-stone-200 bg-white px-2 py-1 text-xs"
+                             value={reviewerId}
+                             onChange={event => setReviewerId(event.target.value)}
+                             disabled={reviewersQuery.isLoading}
+                           >
+                             <option value="">Select reviewer…</option>
+                             {(reviewersQuery.data?.items || []).map((user: any) => (
+                               <option key={user.id} value={user.id}>
+                                 {[user.first_name, user.last_name].filter(Boolean).join(' ') || user.email} ({user.role})
+                               </option>
+                             ))}
+                           </select>
+                           <button
+                             onClick={async () => {
+                               const saved = await changeStatus(revision, 'In Review', { reviewer_id: reviewerId });
+                               if (saved) setReviewingRevision(null);
+                             }}
+                             disabled={!reviewerId || reviewersQuery.isLoading}
+                             className="text-xs font-semibold text-blue-600 hover:underline disabled:text-stone-300"
+                           >Submit</button>
+                           <button onClick={() => setReviewingRevision(null)} className="text-xs text-stone-400 hover:underline">Cancel</button>
+                         </div>
+                       ) : (
+                         <button onClick={() => {
+                           setReviewingRevision(revision);
+                           setReviewerId(revision.reviewer_id || '');
+                         }} className="text-xs font-semibold text-blue-600 hover:underline">Review</button>
+                       ))}
                       {['Draft', 'In Review'].includes(revision?.status) && <button onClick={() => changeStatus(revision, 'Approved')} className="text-xs font-semibold text-emerald-700 hover:underline">Approve</button>}
                       {revision?.status === 'Approved' && <>
                         <button onClick={() => { setSelectedId(product.id); setEditingRevision(revision); }} className="inline-flex items-center gap-1 text-xs font-semibold text-violet-700 hover:underline"><CopyPlus className="h-3 w-3" />Revise</button>
@@ -306,6 +403,7 @@ export default function AdminUVEngineering() {
           </table>
         </div>
       </section>
+      </>}
       <div className="sr-only"><Sun />UV engineering administration</div>
     </div>
   );

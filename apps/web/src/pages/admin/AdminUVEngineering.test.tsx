@@ -63,11 +63,11 @@ const product = {
   completeness_message: 'Engineering revision is not approved',
 };
 
-function renderPage() {
+function renderPage(initialEntries = ['/admin/uv-engineering']) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={initialEntries}>
         <AdminUVEngineering />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -116,5 +116,37 @@ describe('UV engineering administration', () => {
     const payload = vi.mocked(api.put).mock.calls[0][1] as Record<string, unknown>;
     expect(payload).not.toHaveProperty('lamp_count');
     expect(payload).not.toHaveProperty('lamp_power_w');
+  });
+
+  it('opens the exact revision from the deep-link query as read-only context', async () => {
+    const historicRevision = {
+      ...revision,
+      id: 'historic-revision-1',
+      revision_number: 1,
+      status: 'Retired',
+      effective_reactor_volume_l: 75,
+      notes: 'Historic approved operating basis',
+    };
+    vi.mocked(api.get).mockImplementation(async (path: string) => {
+      if (path === '/admin/uv-engineering/revisions/historic-revision-1') {
+        return {
+          data: {
+            product: { ...product, compatibility_options: [{ water_type: 'Saltwater', allowed: true, is_override: true }] },
+            revision: historicRevision,
+          },
+        } as any;
+      }
+      return { data: { items: [product] } } as any;
+    });
+
+    renderPage(['/admin/uv-engineering?revision=historic-revision-1']);
+
+    expect(await screen.findByText('Revision ID: historic-revision-1')).toBeVisible();
+    expect(screen.getByText('75 L')).toBeVisible();
+    expect(screen.getByText('Historic approved operating basis')).toBeVisible();
+    expect(screen.getByText('Saltwater: Allowed (revision override)')).toBeVisible();
+    expect(screen.getByText(/pinned to the linked revision/i)).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
+    expect(api.get).toHaveBeenCalledWith('/admin/uv-engineering/revisions/historic-revision-1');
   });
 });

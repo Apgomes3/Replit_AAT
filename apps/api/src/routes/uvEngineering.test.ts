@@ -14,6 +14,8 @@ const state = vi.hoisted(() => ({
     catalog_id: 'catalog-1',
     revision_number: 1,
     status: 'Draft',
+    created_by: 'admin-1',
+    reviewer_id: null as string | null,
     lamp_count: null as number | null,
     lamp_power_w: null as number | null,
     effective_reactor_volume_l: null as number | null,
@@ -25,6 +27,7 @@ const state = vi.hoisted(() => ({
   },
   queries: [] as string[],
   calls: [] as Array<{ sql: string; params: any[] }>,
+  eligibleReviewers: [] as Array<{ id: string; first_name: string; last_name: string; email: string; role: string }>,
 }));
 
 vi.mock('../db', () => {
@@ -34,6 +37,12 @@ vi.mock('../db', () => {
     state.calls.push({ sql, params });
     if (sql.startsWith('select rma.access_level')) return { rows: [] };
     if (sql === 'begin' || sql === 'commit' || sql === 'rollback') return { rows: [] };
+    if (sql.startsWith('select u.id, u.first_name')) {
+      return { rows: state.eligibleReviewers.filter(user => user.id !== params[0]) };
+    }
+    if (sql.startsWith('select u.id from users u')) {
+      return { rows: state.eligibleReviewers.filter(user => user.id === params[0]) };
+    }
     if (sql.startsWith('select id from uv_engineering_catalogs where id=$1 for update')) {
       return { rows: params[0] === 'catalog-1' ? [{ id: 'catalog-1' }] : [] };
     }
@@ -49,8 +58,9 @@ vi.mock('../db', () => {
     if (sql.startsWith('insert into uv_engineering_revisions')) {
       return { rows: [{ ...state.revision, id: 'revision-2', revision_number: 2, supersedes_id: params[12] }] };
     }
+    if (sql.startsWith('insert into lifecycle_transitions')) return { rows: [{ id: 'transition-1' }] };
     if (sql.startsWith('update uv_engineering_revisions set status=')) {
-      state.revision = { ...state.revision, status: params[0] };
+      state.revision = { ...state.revision, status: params[0], reviewer_id: params[0] === 'In Review' ? params[2] : state.revision.reviewer_id };
       return { rows: [{ ...state.revision }] };
     }
     if (sql.startsWith('update uv_engineering_catalogs set needs_review=false')) return { rows: [] };
@@ -145,6 +155,8 @@ describe('UV engineering lifecycle', () => {
       catalog_id: 'catalog-1',
       revision_number: 1,
       status: 'Draft',
+      created_by: actorId,
+      reviewer_id: null,
       lamp_count: null,
       lamp_power_w: null,
       effective_reactor_volume_l: null,
@@ -154,6 +166,7 @@ describe('UV engineering lifecycle', () => {
       arrangement: null,
       source_evidence: null,
     };
+    state.eligibleReviewers = [];
   });
 
   afterAll(() => {
@@ -188,6 +201,33 @@ describe('UV engineering lifecycle', () => {
     }));
   });
 
+  it('lists only eligible UV reviewers for the PIM module', async () => {
+    const reviewer = {
+      id: 'reviewer-2',
+      first_name: 'Review',
+      last_name: 'Engineer',
+      email: 'reviewer@example.com',
+      role: 'engineer',
+    };
+    const actingUser = {
+      id: actorId,
+      first_name: 'Current',
+      last_name: 'Actor',
+      email: 'admin@example.com',
+      role: 'admin',
+    };
+    state.eligibleReviewers = [actingUser, reviewer];
+
+    const response = await request(app, 'GET', '/api/v1/admin/uv-engineering/reviewers', token);
+
+    expect(response.status).toBe(200);
+    expect(response.body.items).toEqual([reviewer]);
+    expect(state.queries.some(sql => sql.includes('u.id<>$1')
+      && sql.includes('u.is_active=true')
+      && sql.includes("(access.access_level is null or access.access_level='manage')")
+      && sql.includes("u.role in ('admin', 'engineer')"))).toBe(true);
+  });
+
   it('rejects unknown water compatibility types', async () => {
     const response = await request(
       app,
@@ -212,6 +252,80 @@ describe('UV engineering lifecycle', () => {
     expect(response.body.error.code).toBe('INCOMPLETE_REVISION');
     expect(response.body.error.message).toContain('PIM lamp count');
     expect(response.body.error.message).toContain('positive effective reactor volume');
+  });
+
+  it('requires and notifies an assigned reviewer when the creator submits their own revision', async () => {
+    const reviewer = {
+      id: 'reviewer-2',
+      first_name: 'Review',
+      last_name: 'Engineer',
+      email: 'reviewer@example.com',
+      role: 'engineer',
+    };
+    state.revision.created_by = actorId;
+    state.eligibleReviewers = [reviewer];
+
+    const response = await request(
+      app,
+      'PATCH',
+      '/api/v1/admin/uv-engineering/revisions/revision-1/status',
+      token,
+      { status: 'In Review', reviewer_id: reviewer.id },
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.reviewer_id).toBe(reviewer.id);
+    expect(state.calls).toContainEqual(expect.objectContaining({
+      sql: expect.stringContaining('update uv_engineering_revisions set status='),
+      params: ['In Review', actorId, reviewer.id, 'revision-1'],
+    }));
+    expect(state.calls).toContainEqual(expect.objectContaining({
+      sql: expect.stringContaining('insert into notifications'),
+      params: expect.arrayContaining([true, 'info', 'pim', actorId, [reviewer.id], false]),
+    }));
+    const deliveries = state.calls.filter(call => call.sql.includes('insert into notifications'));
+    const reviewerAction = deliveries.find(call => call.params[11]?.includes(reviewer.id) && call.params[7] === true);
+    expect(reviewerAction?.params[12]).toBe(false);
+    const subscriberUpdate = deliveries.find(call => call.params[12] === true);
+    expect(subscriberUpdate?.params[7]).toBe(false);
+    expect(subscriberUpdate?.params[13]).toContain(reviewer.id);
+  });
+
+  it('does not submit a revision for review without an eligible reviewer', async () => {
+    const response = await request(
+      app,
+      'PATCH',
+      '/api/v1/admin/uv-engineering/revisions/revision-1/status',
+      token,
+      { status: 'In Review' },
+    );
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('REVIEWER_REQUIRED');
+    expect(state.queries.some(sql => sql.startsWith('update uv_engineering_revisions set status='))).toBe(false);
+  });
+
+  it('rejects the acting user as their own UV reviewer', async () => {
+    state.eligibleReviewers = [{
+      id: actorId,
+      first_name: 'Current',
+      last_name: 'Actor',
+      email: 'admin@example.com',
+      role: 'admin',
+    }];
+
+    const response = await request(
+      app,
+      'PATCH',
+      '/api/v1/admin/uv-engineering/revisions/revision-1/status',
+      token,
+      { status: 'In Review', reviewer_id: actorId },
+    );
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('INVALID_REVIEWER');
+    expect(state.queries.some(sql => sql.startsWith('update uv_engineering_revisions set status='))).toBe(false);
+    expect(state.queries.some(sql => sql.startsWith('insert into notifications'))).toBe(false);
   });
 
   it('keeps approved revision values immutable', async () => {

@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import pool, { query } from '../db';
 import { logAudit } from '../db/audit';
 import { authenticate, requireModuleAccess, requireModuleManage, requireRole, AuthRequest } from '../middleware/auth';
+import { emitNotification } from '../db/notifications';
 
 const adminRouter = Router();
 const consumerRouter = Router();
@@ -161,11 +162,58 @@ adminRouter.get('/', async (req: AuthRequest, res: Response) => {
   res.json({ items: result.rows });
 });
 
+adminRouter.get('/reviewers', async (req: AuthRequest, res: Response) => {
+  const result = await query(`SELECT u.id, u.first_name, u.last_name, u.email, u.role
+    FROM users u
+    LEFT JOIN roles r ON r.name=u.role
+    LEFT JOIN role_module_access access ON access.role_id=r.id AND access.module_key='pim'
+    WHERE u.is_active=true AND u.role IN ('admin', 'engineer')
+      AND (access.access_level IS NULL OR access.access_level='manage')
+      AND u.id<>$1
+    ORDER BY u.last_name NULLS LAST, u.first_name NULLS LAST, u.email`, [req.user!.id]);
+  res.json({ items: result.rows });
+});
+
 adminRouter.get('/:id', async (req: AuthRequest, res: Response) => {
   const catalog = await query(`${catalogSelect} WHERE c.id::text=$1 OR pm.id::text=$1 OR pm.product_code=$1`, [req.params.id]);
   if (!catalog.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'UV engineering catalog not found' } });
   const revisions = await query('SELECT * FROM uv_engineering_revisions WHERE catalog_id=$1 ORDER BY revision_number DESC', [catalog.rows[0].id]);
   res.json({ ...catalog.rows[0], revisions: revisions.rows });
+});
+
+adminRouter.get('/revisions/:id', async (req: AuthRequest, res: Response) => {
+  const result = await query(`SELECT c.id AS catalog_id, pm.id AS product_master_id,
+      pm.product_code, pm.product_name, pm.manufacturer, pm.status AS pim_status,
+      pm.product_category, pm.primary_material_code, pm.configuration, pm.control_type,
+      pm.signal_type, pm.control_type_optional, pm.power_kw AS rated_power_kw,
+      pm.lamp_count AS pim_lamp_count, pf.product_family_code, pf.product_family_name,
+      COALESCE(compatibility_options.options, '[]'::json) AS compatibility_options,
+      row_to_json(r) AS revision
+    FROM uv_engineering_revisions r
+    JOIN uv_engineering_catalogs c ON c.id=r.catalog_id
+    JOIN product_masters pm ON pm.id=c.product_master_id
+    JOIN product_families pf ON pf.id=pm.product_family_id
+    LEFT JOIN LATERAL (
+      SELECT json_agg(json_build_object(
+        'water_type', water_types.water_type,
+        'default_allowed', mwc.allowed,
+        'allowed', COALESCE(override.allowed, mwc.allowed, false),
+        'is_override', override.id IS NOT NULL,
+        'source', mwc.source,
+        'notes', mwc.notes
+      ) ORDER BY water_types.sort_order) AS options
+      FROM (VALUES (1, 'Saltwater'), (2, 'Seawater'), (3, 'Freshwater'), (4, 'Brackish water')) water_types(sort_order, water_type)
+      LEFT JOIN material_water_compatibility mwc
+        ON mwc.material_code=pm.primary_material_code AND mwc.water_type=water_types.water_type
+      LEFT JOIN uv_engineering_revision_compatibility override
+        ON override.revision_id=r.id AND override.water_type=water_types.water_type
+    ) compatibility_options ON true
+    WHERE r.id::text=$1`,
+  [req.params.id]);
+  const row = result.rows[0];
+  if (!row) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'UV engineering revision not found' } });
+  const { revision, ...product } = row;
+  res.json({ product, revision });
 });
 
 adminRouter.post('/reconcile', async (req: AuthRequest, res: Response) => {
@@ -314,67 +362,183 @@ adminRouter.put('/revisions/:id', async (req: AuthRequest, res: Response) => {
 });
 
 adminRouter.patch('/revisions/:id/status', async (req: AuthRequest, res: Response) => {
-  const existing = await query('SELECT * FROM uv_engineering_revisions WHERE id=$1', [req.params.id]);
-  if (!existing.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'UV engineering revision not found' } });
   const status = req.body.status;
   if (!STATUSES.includes(status)) return res.status(400).json({ error: { code: 'VALIDATION', message: `Status must be one of: ${STATUSES.join(', ')}` } });
-  const from = existing.rows[0].status;
-  if (status === from) return res.json(existing.rows[0]);
-  if (status === 'Approved') {
-    const governance = await query(
-      `SELECT true AS governance_loaded, pm.product_code, pm.product_name,
-              pm.primary_material_code, pm.power_kw AS pim_rated_power_kw,
-              pm.lamp_count AS pim_lamp_count,
-              (SELECT COUNT(*) FILTER (WHERE COALESCE(override.allowed, mwc.allowed, false))::int
-                 FROM (VALUES ('Saltwater'), ('Seawater'), ('Freshwater'), ('Brackish water')) water_types(water_type)
-                 LEFT JOIN material_water_compatibility mwc
-                   ON mwc.material_code=pm.primary_material_code AND mwc.water_type=water_types.water_type
-                 LEFT JOIN uv_engineering_revision_compatibility override
-                   ON override.revision_id=$2 AND override.water_type=water_types.water_type
-              ) AS material_compatibility_count
-         FROM uv_engineering_catalogs c
-         JOIN product_masters pm ON pm.id=c.product_master_id
-        WHERE c.id=$1`,
-      [existing.rows[0].catalog_id, existing.rows[0].id],
+  const client = await pool.connect();
+  let changed: any;
+  let from: string;
+  try {
+    await client.query('BEGIN');
+    const existing = await client.query('SELECT * FROM uv_engineering_revisions WHERE id=$1 FOR UPDATE', [req.params.id]);
+    const revision = existing.rows[0];
+    if (!revision) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'UV engineering revision not found' } });
+    }
+    from = revision.status;
+    if (status === from) {
+      await client.query('COMMIT');
+      return res.json(revision);
+    }
+    let reviewerId: string | null = null;
+    if (status === 'In Review') {
+      reviewerId = typeof req.body.reviewer_id === 'string' && req.body.reviewer_id.trim()
+        ? req.body.reviewer_id.trim()
+        : revision.reviewer_id || null;
+      if (!reviewerId) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          error: { code: 'REVIEWER_REQUIRED', message: 'Select an eligible reviewer before submitting this revision for review.' },
+        });
+      }
+      if (reviewerId.toLowerCase() === req.user!.id.toLowerCase()) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          error: { code: 'INVALID_REVIEWER', message: 'Select another eligible user to independently review this revision.' },
+        });
+      }
+      const eligibleReviewer = await client.query(
+        `SELECT u.id FROM users u
+         LEFT JOIN roles r ON r.name=u.role
+         LEFT JOIN role_module_access access ON access.role_id=r.id AND access.module_key='pim'
+         WHERE u.id::text=$1 AND u.is_active=true
+           AND u.role IN ('admin', 'engineer')
+           AND (access.access_level IS NULL OR access.access_level='manage')`,
+        [reviewerId],
+      );
+      if (!eligibleReviewer.rows[0]) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          error: { code: 'INVALID_REVIEWER', message: 'The selected reviewer must be an active admin or engineer with PIM manage access.' },
+        });
+      }
+      reviewerId = eligibleReviewer.rows[0].id;
+    }
+    if (status === 'Approved') {
+      const governance = await client.query(
+        `SELECT true AS governance_loaded, pm.product_code, pm.product_name,
+                pm.primary_material_code, pm.power_kw AS pim_rated_power_kw,
+                pm.lamp_count AS pim_lamp_count,
+                (SELECT COUNT(*) FILTER (WHERE COALESCE(override.allowed, mwc.allowed, false))::int
+                   FROM (VALUES ('Saltwater'), ('Seawater'), ('Freshwater'), ('Brackish water')) water_types(water_type)
+                   LEFT JOIN material_water_compatibility mwc
+                     ON mwc.material_code=pm.primary_material_code AND mwc.water_type=water_types.water_type
+                   LEFT JOIN uv_engineering_revision_compatibility override
+                     ON override.revision_id=$2 AND override.water_type=water_types.water_type
+                ) AS material_compatibility_count
+           FROM uv_engineering_catalogs c
+           JOIN product_masters pm ON pm.id=c.product_master_id
+          WHERE c.id=$1`,
+        [revision.catalog_id, revision.id],
+      );
+      const candidate = governance.rows[0] ? { ...revision, ...governance.rows[0] } : revision;
+      const missingItems = approvalMissingItems(candidate);
+      if (missingItems.length > 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          error: {
+            code: 'INCOMPLETE_REVISION',
+            message: `Approval blocked. Missing: ${missingItems.join('; ')}.`,
+            missing: missingItems,
+          },
+        });
+      }
+      if (governance.rows[0] && revision.source_basis !== 'AAT Foundations') {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: { code: 'INVALID_SOURCE_BASIS', message: 'Reviewed source must be AAT Foundations.' } });
+      }
+    }
+    const transitions: Record<string, string[]> = {
+      Draft: ['Draft', 'In Review', 'Approved', 'Disabled'],
+      'In Review': ['In Review', 'Draft', 'Approved', 'Disabled'],
+      Approved: ['Approved', 'Retired', 'Disabled'],
+      Retired: ['Retired'],
+      Disabled: ['Disabled'],
+    };
+    if (!transitions[from]?.includes(status)) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: { code: 'IMMUTABLE_REVISION', message: `${from} revisions cannot be changed to ${status}; create a new draft revision if engineering values must change.` } });
+    }
+    const result = await client.query(`UPDATE uv_engineering_revisions SET status=$1::varchar,
+      reviewer_id=CASE WHEN $1::varchar='In Review' THEN $3::uuid ELSE reviewer_id END,
+      approved_by=CASE WHEN $1::varchar='Approved' THEN $2 ELSE approved_by END,
+      source_basis_verified=CASE WHEN $1::varchar='Approved' THEN true ELSE source_basis_verified END,
+      approved_at=CASE WHEN $1::varchar='Approved' THEN NOW() ELSE approved_at END, retired_at=CASE WHEN $1::varchar='Retired' THEN NOW() ELSE retired_at END,
+      updated_at=NOW() WHERE id=$4 RETURNING *`, [status, req.user!.id, reviewerId, req.params.id]);
+    changed = result.rows[0];
+    if (status === 'Approved') {
+      await client.query(`UPDATE uv_engineering_catalogs
+        SET needs_review=false, review_reason=NULL, updated_at=NOW()
+        WHERE id=$1`, [revision.catalog_id]);
+    }
+    const transition = await client.query(
+      `INSERT INTO lifecycle_transitions(entity_type,entity_id,from_state,to_state,actor_id)
+       VALUES ('uv_engineering_revision',$1,$2,$3,$4) RETURNING id`,
+      [revision.id, from, status, req.user!.id],
     );
-    const candidate = governance.rows[0]
-      ? { ...existing.rows[0], ...governance.rows[0] }
-      : existing.rows[0];
-    const missingItems = approvalMissingItems(candidate);
-    if (missingItems.length > 0) {
-      return res.status(400).json({
-        error: {
-          code: 'INCOMPLETE_REVISION',
-          message: `Approval blocked. Missing: ${missingItems.join('; ')}.`,
-          missing: missingItems,
-        },
+    if (status === 'In Review' && reviewerId) {
+      await emitNotification(client, {
+        eventKey: `uv-engineering-review:${transition.rows[0].id}`,
+        type: 'engineering_review_required',
+        title: `UV engineering revision ${revision.revision_number} requires review`,
+        body: `${from} → ${status}`,
+        entityType: 'uv_engineering_revision',
+        entityId: String(revision.id),
+        actorId: req.user!.id,
+        recipientIds: [reviewerId],
+        actionRequired: true,
+        includeSubscribers: false,
       });
     }
-    if (governance.rows[0] && existing.rows[0].source_basis !== 'AAT Foundations') {
-      return res.status(400).json({ error: { code: 'INVALID_SOURCE_BASIS', message: 'Reviewed source must be AAT Foundations.' } });
+    if (status === 'Draft' && revision.created_by && revision.created_by !== req.user!.id) {
+      await emitNotification(client, {
+        eventKey: `uv-engineering-return:${transition.rows[0].id}`,
+        type: 'engineering_rejected',
+        title: `UV engineering revision ${revision.revision_number} returned to draft`,
+        body: `${from} → ${status}`,
+        entityType: 'uv_engineering_revision',
+        entityId: String(revision.id),
+        actorId: req.user!.id,
+        recipientIds: [revision.created_by],
+        actionRequired: true,
+        includeSubscribers: false,
+      });
     }
-  }
-  const transitions: Record<string, string[]> = {
-    Draft: ['Draft', 'In Review', 'Approved', 'Disabled'],
-    'In Review': ['In Review', 'Draft', 'Approved', 'Disabled'],
-    Approved: ['Approved', 'Retired', 'Disabled'],
-    Retired: ['Retired'],
-    Disabled: ['Disabled'],
-  };
-  if (!transitions[from]?.includes(status)) {
-    return res.status(409).json({ error: { code: 'IMMUTABLE_REVISION', message: `${from} revisions cannot be changed to ${status}; create a new draft revision if engineering values must change.` } });
-  }
-  const result = await query(`UPDATE uv_engineering_revisions SET status=$1::varchar, approved_by=CASE WHEN $1::varchar='Approved' THEN $2 ELSE approved_by END,
-    source_basis_verified=CASE WHEN $1::varchar='Approved' THEN true ELSE source_basis_verified END,
-    approved_at=CASE WHEN $1::varchar='Approved' THEN NOW() ELSE approved_at END, retired_at=CASE WHEN $1::varchar='Retired' THEN NOW() ELSE retired_at END,
-    updated_at=NOW() WHERE id=$3 RETURNING *`, [status, req.user!.id, req.params.id]);
-  if (status === 'Approved') {
-    await query(`UPDATE uv_engineering_catalogs
-      SET needs_review=false, review_reason=NULL, updated_at=NOW()
-      WHERE id=$1`, [existing.rows[0].catalog_id]);
+    {
+      const labels: Record<string, string> = {
+        'In Review': 'submitted for engineering review',
+        Approved: 'approved',
+        Draft: 'returned to draft',
+        Disabled: 'disabled',
+        Retired: 'retired',
+      };
+      await emitNotification(client, {
+        eventKey: `uv-engineering-transition:${transition.rows[0].id}`,
+        type: status === 'Approved' ? 'engineering_approved'
+          : status === 'Draft' ? 'engineering_rejected'
+            : 'engineering_transition',
+        title: `UV engineering revision ${revision.revision_number} ${labels[status] || `changed to ${status}`}`,
+        body: `${from} → ${status}`,
+        entityType: 'uv_engineering_revision',
+        entityId: String(revision.id),
+        actorId: req.user!.id,
+        recipientIds: status === 'Draft' || !revision.created_by ? [] : [revision.created_by],
+        actionRequired: false,
+        excludeUserIds: [
+          ...(status === 'In Review' && reviewerId ? [reviewerId] : []),
+          ...(status === 'Draft' && revision.created_by ? [revision.created_by] : []),
+        ],
+      });
+    }
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
   }
   await logAudit(req.user!.id, 'uv_engineering_revision', String(req.params.id), 'STATUS_CHANGE', { summary: `UV engineering revision status changed to ${status}`, from, to: status });
-  res.json(result.rows[0]);
+  res.json(changed);
 });
 
 consumerRouter.use(authenticate, requireModuleAccess('pim'));

@@ -15,6 +15,8 @@ interface Notification {
   body: string | null;
   entity_type: string | null;
   entity_id: string | null;
+  href?: string | null;
+  action_required?: boolean;
   is_read: boolean;
   created_at: string;
 }
@@ -22,7 +24,11 @@ interface Notification {
 interface NotificationsResponse {
   notifications: Notification[];
   unread_count: number;
+  total?: number;
 }
+
+type NotificationFilter = 'all' | 'unread' | 'action';
+const NOTIFICATIONS_PAGE_SIZE = 20;
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 function timeAgo(iso: string): string {
@@ -141,25 +147,96 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
 function NotificationBell() {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
-  const [data, setData] = useState<NotificationsResponse>({ notifications: [], unread_count: 0 });
+  const [filter, setFilter] = useState<NotificationFilter>('all');
+  const [data, setData] = useState<NotificationsResponse>({ notifications: [], unread_count: 0, total: 0 });
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [stale, setStale] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
+  const filterRef = useRef(filter);
+  filterRef.current = filter;
+  const requestId = useRef(0);
+  const consecutiveFailures = useRef(0);
+  const refreshRef = useRef<() => Promise<void>>(async () => {});
+  const hasNotifications = useRef(false);
+  hasNotifications.current = data.notifications.length > 0;
 
   const fetchNotifications = useCallback(async () => {
+    const currentRequest = ++requestId.current;
+    setLoading(true);
     try {
-      const res = await api.get<NotificationsResponse>('/notifications');
-      setData(res.data);
+      const res = await api.get<NotificationsResponse>('/notifications', {
+        params: { limit: NOTIFICATIONS_PAGE_SIZE, offset: 0, filter },
+      });
+      if (currentRequest !== requestId.current) return;
+      setData({
+        ...res.data,
+        notifications: res.data.notifications || [],
+        total: res.data.total ?? res.data.notifications?.length ?? 0,
+      });
+      setError(null);
+      setStale(false);
+      consecutiveFailures.current = 0;
     } catch {
-      // silent — don't spam toasts on polling errors
+      if (currentRequest !== requestId.current) return;
+      consecutiveFailures.current += 1;
+      setError('Could not refresh notifications. Check your connection and try again.');
+      setStale(hasNotifications.current);
+    } finally {
+      if (currentRequest === requestId.current) setLoading(false);
     }
+  }, [filter]);
+
+  refreshRef.current = fetchNotifications;
+
+  // Poll only while the page is visible and online; progressively back off on errors.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    let stopped = false;
+    const pause = () => {
+      clearTimeout(timer);
+      setStale(true);
+      setError(document.hidden
+        ? 'Notifications are paused while this page is hidden.'
+        : 'You are offline. Notifications may be out of date.');
+    };
+    const schedule = (delay: number) => {
+      clearTimeout(timer);
+      if (stopped || document.hidden || !navigator.onLine) return;
+      timer = setTimeout(async () => {
+        if (stopped || document.hidden || !navigator.onLine) return;
+        await refreshRef.current();
+        const failures = consecutiveFailures.current;
+        schedule(failures ? Math.min(30_000 * (2 ** (failures - 1)), 5 * 60_000) : 30_000);
+      }, delay);
+    };
+    const resume = () => {
+      if (document.hidden || !navigator.onLine) {
+        pause();
+        return;
+      }
+      void refreshRef.current().finally(() => {
+        const failures = consecutiveFailures.current;
+        schedule(failures ? Math.min(30_000 * (2 ** (failures - 1)), 5 * 60_000) : 30_000);
+      });
+    };
+    schedule(30_000);
+    document.addEventListener('visibilitychange', resume);
+    window.addEventListener('online', resume);
+    window.addEventListener('offline', pause);
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+      document.removeEventListener('visibilitychange', resume);
+      window.removeEventListener('online', resume);
+      window.removeEventListener('offline', pause);
+    };
   }, []);
 
-  // Initial fetch + 30s polling
   useEffect(() => {
-    fetchNotifications();
-    const id = setInterval(fetchNotifications, 30_000);
-    return () => clearInterval(id);
-  }, [fetchNotifications]);
+    void fetchNotifications();
+  }, [filter, fetchNotifications]);
 
   // Close on outside click
   useEffect(() => {
@@ -176,25 +253,43 @@ function NotificationBell() {
       try {
         await api.patch(`/notifications/${n.id}/read`);
         setData(prev => ({
+          ...prev,
           notifications: prev.notifications.map(x => x.id === n.id ? { ...x, is_read: true } : x),
           unread_count: Math.max(0, prev.unread_count - 1),
         }));
-      } catch { /* ignore */ }
+        if (filter !== 'all') void fetchNotifications();
+      } catch {
+        setError('Could not mark this notification as read.');
+        return;
+      }
     }
-    if (n.entity_type && n.entity_id) {
+    const href = n.href || (n.entity_type && n.entity_id
+      ? entityHref({ type: n.entity_type, id: n.entity_id })
+      : null);
+    if (href) {
       setOpen(false);
-      navigate(entityHref({ type: n.entity_type, id: n.entity_id }));
+      navigate(href);
     }
   };
 
   const markAllRead = async () => {
     try {
-      await api.patch('/notifications/read-all');
+      await api.patch('/notifications/read-all', { filter });
       setData(prev => ({
-        notifications: prev.notifications.map(x => ({ ...x, is_read: true })),
-        unread_count: 0,
+        ...prev,
+        notifications: prev.notifications.map(x => (
+          filter === 'all' || (filter === 'unread' && !x.is_read) || (filter === 'action' && x.action_required)
+            ? { ...x, is_read: true }
+            : x
+        )),
+        unread_count: Math.max(0, prev.unread_count - prev.notifications.filter(x =>
+          !x.is_read && (filter !== 'action' || x.action_required),
+        ).length),
       }));
-    } catch { /* ignore */ }
+      void fetchNotifications();
+    } catch {
+      setError('Could not mark notifications as read.');
+    }
   };
 
   const deleteNotif = async (e: React.MouseEvent, id: string) => {
@@ -204,20 +299,60 @@ function NotificationBell() {
       setData(prev => {
         const n = prev.notifications.find(x => x.id === id);
         return {
+          ...prev,
           notifications: prev.notifications.filter(x => x.id !== id),
           unread_count: n && !n.is_read ? Math.max(0, prev.unread_count - 1) : prev.unread_count,
+          total: Math.max(0, (prev.total ?? prev.notifications.length) - 1),
         };
       });
-    } catch { /* ignore */ }
+      void fetchNotifications();
+    } catch {
+      setError('Could not dismiss this notification.');
+    }
+  };
+
+  const loadMore = async () => {
+    if (loadingMore || data.notifications.length >= (data.total ?? 0)) return;
+    const requestedFilter = filter;
+    const pageRequestId = requestId.current;
+    setLoadingMore(true);
+    try {
+      const res = await api.get<NotificationsResponse>('/notifications', {
+        params: { limit: NOTIFICATIONS_PAGE_SIZE, offset: data.notifications.length, filter: requestedFilter },
+      });
+      if (requestedFilter !== filterRef.current || pageRequestId !== requestId.current) return;
+      setData(prev => ({
+        ...res.data,
+        notifications: [...prev.notifications, ...res.data.notifications.filter(
+          item => !prev.notifications.some(existing => existing.id === item.id),
+        )],
+        total: res.data.total ?? prev.total,
+      }));
+      setError(null);
+      setStale(false);
+    } catch {
+      setError('Could not load more notifications. Try again.');
+    } finally {
+      setLoadingMore(false);
+    }
   };
 
   const toggleOpen = () => {
     setOpen(v => !v);
     if (!open) {
-      setLoading(true);
-      fetchNotifications().finally(() => setLoading(false));
+      if (document.hidden || !navigator.onLine) {
+        setStale(true);
+        setError(document.hidden
+          ? 'Notifications are paused while this page is hidden.'
+          : 'You are offline. Showing saved notifications; updates are paused.');
+      } else {
+        void fetchNotifications();
+      }
     }
   };
+  const hasUnreadInFilter = filter === 'action'
+    ? (data.total ?? 0) > 0
+    : data.unread_count > 0;
 
   return (
     <div className="relative" ref={panelRef}>
@@ -233,7 +368,7 @@ function NotificationBell() {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-2 w-80 bg-white border border-slate-200 rounded-2xl shadow-2xl z-50 overflow-hidden flex flex-col max-h-[420px]">
+        <div className="absolute right-0 top-full mt-2 w-[min(24rem,calc(100vw-1.5rem))] bg-white border border-slate-200 rounded-2xl shadow-2xl z-50 overflow-hidden flex flex-col max-h-[min(80vh,520px)]">
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 shrink-0">
             <div className="flex items-center gap-2">
@@ -244,16 +379,49 @@ function NotificationBell() {
                 </span>
               )}
             </div>
-            {data.unread_count > 0 && (
+            {hasUnreadInFilter && (
               <button
                 onClick={markAllRead}
                 className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium transition-colors"
               >
                 <CheckCheck className="w-3.5 h-3.5" />
-                Mark all read
+                Mark {filter === 'all' ? 'all' : 'filtered'} read
               </button>
             )}
           </div>
+
+          <div className="flex gap-1 px-3 py-2 border-b border-slate-100 shrink-0" role="tablist" aria-label="Notification filters">
+            {([
+              ['all', 'All'],
+              ['unread', 'Unread'],
+              ['action', 'Action required'],
+            ] as const).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                aria-selected={filter === key}
+                onClick={() => {
+                  if (key !== filter) {
+                    setData(prev => ({ ...prev, notifications: [], total: 0 }));
+                    setError(null);
+                    setStale(false);
+                    setFilter(key);
+                  }
+                }}
+                className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${filter === key ? 'bg-blue-100 text-blue-700' : 'text-slate-500 hover:bg-slate-100'}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {error && (
+            <div role="alert" className="flex items-center justify-between gap-2 px-4 py-2 bg-amber-50 text-xs text-amber-800 border-b border-amber-100">
+              <span>{stale ? 'Showing saved notifications. ' : ''}{error}</span>
+              <button type="button" onClick={() => void fetchNotifications()} className="font-semibold underline shrink-0">Retry</button>
+            </div>
+          )}
 
           {/* List */}
           <div className="overflow-y-auto flex-1">
@@ -262,7 +430,7 @@ function NotificationBell() {
             ) : data.notifications.length === 0 ? (
               <div className="py-10 text-center">
                 <Bell className="w-8 h-8 text-slate-200 mx-auto mb-2" />
-                <p className="text-sm text-slate-400">No notifications yet</p>
+                <p className="text-sm text-slate-400">{filter === 'unread' ? 'No unread notifications' : filter === 'action' ? 'No action required' : 'No notifications yet'}</p>
               </div>
             ) : (
               data.notifications.map(n => (
@@ -298,11 +466,25 @@ function NotificationBell() {
                       </div>
                     </div>
                     {n.body && <p className="text-xs text-slate-500 mt-0.5 leading-snug line-clamp-2">{n.body}</p>}
+                    <span className={`inline-flex mt-1 rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${n.action_required ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
+                      {n.action_required ? 'Action required' : 'Informational'}
+                    </span>
                     <p className="text-[10px] text-slate-400 mt-1">{timeAgo(n.created_at)}</p>
                   </div>
                 </div>
               ))
             )}
+            {data.notifications.length > 0 && data.notifications.length < (data.total ?? 0) && (
+              <button
+                type="button"
+                onClick={loadMore}
+                disabled={loadingMore}
+                className="w-full py-3 text-xs font-medium text-blue-600 hover:bg-blue-50 disabled:opacity-50"
+              >
+                {loadingMore ? 'Loading…' : 'Load more'}
+              </button>
+            )}
+            {stale && <p className="px-4 py-2 text-[10px] text-slate-400">Last updated data may be out of date.</p>}
           </div>
         </div>
       )}

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authenticate, AuthRequest, requireModuleAccess, requireModuleManage } from '../middleware/auth';
 import { query, withTransaction } from '../db';
 import { versionMatches, withVersion, versionConflict } from '../lib/concurrency';
+import { emitNotification } from '../db/notifications';
 
 const router = Router();
 router.use(authenticate, requireModuleAccess('business_development'));
@@ -52,8 +53,32 @@ async function nextNumber(db: any, key: string, prefix: string) {
   const row = await db.query('SELECT next_value-1 AS value FROM enquiry_number_counters WHERE counter_key=$1 FOR UPDATE', [key]);
   return `${prefix}${String(row.rows[0].value).padStart(4, '0')}`;
 }
+function notificationRecipients(...ids: Array<string | null | undefined>) {
+  return [...new Set(ids.filter((id): id is string => !!id))];
+}
+async function enquiryStakeholders(db: any, enquiry: any, ...extraIds: Array<string | null | undefined>) {
+  const refs = await db.query(
+    `SELECT p.created_by AS project_created_by, d.created_by AS design_book_created_by
+       FROM (SELECT $1::uuid AS project_id, $2::uuid AS design_book_id) refs
+       LEFT JOIN projects p ON p.id=refs.project_id
+       LEFT JOIN design_books d ON d.id=refs.design_book_id`,
+    [enquiry.project_id || null, enquiry.design_book_id || null],
+  );
+  const ref = refs.rows[0] || {};
+  return notificationRecipients(
+    enquiry.created_by,
+    enquiry.updated_by,
+    ref.project_created_by,
+    ref.design_book_created_by,
+    ...extraIds,
+  );
+}
 async function record(db: any, enquiryId: string | string[], actor: string, action: string, details: any = {}) {
-  await db.query('INSERT INTO enquiry_activities(enquiry_id,action,details,actor_id) VALUES($1,$2,$3,$4)', [String(enquiryId), action, details, actor]);
+  const result = await db.query(
+    'INSERT INTO enquiry_activities(enquiry_id,action,details,actor_id) VALUES($1,$2,$3,$4) RETURNING id',
+    [String(enquiryId), action, details, actor],
+  );
+  return result.rows[0]?.id;
 }
 async function references(db: any, projectId: string | null, designBookId: string | null) {
   if (projectId && !(await db.query('SELECT id FROM projects WHERE id=$1', [projectId])).rows[0]) throw Object.assign(new Error('Project not found.'), { status: 404, code: 'NOT_FOUND' });
@@ -93,7 +118,20 @@ router.post('/', requireModuleManage('business_development'), referenceModuleAcc
       const inserted = await db.query(`INSERT INTO enquiries(enquiry_number,client_id,title,description,status,contact_details,received_date,due_date,project_id,design_book_id,source_metadata,created_by,updated_by)
         VALUES($1,$2,$3,$4,$5,$6,COALESCE($7,CURRENT_DATE),$8,$9,$10,$11,$12,$12) RETURNING *`,
         [number,b.client_id,b.title.trim(),b.description || null,b.status || 'new',flatContact(b),b.received_date || null,b.due_date || null,b.project_id || null,b.design_book_id || null,flatSource(b),req.user!.id]);
-      await record(db, inserted.rows[0].id, req.user!.id, 'created', { project_id: b.project_id || null, design_book_id: b.design_book_id || null });
+      const activityId = await record(db, inserted.rows[0].id, req.user!.id, 'created', { project_id: b.project_id || null, design_book_id: b.design_book_id || null });
+      const recipients = (await enquiryStakeholders(db, inserted.rows[0])).filter(id => id !== req.user!.id);
+      if (recipients.length) {
+        await emitNotification(db, {
+          eventKey: `enquiry-activity:${activityId}`,
+          type: 'enquiry_created',
+          title: `New enquiry ${number}: ${b.title.trim()}`,
+          entityType: 'enquiry',
+          entityId: String(inserted.rows[0].id),
+          actorId: req.user!.id,
+          recipientIds: recipients,
+          href: `/enquiries/${inserted.rows[0].id}`,
+        });
+      }
       return inserted.rows[0];
     });
     res.status(201).json(aliases(result));
@@ -135,7 +173,43 @@ router.patch('/:id', requireModuleManage('business_development'), referenceModul
     if (b.source_metadata !== undefined || b.source !== undefined) { vals.push(flatSource(b)); set.push(`source_metadata=$${vals.length}`); }
     if (!set.length) return res.status(400).json({error:{code:'VALIDATION',message:'At least one enquiry field is required.'}});
     vals.push(req.user!.id); set.push(`updated_by=$${vals.length}`,'updated_at=NOW()');
-     const updated=await withTransaction(async db=>{ const current=(await db.query('SELECT *, xmin::text AS version FROM enquiries WHERE id=$1 FOR UPDATE', [req.params.id])).rows[0]; if(!current) throw Object.assign(new Error('Enquiry not found.'),{status:404,code:'NOT_FOUND'}); if (expectedVersion !== undefined && !versionMatches(current, expectedVersion)) throw Object.assign(new Error('This record changed since it was loaded.'), { status: 409, code: 'VERSION_CONFLICT', current_record: aliases(current) }); if (b.client_id !== undefined && b.client_id === null) throw Object.assign(new Error('client_id cannot be null.'),{status:400,code:'VALIDATION'}); if (b.client_id !== undefined && !(await db.query('SELECT id FROM clients WHERE id=$1',[b.client_id])).rows[0]) throw Object.assign(new Error('Client not found.'),{status:404,code:'NOT_FOUND'}); const effectiveProject = b.project_id !== undefined ? b.project_id : current.project_id; const effectiveDesign = b.design_book_id !== undefined ? b.design_book_id : current.design_book_id; const effectiveReceived = b.received_date !== undefined ? b.received_date : current.received_date; const effectiveDue = b.due_date !== undefined ? b.due_date : current.due_date; if (effectiveDue && dateOrderError(effectiveReceived, effectiveDue)) throw Object.assign(new Error(dateOrderError(effectiveReceived, effectiveDue)!),{status:400,code:'VALIDATION'}); await references(db,effectiveProject,effectiveDesign); const r=await db.query(`UPDATE enquiries SET ${set.join(',')} WHERE id=$1 RETURNING *, xmin::text AS version`,vals); await record(db,req.params.id,req.user!.id,'updated',{changes:b}); return r.rows[0]; });
+      const updated=await withTransaction(async db=>{
+        const current=(await db.query('SELECT *, xmin::text AS version FROM enquiries WHERE id=$1 FOR UPDATE', [req.params.id])).rows[0];
+        if(!current) throw Object.assign(new Error('Enquiry not found.'),{status:404,code:'NOT_FOUND'});
+        if (expectedVersion !== undefined && !versionMatches(current, expectedVersion)) throw Object.assign(new Error('This record changed since it was loaded.'), { status: 409, code: 'VERSION_CONFLICT', current_record: aliases(current) });
+        if (b.client_id !== undefined && b.client_id === null) throw Object.assign(new Error('client_id cannot be null.'),{status:400,code:'VALIDATION'});
+        if (b.client_id !== undefined && !(await db.query('SELECT id FROM clients WHERE id=$1',[b.client_id])).rows[0]) throw Object.assign(new Error('Client not found.'),{status:404,code:'NOT_FOUND'});
+        const effectiveProject = b.project_id !== undefined ? b.project_id : current.project_id;
+        const effectiveDesign = b.design_book_id !== undefined ? b.design_book_id : current.design_book_id;
+        const effectiveReceived = b.received_date !== undefined ? b.received_date : current.received_date;
+        const effectiveDue = b.due_date !== undefined ? b.due_date : current.due_date;
+        if (effectiveDue && dateOrderError(effectiveReceived, effectiveDue)) throw Object.assign(new Error(dateOrderError(effectiveReceived, effectiveDue)!),{status:400,code:'VALIDATION'});
+        await references(db,effectiveProject,effectiveDesign);
+        const r=await db.query(`UPDATE enquiries SET ${set.join(',')} WHERE id=$1 RETURNING *, xmin::text AS version`,vals);
+        const updatedRow = r.rows[0];
+        const activityId = await record(db,req.params.id,req.user!.id,'updated',{changes:b});
+        if (b.status !== undefined && b.status !== current.status) {
+          const recipients = (await enquiryStakeholders(db, {
+            ...current,
+            project_id: effectiveProject,
+            design_book_id: effectiveDesign,
+          })).filter(id => id !== req.user!.id);
+          if (recipients.length) {
+            await emitNotification(db, {
+              eventKey: `enquiry-activity:${activityId}`,
+              type: 'enquiry_status_changed',
+              title: `Enquiry ${current.enquiry_number || req.params.id} moved to ${b.status}`,
+              body: `${current.status} → ${b.status}`,
+              entityType: 'enquiry',
+              entityId: String(req.params.id),
+              actorId: req.user!.id,
+              recipientIds: recipients,
+              href: `/enquiries/${req.params.id}`,
+            });
+          }
+        }
+        return updatedRow;
+      });
     res.json(aliases(updated));
   } catch(e:any){if(e.status === 409 && e.code === 'VERSION_CONFLICT') return res.status(409).json(versionConflict(e.current_record)); if(e.status)return res.status(e.status).json({error:{code:e.code,message:e.message}});next(e);}
 });
@@ -144,7 +218,28 @@ router.post('/:id/create-project', requireModuleManage('business_development'), 
     const enquiryId = String(req.params.id);
     if (!UUID.test(enquiryId)) return res.status(400).json({error:{code:'VALIDATION',message:'id must be a valid UUID.'}});
     const b=req.body||{}; for(const f of ['project_code','project_name']) {const e=required(b[f],f);if(e)return res.status(400).json({error:{code:'VALIDATION',message:e,field:f}});}
-    const result=await withTransaction(async db=>{const e=(await db.query('SELECT * FROM enquiries WHERE id=$1 FOR UPDATE',[req.params.id])).rows[0];if(!e)throw Object.assign(new Error('Enquiry not found.'),{status:404,code:'NOT_FOUND'});if(e.project_id)throw Object.assign(new Error('Enquiry is already linked to a Project.'),{status:409,code:'CONFLICT'});const p=(await db.query(`INSERT INTO projects(project_code,project_name,client_name,site_name,country,city,project_status,notes,created_by) VALUES($1,$2,(SELECT name FROM clients WHERE id=$3),$4,$5,$6,$7,$8,$9) RETURNING *`,[b.project_code.trim(),b.project_name.trim(),e.client_id,b.site_name||null,b.country||null,b.city||null,b.project_status||'Concept',b.notes||null,req.user!.id])).rows[0];const u=await db.query('UPDATE enquiries SET project_id=$1,updated_by=$2,updated_at=NOW() WHERE id=$3 RETURNING *',[p.id,req.user!.id,req.params.id]);await record(db,req.params.id,req.user!.id,'project_created',{project_id:p.id});return{project:p,enquiry:u.rows[0]};});res.status(201).json(result);
+     const result=await withTransaction(async db=>{
+       const e=(await db.query('SELECT * FROM enquiries WHERE id=$1 FOR UPDATE',[req.params.id])).rows[0];
+       if(!e)throw Object.assign(new Error('Enquiry not found.'),{status:404,code:'NOT_FOUND'});
+       if(e.project_id)throw Object.assign(new Error('Enquiry is already linked to a Project.'),{status:409,code:'CONFLICT'});
+       const p=(await db.query(`INSERT INTO projects(project_code,project_name,client_name,site_name,country,city,project_status,notes,created_by) VALUES($1,$2,(SELECT name FROM clients WHERE id=$3),$4,$5,$6,$7,$8,$9) RETURNING *`,[b.project_code.trim(),b.project_name.trim(),e.client_id,b.site_name||null,b.country||null,b.city||null,b.project_status||'Concept',b.notes||null,req.user!.id])).rows[0];
+       const u=await db.query('UPDATE enquiries SET project_id=$1,updated_by=$2,updated_at=NOW() WHERE id=$3 RETURNING *',[p.id,req.user!.id,req.params.id]);
+       const activityId = await record(db,req.params.id,req.user!.id,'project_created',{project_id:p.id});
+       const recipients = (await enquiryStakeholders(db, { ...e, project_id: p.id }, p.created_by)).filter(id => id !== req.user!.id);
+       if (recipients.length) {
+         await emitNotification(db, {
+           eventKey: `enquiry-activity:${activityId}`,
+           type: 'enquiry_project_created',
+           title: `Project ${p.project_code} created from enquiry ${e.enquiry_number}`,
+           entityType: 'enquiry',
+           entityId: String(req.params.id),
+           actorId: req.user!.id,
+           recipientIds: recipients,
+           href: `/enquiries/${req.params.id}`,
+         });
+       }
+       return{project:p,enquiry:u.rows[0]};
+     });res.status(201).json(result);
   }catch(e:any){if(e.status)return res.status(e.status).json({error:{code:e.code,message:e.message}});if(e.code==='23505')return res.status(409).json({error:{code:'CONFLICT',message:'A project with this code already exists.'}});next(e);}
 });
 async function quote(db:any,id:string | string[],user:string,b:any){const enquiryId=String(id);const e=(await db.query('SELECT * FROM enquiries WHERE id=$1 FOR UPDATE',[enquiryId])).rows[0];if(!e)throw Object.assign(new Error('Enquiry not found.'),{status:404,code:'NOT_FOUND'});const existing=(await db.query('SELECT * FROM enquiry_quotes WHERE enquiry_id=$1',[enquiryId])).rows[0];if(existing)return existing;const n=await nextNumber(db,`quote:${new Date().getUTCFullYear()}`,`QUO-${new Date().getUTCFullYear()}-`);return(await db.query('INSERT INTO enquiry_quotes(enquiry_id,quote_number,currency,notes,created_by,updated_by) VALUES($1,$2,$3,$4,$5,$5) RETURNING *',[enquiryId,n,b.currency||'USD',b.notes||null,user])).rows[0];}
@@ -170,8 +265,30 @@ router.patch('/:id/quote', requireModuleManage('business_development'), async (r
         throw Object.assign(new Error(`Quote cannot transition from ${current.status} to ${status}.`), { status: 409, code: 'QUOTE_TRANSITION' });
       }
       const updated = await db.query(`UPDATE enquiry_quotes SET status=COALESCE($1,status),currency=COALESCE($2,currency),notes=COALESCE($3,notes),updated_by=$4,updated_at=NOW() WHERE enquiry_id=$5 RETURNING *`, [status ?? null, currency ?? null, notes ?? null, req.user!.id, enquiryId]);
-      await record(db, enquiryId, req.user!.id, 'quote_updated', { changes: req.body });
-      return updated.rows[0];
+       const activityId = await record(db, enquiryId, req.user!.id, 'quote_updated', { changes: req.body });
+       if (status !== undefined && status !== current.status) {
+         const enquiry = (await db.query('SELECT * FROM enquiries WHERE id=$1', [enquiryId])).rows[0] || {};
+         const recipients = notificationRecipients(
+           current.created_by,
+           current.updated_by,
+           ...(await enquiryStakeholders(db, enquiry)),
+         ).filter(id => id !== req.user!.id);
+         if (recipients.length) {
+           const quoteNumber = current.quote_number || updated.rows[0].quote_number || enquiry.enquiry_number || enquiryId;
+           await emitNotification(db, {
+             eventKey: `enquiry-activity:${activityId}`,
+             type: `quote_${status}`,
+             title: `Quote ${quoteNumber} ${status}`,
+             body: `${current.status} → ${status}`,
+             entityType: 'enquiry',
+             entityId: String(enquiryId),
+             actorId: req.user!.id,
+             recipientIds: recipients,
+             href: `/enquiries/${enquiryId}`,
+           });
+         }
+       }
+       return updated.rows[0];
     });
     res.json(result);
   } catch (e: any) { if (e.status) return res.status(e.status).json({ error: { code: e.code, message: e.message } }); next(e); }

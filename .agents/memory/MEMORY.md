@@ -57,3 +57,4 @@
 - [Business Development enquiries](business-development-commercial-records.md) — Clients are reusable; Enquiries stand alone or link to Projects, and quote imports are frozen snapshots.
 - [Cross-module SQL parameter types](cross-module-sql-parameter-types.md) — typed auth parameters must remain declared even when a filter selects no adapters that reference them.
 - [Draft conflict boundary](draft-conflict-boundary.md) — freeze the server revision at edit start; recovery copies must never silently adopt a newer revision.
+- [Notification schema compatibility](notification-schema-compatibility.md) — legacy inbox schemas differ from fresh installs; exercise event inserts against the migrated database.

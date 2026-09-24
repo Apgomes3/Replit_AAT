@@ -5,6 +5,7 @@ import {
 import pool, { query } from '../db/index';
 import crypto from 'crypto';
 import { logAudit } from '../db/audit';
+import { emitNotification } from '../db/notifications';
 import {
   buildDesignBookReleaseChecklist,
   DesignBookReleaseContext,
@@ -51,6 +52,18 @@ import { pipeVelocity } from '../lib/pipeSizing';
 import { versionMatches, versionConflict, withVersion } from '../lib/concurrency';
 
 const router = Router();
+
+function notificationRecipients(...ids: Array<string | null | undefined>) {
+  return [...new Set(ids.filter((id): id is string => !!id))];
+}
+
+async function designBookStakeholders(db: { query: DbRunner }, book: any, ...extraIds: Array<string | null | undefined>) {
+  const projectOwner = book.project_id
+    ? (await db.query('SELECT created_by FROM projects WHERE id=$1', [book.project_id])).rows[0]?.created_by
+    : null;
+  return notificationRecipients(book.created_by, book.review_submitted_by, book.approved_by, projectOwner, ...extraIds);
+}
+
 router.use(authenticate, (req: AuthRequest, res: Response, next) => {
   // Platform Admin governs correlation evidence even when Design Books are
   // hidden for that administrator. All other Design Book routes retain the
@@ -64,6 +77,34 @@ router.use(authenticate, (req: AuthRequest, res: Response, next) => {
 type DbRunner = (text: string, params?: any[]) => Promise<{ rows: any[] }>;
 
 const routeParam = (value: string | string[]) => Array.isArray(value) ? value[0] : value;
+
+router.get(
+  '/design-books/review-reviewers',
+  authenticate,
+  requireRole(...DESIGN_BOOK_DESIGNER_ROLES),
+  async (req: AuthRequest, res: Response) => {
+    const result = await query(
+      `SELECT u.id, u.first_name, u.last_name, u.email
+         FROM users u
+         LEFT JOIN roles r ON r.name=u.role
+         LEFT JOIN role_module_access access
+           ON access.role_id=r.id AND access.module_key='design_books'
+        WHERE u.is_active=true
+          AND u.id<>$2
+          AND u.role=ANY($1::text[])
+          AND (access.access_level IS NULL OR access.access_level='manage')
+        ORDER BY u.last_name NULLS LAST, u.first_name NULLS LAST, u.email`,
+      [DESIGN_BOOK_MANAGER_ROLES, req.user!.id],
+    );
+    res.json({
+      items: result.rows.map(row => ({
+        id: row.id,
+        name: [row.first_name, row.last_name].filter(Boolean).join(' ') || row.email,
+        email: row.email,
+      })),
+    });
+  },
+);
 
 export function isCurrentPumpSelectionReady(selection: any) {
   return !!selection &&
@@ -3749,6 +3790,7 @@ router.post(
   requireRole(...DESIGN_BOOK_DESIGNER_ROLES),
   async (req: AuthRequest, res: Response) => {
     const comment = String(req.body.comment || '').trim();
+    const requestedReviewerId = String(req.body.review_reviewer_id || '').trim();
     const client = await pool.connect();
     try {
       await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
@@ -3763,6 +3805,31 @@ router.post(
           error: { code: 'INVALID_TRANSITION', message: 'Only Draft or In Progress Design Books can be submitted for review.' },
         });
       }
+      const reviewerId = requestedReviewerId || context.review_reviewer_id;
+      if (!reviewerId) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          error: { code: 'REVIEWER_REQUIRED', message: 'Select an eligible manager to review this Design Book before submitting.' },
+        });
+      }
+      const eligibleReviewer = await client.query(
+        `SELECT u.id
+           FROM users u
+           LEFT JOIN roles r ON r.name=u.role
+           LEFT JOIN role_module_access access
+             ON access.role_id=r.id AND access.module_key='design_books'
+          WHERE u.id=$1 AND u.is_active=true
+            AND u.role=ANY($2::text[])
+            AND (access.access_level IS NULL OR access.access_level='manage')
+          FOR SHARE OF u`,
+        [reviewerId, DESIGN_BOOK_MANAGER_ROLES],
+      );
+      if (!eligibleReviewer.rows[0] || reviewerId === req.user!.id) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          error: { code: 'REVIEWER_INELIGIBLE', message: 'The selected reviewer is not an eligible active Design Book manager.' },
+        });
+      }
       const previousStatus = context.status;
       const {
         release_snapshot: _releaseSnapshot,
@@ -3775,22 +3842,61 @@ router.post(
         status: 'For Review',
         review_submitted_by: req.user!.id,
         review_submitted_at: submittedAt,
+        review_reviewer_id: reviewerId,
       };
       const result = await client.query(
         `UPDATE design_books
-         SET status='For Review', review_submitted_by=$1, review_submitted_at=NOW(),
-             review_snapshot=$2::jsonb, updated_at=NOW()
-         WHERE id=$3 AND status IN ('Draft', 'In Progress')
+         SET status='For Review', review_submitted_by=$1, review_reviewer_id=$2,
+             review_submitted_at=NOW(), review_snapshot=$3::jsonb, updated_at=NOW()
+         WHERE id=$4 AND status IN ('Draft', 'In Progress')
          RETURNING *`,
-        [req.user!.id, JSON.stringify(snapshot), req.params.id],
+        [req.user!.id, reviewerId, JSON.stringify(snapshot), req.params.id],
       );
       if (!result.rows[0]) throw new Error('Design Book status changed during review submission');
-      await client.query(
+      const transition = await client.query(
         `INSERT INTO lifecycle_transitions
            (entity_type, entity_id, from_state, to_state, actor_id, comment)
-         VALUES ('design_book',$1,$2,'For Review',$3,$4)`,
+          VALUES ('design_book',$1,$2,'For Review',$3,$4)
+          RETURNING id`,
         [req.params.id, previousStatus, req.user!.id, comment || null],
       );
+      const notification = {
+        eventKey: `design-book-transition:${transition.rows[0].id}`,
+        title: `Design Book ${context.book_code} is ready for review`,
+        body: comment || null,
+        entityId: String(req.params.id),
+      };
+      // Target the action item only to the explicitly assigned reviewer. The
+      // generic notification helper also fans out to subscribers, which must
+      // not create action-required work for unassigned stakeholders.
+      await client.query(
+        `INSERT INTO notifications
+           (user_id, event_key, type, title, body, entity_type, entity_id, href, action_required, severity)
+         VALUES ($1,$2,'design_book_review_requested',$3,$4,'design_book',$5,$6,true,'info')
+         ON CONFLICT (event_key, user_id) WHERE event_key IS NOT NULL DO NOTHING`,
+        [
+          reviewerId, notification.eventKey, notification.title, notification.body,
+          notification.entityId, `/design-books/${req.params.id}?tab=review`,
+        ],
+      );
+      const infoRecipients = (await designBookStakeholders(
+        { query: client.query.bind(client) as DbRunner },
+        context,
+      )).filter(id => id !== req.user!.id && id !== reviewerId);
+      if (infoRecipients.length) {
+        await emitNotification(client, {
+          eventKey: `design-book-transition-info:${transition.rows[0].id}`,
+          type: 'design_book_review_submitted',
+          title: `Design Book ${context.book_code} was submitted for review`,
+          body: comment || undefined,
+          entityType: 'design_book',
+          entityId: String(req.params.id),
+          actorId: req.user!.id,
+          recipientIds: infoRecipients,
+          actionRequired: false,
+          href: `/design-books/${req.params.id}?tab=review`,
+        });
+      }
       await insertAudit(client.query.bind(client) as DbRunner, req.user!.id, 'design_book', routeParam(req.params.id), 'SUBMIT_REVIEW', {
         summary: `Design Book submitted for review${comment ? `: ${comment}` : ''}`,
         comment,
@@ -3828,12 +3934,30 @@ router.post(
           error: { code: 'INVALID_TRANSITION', message: 'Only Design Books that are For Review can be approved.' },
         });
       }
-      await client.query(
+      const transition = await client.query(
         `INSERT INTO lifecycle_transitions
            (entity_type, entity_id, from_state, to_state, actor_id, comment)
-         VALUES ('design_book',$1,'For Review','Approved',$2,$3)`,
+          VALUES ('design_book',$1,'For Review','Approved',$2,$3)
+          RETURNING id`,
         [req.params.id, req.user!.id, approvalNotes || null],
       );
+      const recipients = (await designBookStakeholders(
+        { query: client.query.bind(client) as DbRunner },
+        result.rows[0],
+      )).filter(id => id !== req.user!.id);
+      if (recipients.length) {
+        await emitNotification(client, {
+          eventKey: `design-book-transition:${transition.rows[0].id}`,
+          type: 'design_book_approved',
+          title: `Design Book ${result.rows[0].book_code} approved`,
+          body: approvalNotes || undefined,
+          entityType: 'design_book',
+          entityId: String(req.params.id),
+          actorId: req.user!.id,
+          recipientIds: recipients,
+          href: `/design-books/${req.params.id}`,
+        });
+      }
       await insertAudit(client.query.bind(client) as DbRunner, req.user!.id, 'design_book', routeParam(req.params.id), 'APPROVE', {
         summary: `Design Book approved${approvalNotes ? `: ${approvalNotes}` : ''}`,
         approval_notes: approvalNotes,
@@ -3939,6 +4063,13 @@ router.post(
           error: { code: 'ALREADY_RELEASED', message: 'This Design Book revision is already released.' },
         });
       }
+      const transition = await client.query(
+        `INSERT INTO lifecycle_transitions
+           (entity_type, entity_id, from_state, to_state, actor_id, comment)
+         VALUES ('design_book',$1,'Approved','Released',$2,$3)
+         RETURNING id`,
+        [req.params.id, req.user!.id, release_notes.trim()],
+      );
       const releasedVersionSnapshot = withSnapshotIntegrity({
         ...makeVersionSnapshot({
           ...context,
@@ -3967,6 +4098,23 @@ router.post(
         included_scope: scope,
         release_notes: release_notes.trim(),
       }, req.ip);
+      const recipients = (await designBookStakeholders(
+        { query: client.query.bind(client) as DbRunner },
+        updated.rows[0],
+      )).filter(id => id !== req.user!.id);
+      if (recipients.length) {
+        await emitNotification(client, {
+          eventKey: `design-book-transition:${transition.rows[0].id}`,
+          type: 'design_book_released',
+          title: `Design Book ${context.book_code} Rev ${revision.trim()} released`,
+          body: release_notes.trim(),
+          entityType: 'design_book',
+          entityId: String(req.params.id),
+          actorId: req.user!.id,
+          recipientIds: recipients,
+          href: `/design-books/${req.params.id}`,
+        });
+      }
       await client.query('COMMIT');
       res.json({
         ...updated.rows[0],

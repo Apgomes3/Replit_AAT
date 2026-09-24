@@ -4662,6 +4662,9 @@ export default function DesignBookDetail() {
   const [showNewLSS, setShowNewLSS] = useState(false);
   const [showRelease, setShowRelease] = useState(false);
   const [showNewRevision, setShowNewRevision] = useState(false);
+  const [showSubmitReview, setShowSubmitReview] = useState(false);
+  const [reviewerId, setReviewerId] = useState('');
+  const [reviewComment, setReviewComment] = useState('');
   const [transitioning, setTransitioning] = useState(false);
   const { data: book, isLoading } = useQuery({
     queryKey: ['design-book', id],
@@ -4676,6 +4679,24 @@ export default function DesignBookDetail() {
     staleTime: 60_000,
   });
   const projects: any[] = projectsData?.items || [];
+  const { data: reviewersData, isLoading: reviewersLoading, error: reviewersError } = useQuery({
+    queryKey: ['design-book-review-reviewers'],
+    queryFn: () => api.get('/design-books/review-reviewers').then(r => r.data),
+    enabled: !!id && !!user && (user.role === 'admin' || user.role === 'engineer') &&
+      !!book && ['Draft', 'In Progress'].includes(book.status),
+    staleTime: 60_000,
+  });
+  const reviewers: any[] = reviewersData?.items || [];
+
+  useEffect(() => {
+    if (!book?.review_reviewer_id) {
+      setReviewerId('');
+    } else if (reviewersData) {
+      setReviewerId(reviewers.some(reviewer => reviewer.id === book.review_reviewer_id)
+        ? book.review_reviewer_id
+        : '');
+    }
+  }, [book?.review_reviewer_id, reviewersData]);
 
   const refresh = async () => {
     await Promise.all([
@@ -4770,13 +4791,19 @@ export default function DesignBookDetail() {
   };
 
   const handleSubmitReview = async () => {
-    const response = window.prompt('Optional note for the reviewer:', '');
-    if (response === null) return;
-    const comment = response;
+    if (!reviewerId) {
+      toast.error('Select an eligible reviewer before submitting');
+      return;
+    }
     setTransitioning(true);
     try {
-      await api.post(`/design-books/${id}/submit-review`, { comment });
+      await api.post(`/design-books/${id}/submit-review`, {
+        review_reviewer_id: reviewerId,
+        comment: reviewComment,
+      });
       toast.success('Design Book submitted for review');
+      setShowSubmitReview(false);
+      setReviewComment('');
       refresh();
       qc.invalidateQueries({ queryKey: ['design-books'] });
       qc.invalidateQueries({ queryKey: ['audit', 'design_book', id] });
@@ -4921,6 +4948,59 @@ export default function DesignBookDetail() {
         />
       </div>
 
+      {showSubmitReview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl">
+            <div className="border-b border-stone-200 px-6 py-4">
+              <h2 className="font-semibold text-stone-900">Submit Design Book for Review</h2>
+              <p className="mt-1 text-xs text-stone-500">Choose an active Design Book manager. Only this reviewer receives an action-required notification.</p>
+            </div>
+            <div className="space-y-4 p-6">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-stone-600">Reviewer *</label>
+                <select
+                  value={reviewerId}
+                  onChange={event => setReviewerId(event.target.value)}
+                  disabled={reviewersLoading || transitioning}
+                  className="w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm"
+                >
+                  <option value="">
+                    {reviewersLoading ? 'Loading eligible reviewers…' : 'Select a reviewer'}
+                  </option>
+                  {reviewers.map((reviewer: any) => (
+                    <option key={reviewer.id} value={reviewer.id}>{reviewer.name} · {reviewer.email}</option>
+                  ))}
+                </select>
+                {reviewersError && <p className="mt-1 text-xs text-red-600">Could not load eligible reviewers.</p>}
+                {!reviewersLoading && !reviewersError && reviewers.length === 0 && (
+                  <p className="mt-1 text-xs text-amber-700">No active manager has Design Book manage access. Ask an administrator to configure a reviewer.</p>
+                )}
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-stone-600">Optional note</label>
+                <textarea
+                  rows={3}
+                  value={reviewComment}
+                  onChange={event => setReviewComment(event.target.value)}
+                  disabled={transitioning}
+                  placeholder="Add context for the reviewer…"
+                  className="w-full resize-y rounded-lg border border-stone-200 px-3 py-2 text-sm"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 border-t border-stone-200 bg-stone-50 px-6 py-4">
+              <button onClick={() => setShowSubmitReview(false)} disabled={transitioning}
+                className="px-4 py-2 text-sm text-stone-600">Cancel</button>
+              <button onClick={handleSubmitReview}
+                disabled={!reviewerId || transitioning || reviewersLoading || !!reviewersError}
+                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-40">
+                <Send className="h-4 w-4" />{transitioning ? 'Submitting…' : 'Submit for Review'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header card */}
       <div className="bg-white rounded-2xl border border-stone-200 p-6 mb-5">
         {editMode ? (
@@ -5006,7 +5086,7 @@ export default function DesignBookDetail() {
               ) : (
                 <>
                   {canSubmitReview && (
-                    <button onClick={handleSubmitReview} disabled={transitioning}
+                    <button onClick={() => setShowSubmitReview(true)} disabled={transitioning}
                       className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium disabled:opacity-50">
                       <Send className="w-3.5 h-3.5" /> Submit for Review
                     </button>
