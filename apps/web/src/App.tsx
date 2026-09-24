@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { createBrowserRouter, createRoutesFromElements, RouterProvider, Route, Navigate, Outlet } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'react-hot-toast';
 import { useEffect } from 'react';
@@ -100,13 +100,8 @@ function EngineeringAdminGuard({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-export default function App() {
-  return (
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <Toaster position="top-right" toastOptions={{ style: { fontSize: '14px' } }} />
-        <CommandPalette />
-        <Routes>
+const router = createBrowserRouter(createRoutesFromElements(
+  <Route element={<><CommandPalette /><Outlet /></>}>
           <Route path="/login" element={<Login />} />
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/" element={<AuthGuard><Shell /></AuthGuard>}>
@@ -176,8 +171,12 @@ export default function App() {
               <Route path="enquiries" element={<ModuleGuard moduleKey="business_development"><EnquiriesList /></ModuleGuard>} />
               <Route path="enquiries/:id" element={<ModuleGuard moduleKey="business_development"><EnquiryDetail /></ModuleGuard>} />
           </Route>
-        </Routes>
-      </BrowserRouter>
-    </QueryClientProvider>
-  );
+  </Route>
+));
+
+export default function App() {
+  return <QueryClientProvider client={queryClient}>
+    <Toaster position="top-right" toastOptions={{ style: { fontSize: '14px' } }} />
+    <RouterProvider router={router} />
+  </QueryClientProvider>;
 }

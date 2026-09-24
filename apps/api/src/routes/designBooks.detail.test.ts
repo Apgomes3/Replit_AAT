@@ -54,7 +54,7 @@ vi.mock('../db', () => {
     if (sql.includes('SELECT rma.access_level')) {
       return { rows: [{ access_level: 'manage' }] };
     }
-    if (sql.includes('SELECT db.*, p.project_code') && sql.includes('p.client_name')) {
+    if (sql.includes('SELECT db.*') && sql.includes('p.client_name')) {
       return {
         rows: [{
           id: bookId,
@@ -87,6 +87,9 @@ vi.mock('../db', () => {
         sql.includes('FROM design_book_exhibit_hydraulics') ||
         sql.includes('FROM design_book_exhibit_substrate') ||
          sql.includes('FROM design_book_exhibit_lights') ||
+        sql.includes('FROM design_book_lss_controls') ||
+        sql.includes('FROM design_book_uv_selections') ||
+        sql.includes('FROM design_book_thermal_selections') ||
         sql.includes('FROM system_exhibit_links') ||
         sql.includes('FROM design_book_thermal_calculations') ||
         sql.includes('FROM design_book_friction_loss_calculations') ||

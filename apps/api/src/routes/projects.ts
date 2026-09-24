@@ -29,6 +29,7 @@ import { isLifeSupportSystem } from '../lib/lssSystems';
 import { resolveLoopFlows } from '../lib/flowRoute';
 import PDFDocument from 'pdfkit';
 import { buildTankDesignSheet } from '../lib/tankDesignSheet';
+import { versionMatches, versionConflict, withVersion } from '../lib/concurrency';
 
 const uploadsDir = path.join(__dirname, '../../uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
@@ -2197,16 +2198,16 @@ router.get('/systems', authenticate, async (req: AuthRequest, res: Response) => 
   const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
   const countRes = await query(`SELECT COUNT(*) FROM systems s ${where}`, params);
   params.push(page_size, offset);
-  const result = await query(`SELECT s.*, a.area_name, e.exhibit_name, p.project_code FROM systems s LEFT JOIN areas a ON s.area_id=a.id LEFT JOIN exhibits e ON s.exhibit_id=e.id JOIN projects p ON s.project_id=p.id ${where} ORDER BY s.system_code LIMIT $${params.length-1} OFFSET $${params.length}`, params);
+  const result = await query(`SELECT s.*, s.xmin::text AS version, a.area_name, e.exhibit_name, p.project_code FROM systems s LEFT JOIN areas a ON s.area_id=a.id LEFT JOIN exhibits e ON s.exhibit_id=e.id JOIN projects p ON s.project_id=p.id ${where} ORDER BY s.system_code LIMIT $${params.length-1} OFFSET $${params.length}`, params);
   res.json({
-    items: result.rows.map(withoutStaleLinkedSystemFlow),
+    items: result.rows.map(row => withVersion(withoutStaleLinkedSystemFlow(row))),
     pagination: { page, page_size, total: parseInt(countRes.rows[0].count) },
   });
 });
 
 router.get('/systems/:id', authenticate, async (req: AuthRequest, res: Response) => {
   const result = await query(
-    `SELECT s.*, a.area_name, e.exhibit_name, p.project_code, p.project_name,
+    `SELECT s.*, s.xmin::text AS version, a.area_name, e.exhibit_name, p.project_code, p.project_name,
             replacement.system_code AS replacement_system_code,
             replacement.system_name AS replacement_system_name,
             predecessor.system_code AS predecessor_system_code,
@@ -2261,7 +2262,7 @@ router.get('/systems/:id', authenticate, async (req: AuthRequest, res: Response)
     loadSystemSandFilterAllocations(sysId),
   ]);
   res.json({
-    ...withoutStaleLinkedSystemFlow(result.rows[0]),
+    ...withVersion(withoutStaleLinkedSystemFlow(result.rows[0])),
     equipment: equipment.rows,
     tanks: tanks.rows,
     side_streams: sideStreams,
@@ -2749,6 +2750,15 @@ router.put('/systems/:id', authenticate, requireRole('admin', 'engineer'), requi
     let savedSandFilters: any[] = [];
     try {
       await saveClient.query('BEGIN');
+      const lockedSystem = (await saveClient.query(
+        'SELECT *, xmin::text AS version FROM systems WHERE id=$1 FOR UPDATE',
+        [req.params.id],
+      )).rows[0];
+      if (lockedSystem && req.body?.expected_version !== undefined &&
+          !versionMatches(lockedSystem, req.body.expected_version)) {
+        await saveClient.query('ROLLBACK');
+        return res.status(409).json(versionConflict(lockedSystem));
+      }
       result = await saveClient.query(
       `UPDATE systems SET
         system_code=COALESCE($1,system_code), system_name=$2, system_type=$3,
@@ -2765,7 +2775,7 @@ router.put('/systems/:id', authenticate, requireRole('admin', 'engineer'), requi
         updated_at=NOW()
        WHERE id=$32
          AND status NOT IN ('Archived','Decommissioned','Superseded')
-       RETURNING *`,
+       RETURNING *, xmin::text AS version`,
       [
         system_code || null, system_name, system_type,
         resolvedDesignFlowSource === 'manual_override' ? design_flow_m3h || null : null,
@@ -2807,7 +2817,7 @@ router.put('/systems/:id', authenticate, requireRole('admin', 'engineer'), requi
             loop1_flow_mode=$2, loop1_match_loop_number=$3,
             loop2_flow_mode=$4, loop2_match_loop_number=$5,
             loop3_flow_mode=$6, loop3_match_loop_number=$7
-          WHERE id=$1 RETURNING *`,
+          WHERE id=$1 RETURNING *, xmin::text AS version`,
          [req.params.id, resolvedLoop1FlowMode, resolvedMatchTargets[0],
            resolvedLoop2FlowMode, resolvedMatchTargets[1],
            resolvedLoop3FlowMode, resolvedMatchTargets[2]],
@@ -2977,7 +2987,7 @@ router.put('/systems/:id', authenticate, requireRole('admin', 'engineer'), requi
       side_stream_changes: sideStreamChanges,
     });
     res.json({
-      ...namedSystem,
+      ...withVersion(namedSystem),
       side_streams: savedSideStreams,
       fractionator_allocations: savedFractionators,
       sand_filter_allocations: savedSandFilters,

@@ -4,9 +4,11 @@ import { useQuery } from '@tanstack/react-query';
 import api from '../../lib/api';
 import toast from 'react-hot-toast';
 import EntityCode from '../../components/ui/EntityCode';
+import ProtectedDraftBar, { clearRecoveryDraft } from '../../components/ui/ProtectedDraftBar';
 import { useModalFocus } from '../../hooks/useModalFocus';
 import { X, Trash2, Search, Plus, Minus, Network, Paperclip, ChevronDown, ChevronUp, AlertCircle } from 'lucide-react';
 import { currentReturnContext } from '../../lib/navigation';
+import { useAuthStore } from '../../store/authStore';
 
 const CURRENCIES = ['USD', 'EUR', 'GBP', 'AED', 'SAR', 'SGD', 'AUD', 'CAD', 'JPY', 'CNY'];
 
@@ -39,9 +41,11 @@ type DraftItem = {
 export default function CreatePOModal({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const user = useAuthStore(s => s.user);
   const searchRef = useRef<HTMLInputElement>(null);
   const docRef = useRef<HTMLInputElement>(null);
-  const modalRef = useModalFocus<HTMLDivElement>({ onClose, initialFocusRef: searchRef });
+  const closeModal = () => { if (!saving) onClose(); };
+  const modalRef = useModalFocus<HTMLDivElement>({ onClose: closeModal, initialFocusRef: searchRef });
 
   const [projectId, setProjectId] = useState('');
   const [currency, setCurrency] = useState('USD');
@@ -54,7 +58,13 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
   const [shippingTermsOther, setShippingTermsOther] = useState('');
   const [priority, setPriority] = useState('normal');
   const [saving, setSaving] = useState(false);
+  const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null);
+  const [partialPoId, setPartialPoId] = useState<string | null>(null);
+  const [createError, setCreateError] = useState<any>(null);
+  const [createCommitted, setCreateCommitted] = useState(false);
+  const [navigateToCreatedPoId, setNavigateToCreatedPoId] = useState<string | null>(null);
   const [docFile, setDocFile] = useState<File | null>(null);
+  const [recoveredDocumentName, setRecoveredDocumentName] = useState('');
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
   const [items, setItems] = useState<DraftItem[]>([]);
@@ -69,6 +79,14 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
   const [showVendorSuggestions, setShowVendorSuggestions] = useState(false);
 
   useEffect(() => { searchRef.current?.focus(); }, []);
+  useEffect(() => {
+    if (!navigateToCreatedPoId) return;
+    const poId = navigateToCreatedPoId;
+    setNavigateToCreatedPoId(null);
+    navigate(`/purchase-orders/${poId}`, {
+      state: currentReturnContext(location.pathname, location.search, location.pathname === '/order-management' ? 'Order queue' : 'Purchase Orders'),
+    });
+  }, [navigate, navigateToCreatedPoId, location.pathname, location.search]);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -122,6 +140,29 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
     ? (systemSearchResults?.items || [])
     : (projectId ? (projectSystems?.items || []) : (systemSearchResults?.items || []));
   const vendorSuggestions = vendorData?.items || [];
+  const poDraft = {
+    projectId, currency, notes, vendorName, requiredByDate, paymentTerms, paymentTermsOther,
+    shippingTerms, shippingTermsOther, priority, items, documentName: docFile?.name || recoveredDocumentName,
+    partialPoId,
+  };
+  const restoreDraft = (draft: any) => {
+    setProjectId(draft.projectId || '');
+    setCurrency(draft.currency || 'USD');
+    setNotes(draft.notes || '');
+    setVendorName(draft.vendorName || '');
+    setRequiredByDate(draft.requiredByDate || '');
+    setPaymentTerms(draft.paymentTerms || '');
+    setPaymentTermsOther(draft.paymentTermsOther || '');
+    setShippingTerms(draft.shippingTerms || '');
+    setShippingTermsOther(draft.shippingTermsOther || '');
+    setPriority(draft.priority || 'normal');
+    setPartialPoId(draft.partialPoId || null);
+    setDocFile(null);
+    setRecoveredDocumentName(draft.documentName || '');
+    const restoredItems = Array.isArray(draft.items) ? draft.items : [];
+    setItems(restoredItems);
+    setItemKey(restoredItems.reduce((next: number, item: DraftItem) => Math.max(next, item.key + 1), 0));
+  };
 
   const addItem = useCallback((prod: any) => {
     setItems(prev => [...prev, {
@@ -176,12 +217,20 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
   };
 
   const handleCreate = async () => {
+    if (partialPoId) {
+      setCreateError(null);
+      navigate(`/purchase-orders/${partialPoId}`, {
+        state: currentReturnContext(location.pathname, location.search, location.pathname === '/order-management' ? 'Order queue' : 'Purchase Orders'),
+      });
+      return;
+    }
     const errors = validateForm();
     if (errors.length > 0) {
       setValidationErrors(errors);
       return;
     }
     setValidationErrors([]);
+    setCreateError(null);
     setSaving(true);
     try {
       const effectivePaymentTerms = paymentTerms === 'Other' ? (paymentTermsOther || 'Other') : paymentTerms;
@@ -196,6 +245,7 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
         priority: priority || 'normal',
       });
       const poId = poRes.data.id;
+      setPartialPoId(poId);
 
       await Promise.all(items.map((item, idx) =>
         api.post(`/purchase-orders/${poId}/items`, {
@@ -218,11 +268,15 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
       }
 
       toast.success(`${poRes.data.po_code} created`);
-      navigate(`/purchase-orders/${poId}`, {
-        state: currentReturnContext(location.pathname, location.search, location.pathname === '/order-management' ? 'Order queue' : 'Purchase Orders'),
-      });
+      setDraftSavedAt(Date.now());
+      setPartialPoId(null);
+      setCreateCommitted(true);
+      clearRecoveryDraft(`purchase-order:${user?.id || 'unknown'}:create`);
+      setNavigateToCreatedPoId(poId);
     } catch (e: any) {
+      setCreateError(e);
       toast.error(e?.response?.data?.error?.message || 'Failed to create PO');
+    } finally {
       setSaving(false);
     }
   };
@@ -243,12 +297,25 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <h2 id="create-po-title" className="text-base font-semibold text-slate-800">New Purchase Order</h2>
-          <button aria-label="Close new purchase order dialog" title="Close dialog" onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
+          <button aria-label="Close new purchase order dialog" title="Close dialog" onClick={closeModal} disabled={saving} className="text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-50">
             <X className="w-5 h-5" />
           </button>
         </div>
 
         <div className="flex-1 overflow-y-auto">
+          <div className="px-6 pt-3">
+            <ProtectedDraftBar
+              storageKey={`purchase-order:${user?.id || 'unknown'}:create`}
+              value={poDraft}
+              baseline={{ projectId: '', currency: 'USD', notes: '', vendorName: '', requiredByDate: '', paymentTerms: '', paymentTermsOther: '', shippingTerms: '', shippingTermsOther: '', priority: 'normal', items: [], documentName: '', partialPoId: null }}
+              enabled={!createCommitted}
+              saving={saving}
+              error={createError}
+              savedAt={draftSavedAt}
+              onRestore={restoreDraft}
+              onSave={partialPoId ? undefined : handleCreate}
+            />
+          </div>
 
           {/* Top bar: project + currency + notes */}
           <div className="px-6 pt-4 pb-3 border-b border-slate-100 space-y-3">
@@ -571,12 +638,13 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
 
           {/* Document attachment */}
           <div className="px-6 pb-4 pt-2">
-            <input ref={docRef} type="file" className="hidden" onChange={e => setDocFile(e.target.files?.[0] || null)} />
+            <input ref={docRef} type="file" className="hidden" onChange={e => { setDocFile(e.target.files?.[0] || null); setRecoveredDocumentName(''); }} />
+            {recoveredDocumentName && !docFile && <div className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">The recovered draft referenced “{recoveredDocumentName}”, but browser drafts cannot retain file contents. Please attach it again.</div>}
             {docFile ? (
               <div className="flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2">
                 <Paperclip className="w-3.5 h-3.5 text-blue-500 shrink-0" />
                 <span className="text-xs text-blue-700 truncate flex-1">{docFile.name}</span>
-                <button aria-label="Remove attached document" title="Remove attached document" onClick={() => setDocFile(null)} className="text-blue-300 hover:text-red-500 transition-colors">
+                <button aria-label="Remove attached document" title="Remove attached document" onClick={() => { setDocFile(null); setRecoveredDocumentName(''); }} className="text-blue-300 hover:text-red-500 transition-colors">
                   <X className="w-3.5 h-3.5" />
                 </button>
               </div>
@@ -603,6 +671,12 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
             </div>
           </div>
         )}
+        {partialPoId && (
+          <div className="mx-6 mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900">
+            The purchase order header was created, but saving all lines or its document failed. It was not retried to avoid creating a duplicate. Open PO <strong className="font-mono">{partialPoId}</strong> to review and complete it.
+            <button type="button" onClick={() => navigate(`/purchase-orders/${partialPoId}`, { state: currentReturnContext(location.pathname, location.search, location.pathname === '/order-management' ? 'Order queue' : 'Purchase Orders') })} className="ml-2 font-bold underline">Open incomplete PO</button>
+          </div>
+        )}
 
         {/* Footer */}
         <div className="flex items-center justify-between px-6 py-4 border-t border-slate-100 bg-slate-50/60 rounded-b-2xl">
@@ -612,7 +686,7 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
               : 'No items yet'}
           </span>
           <div className="flex items-center gap-2">
-            <button onClick={onClose} disabled={saving}
+            <button onClick={closeModal} disabled={saving}
               className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800 border border-slate-200 rounded-lg bg-white transition-colors disabled:opacity-50">
               Cancel
             </button>
@@ -622,7 +696,7 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
               title={validationErrors.length > 0 ? validationErrors.join(' · ') : undefined}
               className="px-5 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-60 active:scale-95"
             >
-              {saving ? 'Creating…' : 'Create PO'}
+              {saving ? 'Creating…' : partialPoId ? 'Open incomplete PO' : 'Create PO'}
             </button>
           </div>
         </div>

@@ -13,7 +13,7 @@ vi.mock('../db', () => {
     if (sql.includes('FROM design_books WHERE id=$1')) return state.designBook ? { rows: [{ id: '55555555-5555-4555-8555-555555555555', project_id: null }] } : { rows: [] };
     if (sql.includes('INSERT INTO enquiries')) return { rows: [{ id: '22222222-2222-4222-8222-222222222222', enquiry_number: params[0], title: params[2], status: params[4], client_id: params[1], contact_details: params[5], source_metadata: params[10] }] };
     if (sql.includes('INSERT INTO enquiry_activities')) return { rows: [] };
-    if (sql.includes('SELECT * FROM enquiries WHERE id=$1')) return state.enquiry ? { rows: [{ id: '22222222-2222-4222-8222-222222222222', client_id: '11111111-1111-4111-8111-111111111111', design_book_id: state.designBook ? '55555555-5555-4555-8555-555555555555' : null }] } : { rows: [] };
+    if (sql.includes('FROM enquiries WHERE id=$1')) return state.enquiry ? { rows: [{ id: '22222222-2222-4222-8222-222222222222', client_id: '11111111-1111-4111-8111-111111111111', design_book_id: state.designBook ? '55555555-5555-4555-8555-555555555555' : null, updated_at: new Date('2026-01-01T00:00:00.000Z'), version: '42' }] } : { rows: [] };
     if (sql.includes('SELECT * FROM enquiry_quotes')) return state.quote ? { rows: [{ id: '66666666-6666-4666-8666-666666666666', enquiry_id: '22222222-2222-4222-8222-222222222222', quote_number: 'QUO-2026-0001', status: state.quoteStatus }] } : { rows: [] };
     if (sql.includes('UPDATE enquiry_quotes')) { state.quoteStatus = params[0] || state.quoteStatus; return { rows: [{ id: '66666666-6666-4666-8666-666666666666', status: state.quoteStatus, currency: params[1] || 'USD' }] }; }
     if (sql.includes('INSERT INTO enquiry_quotes')) { state.quote = true; state.quoteStatus = 'draft'; return { rows: [{ id: '66666666-6666-4666-8666-666666666666', quote_number: params[1], enquiry_id: params[0], status: 'draft' }] }; }
@@ -85,5 +85,16 @@ describe('enquiry API contract', () => {
     expect(updated.status).toBe(200);
     const locked = await request('POST', '/api/v1/enquiries/22222222-2222-4222-8222-222222222222/quote/import-equipment-breakdown');
     expect(locked.status).toBe(409);
+  });
+
+  it('rejects an enquiry PATCH based on a stale expected_version with the current row and token', async () => {
+    const stale = await request('PATCH', '/api/v1/enquiries/22222222-2222-4222-8222-222222222222', {
+      title: 'Overwritten title',
+      expected_version: '41',
+    });
+    expect(stale.status).toBe(409);
+    expect(stale.json.error.code).toBe('VERSION_CONFLICT');
+    expect(stale.json.error.current_version).toBe('42');
+    expect(stale.json.error.current_record.version).toBe('42');
   });
 });

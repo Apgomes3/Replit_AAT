@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../../lib/api';
 import PageHeader from '../../components/ui/PageHeader';
 import QueryError from '../../components/ui/QueryError';
+import ProtectedDraftBar, { clearRecoveryDraft, readRecoveryDraft } from '../../components/ui/ProtectedDraftBar';
 import { safeReturnTo } from '../../lib/navigation';
 import Button from '../../components/ui/Button';
 import EntityCode from '../../components/ui/EntityCode';
@@ -163,7 +164,17 @@ export default function PurchaseOrderDetail() {
   const { confirm, dialog: confirmDialog } = useConfirm();
 
   // Inline item editing
-  const [inlineEdit, setInlineEdit] = useState<{ itemId: string; field: 'quantity' | 'cost_price' | 'sell_price' | 'budget_amount'; value: string } | null>(null);
+  const [inlineEdit, setInlineEdit] = useState<{
+    itemId: string;
+    field: 'quantity' | 'cost_price' | 'sell_price' | 'budget_amount';
+    value: string;
+    initialValue: string;
+    expectedVersion: string | null;
+  } | null>(null);
+  const [inlineSaving, setInlineSaving] = useState(false);
+  const inlineSavingRef = useRef(false);
+  const [inlineError, setInlineError] = useState<any>(null);
+  const [inlineSavedAt, setInlineSavedAt] = useState<number | null>(null);
 
   // Inline currency editing (stores itemId being edited)
   const [currencyEdit, setCurrencyEdit] = useState<string | null>(null);
@@ -217,6 +228,10 @@ export default function PurchaseOrderDetail() {
   // Procurement meta editing
   const [procurementEdit, setProcurementEdit] = useState<string | null>(null); // field name being edited
   const [procurementValues, setProcurementValues] = useState<Record<string, string>>({});
+  const [procurementBaseline, setProcurementBaseline] = useState<any>(null);
+  const [procurementVersion, setProcurementVersion] = useState<string | null>(null);
+  const [procurementConflict, setProcurementConflict] = useState<any>(null);
+  const [procurementSavedAt, setProcurementSavedAt] = useState<number | null>(null);
 
   // Designated users
   const [showUserPicker, setShowUserPicker] = useState(false);
@@ -270,12 +285,26 @@ export default function PurchaseOrderDetail() {
     }
   };
 
+  const startInlineEdit = (item: Item, field: 'quantity' | 'cost_price' | 'sell_price' | 'budget_amount', value: string) => {
+    if (inlineEdit || inlineSavingRef.current) return;
+    setInlineEdit({
+      itemId: item.id,
+      field,
+      value,
+      initialValue: value,
+      expectedVersion: po?.version == null && po?.updated_at == null ? null : String(po.version ?? po.updated_at),
+    });
+  };
+
   const handleSaveInline = async () => {
     if (!inlineEdit) return;
+    if (inlineSavingRef.current) return;
+    if (inlineError?.response?.status === 409) return;
     const item = (po?.items || []).find((i: Item) => i.id === inlineEdit.itemId);
     if (!item) { setInlineEdit(null); return; }
     const snap = { ...inlineEdit };
-    setInlineEdit(null);
+    inlineSavingRef.current = true;
+    setInlineSaving(true);
     try {
       await api.put(`/purchase-orders/${id}/items/${snap.itemId}`, {
         quantity: snap.field === 'quantity' ? snap.value : item.quantity,
@@ -286,12 +315,31 @@ export default function PurchaseOrderDetail() {
         notes: item.notes,
         system_id: item.system_id,
         budget_amount: snap.field === 'budget_amount' ? (snap.value === '' ? null : snap.value) : (item.budget_amount ?? null),
+        expected_version: snap.expectedVersion,
       });
+      clearRecoveryDraft(`purchase-order:${user?.id || 'unknown'}:${po?.id}:item:${snap.itemId}:inline`);
+      setInlineError(null);
+      setInlineEdit(null);
+      setInlineSavedAt(Date.now());
       setSavedAt(new Date());
       refetch();
-    } catch {
-      toast.error('Failed to save');
+    } catch (error: any) {
+      setInlineError(error);
+      if (error?.response?.status !== 409) toast.error(error?.response?.data?.error?.message || 'Failed to save');
+    } finally {
+      inlineSavingRef.current = false;
+      setInlineSaving(false);
     }
+  };
+
+  const reloadInlineConflict = async () => {
+    const snap = inlineEdit;
+    if (!snap) return;
+    const result = await refetch();
+    if (result.isError || !result.data) throw new Error('Could not reload the purchase order. Your inline draft is still available.');
+    clearRecoveryDraft(`purchase-order:${user?.id || 'unknown'}:${po?.id}:item:${snap.itemId}:inline`);
+    setInlineError(null);
+    setInlineEdit(null);
   };
 
   const handleCurrencyChange = async (itemId: string, newCurrency: string) => {
@@ -509,13 +557,20 @@ export default function PurchaseOrderDetail() {
 
   const startProcurementEdit = (field: string) => {
     // Reset to ONLY the current field so cancelled edits never leak into future saves
+    const values = { [field]: po?.[field] ?? '' };
     setProcurementEdit(field);
-    setProcurementValues({ [field]: po?.[field] ?? '' });
+    setProcurementValues(values);
+    setProcurementBaseline({ field, values });
+    const pending = readRecoveryDraft(`purchase-order:${user?.id || 'unknown'}:${po?.id}:procurement-meta`);
+    setProcurementVersion(pending ? pending.version ?? null :
+      po?.version == null && po?.updated_at == null ? null : String(po.version ?? po.updated_at));
+    setProcurementConflict(null);
   };
 
   const cancelProcurementEdit = () => {
     setProcurementEdit(null);
     setProcurementValues({});
+    setProcurementConflict(null);
   };
 
   const handleSaveProcurementMeta = async () => {
@@ -529,13 +584,36 @@ export default function PurchaseOrderDetail() {
       shipping_terms: po?.shipping_terms ?? null,
       priority: po?.priority ?? 'normal',
       [procurementEdit]: editedValue === '' ? null : editedValue,
+      expected_version: procurementVersion,
     };
+    setProcurementConflict(null);
+    setSaving(true);
     try {
       await api.patch(`/purchase-orders/${id}/procurement-meta`, payload);
+      setProcurementSavedAt(Date.now());
       setProcurementEdit(null);
       setProcurementValues({});
+      setProcurementConflict(null);
       refetch();
-    } catch { toast.error('Failed to save'); }
+    } catch (error: any) {
+      setProcurementConflict(error);
+      if (error?.response?.status !== 409) toast.error(error?.response?.data?.error?.message || 'Failed to save');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const reloadProcurementConflict = async () => {
+    const field = procurementEdit;
+    if (!field) return;
+    const result = await refetch();
+    const latest = result.data;
+    if (!latest) return;
+    const values = { [field]: latest[field] ?? '' };
+    setProcurementValues(values);
+    setProcurementBaseline({ field, values });
+    setProcurementVersion(latest.version == null && latest.updated_at == null ? null : String(latest.version ?? latest.updated_at));
+    setProcurementConflict(null);
   };
 
   const handlePostComment = async () => {
@@ -782,6 +860,23 @@ export default function PurchaseOrderDetail() {
                 {/* Procurement fields */}
                 <div className="pt-2 border-t border-slate-100 space-y-2">
                   <div className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Procurement</div>
+                  <ProtectedDraftBar
+                    storageKey={`purchase-order:${user?.id || 'unknown'}:${po.id}:procurement-meta`}
+                    value={{ field: procurementEdit, values: procurementValues }}
+                    baseline={procurementBaseline}
+                    version={po.version ?? po.updated_at ?? null}
+                    enabled={procurementEdit !== null}
+                    saving={saving}
+                    error={procurementConflict}
+                    savedAt={procurementSavedAt}
+                    onRestore={(draft: any) => {
+                      setProcurementEdit(draft?.field || null);
+                      setProcurementValues(draft?.values || {});
+                    }}
+                    onSave={handleSaveProcurementMeta}
+                    onConflictReload={reloadProcurementConflict}
+                  />
+                  {procurementConflict?.response?.status === 409 && <details className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><summary className="cursor-pointer font-bold">Server version evidence</summary><pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap">{JSON.stringify(procurementConflict.response.data?.error?.current_record || procurementConflict.response.data?.current || procurementConflict.response.data, null, 2)}</pre></details>}
 
                   {/* Priority */}
                   <div className="flex justify-between items-center">
@@ -1132,7 +1227,36 @@ export default function PurchaseOrderDetail() {
                 <div className="px-4 py-6 text-sm text-slate-400 text-center">No items yet</div>
               ) : (
                 <>
+                  {!inlineEdit && po.items?.map((item: Item) => {
+                    const key = `purchase-order:${user?.id || 'unknown'}:${po.id}:item:${item.id}:inline`;
+                    const draft = readRecoveryDraft(key);
+                    if (!draft) return null;
+                    const saved = draft.value as { field?: 'quantity' | 'cost_price' | 'sell_price' | 'budget_amount'; initialValue?: string };
+                    if (!saved?.field) return null;
+                    return <button key={key} type="button"
+                      onClick={() => startInlineEdit(item, saved.field!, saved.initialValue ?? String(item[saved.field!] ?? ''))}
+                      className="mx-4 my-2 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
+                      Recover unsaved {saved.field.replace('_', ' ')} for {item.product_name}
+                    </button>;
+                  })}
                   <div className="overflow-x-auto">
+                    {inlineEdit && (
+                      <div className="px-4 pt-3">
+                        <ProtectedDraftBar
+                          storageKey={`purchase-order:${user?.id || 'unknown'}:${po.id}:item:${inlineEdit.itemId}:inline`}
+                          value={inlineEdit}
+                          baseline={{ ...inlineEdit, value: inlineEdit.initialValue }}
+                          version={po.version == null && po.updated_at == null ? null : String(po.version ?? po.updated_at)}
+                          enabled
+                          saving={inlineSaving}
+                          error={inlineError}
+                          savedAt={inlineSavedAt}
+                          onRestore={(draft: any) => setInlineEdit(draft)}
+                          onSave={handleSaveInline}
+                          onConflictReload={reloadInlineConflict}
+                        />
+                      </div>
+                    )}
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b border-slate-100">
@@ -1203,16 +1327,17 @@ export default function PurchaseOrderDetail() {
                               <td className="px-3 py-3 text-right font-mono text-xs">
                                 {isEditingQty ? (
                                   <input autoFocus type="number" min="0" step="any"
+                                    disabled={inlineSaving}
                                     value={inlineEdit!.value}
                                     onChange={e => setInlineEdit(v => v ? { ...v, value: e.target.value } : v)}
                                     onBlur={handleSaveInline}
-                                    onKeyDown={e => { if (e.key === 'Enter') handleSaveInline(); if (e.key === 'Escape') setInlineEdit(null); }}
+                                    onKeyDown={e => { if (e.key === 'Enter') handleSaveInline(); if (e.key === 'Escape' && !inlineError) setInlineEdit(null); }}
                                     className="w-20 border border-blue-400 rounded px-1 py-0.5 text-xs text-right focus:outline-none"
                                   />
                                 ) : (
                                   <span
                                     className={isDraft ? 'cursor-pointer hover:text-blue-600 flex items-center justify-end gap-1 group/cell' : ''}
-                                    onClick={() => isDraft && setInlineEdit({ itemId: item.id, field: 'quantity', value: item.quantity })}
+                                    onClick={() => isDraft && startInlineEdit(item, 'quantity', item.quantity)}
                                   >
                                     {parseFloat(item.quantity).toFixed(2)}
                                     {isDraft && <Pencil className="w-2.5 h-2.5 opacity-0 group-hover/cell:opacity-40" />}
@@ -1225,16 +1350,17 @@ export default function PurchaseOrderDetail() {
                               <td className="px-3 py-3 text-right text-xs">
                                 {isEditingBudget ? (
                                   <input autoFocus type="number" min="0" step="any"
+                                    disabled={inlineSaving}
                                     value={inlineEdit!.value}
                                     onChange={e => setInlineEdit(v => v ? { ...v, value: e.target.value } : v)}
                                     onBlur={handleSaveInline}
-                                    onKeyDown={e => { if (e.key === 'Enter') handleSaveInline(); if (e.key === 'Escape') setInlineEdit(null); }}
+                                    onKeyDown={e => { if (e.key === 'Enter') handleSaveInline(); if (e.key === 'Escape' && !inlineError) setInlineEdit(null); }}
                                     className="w-24 border border-blue-400 rounded px-1 py-0.5 text-xs text-right focus:outline-none"
                                   />
                                 ) : (
                                   <div
                                     className={isDraft ? 'cursor-pointer group/budgetcell' : ''}
-                                    onClick={() => isDraft && setInlineEdit({ itemId: item.id, field: 'budget_amount', value: item.budget_amount || '' })}
+                                    onClick={() => isDraft && startInlineEdit(item, 'budget_amount', item.budget_amount || '')}
                                   >
                                     <span className={`flex items-center justify-end gap-1 ${item.budget_amount == null ? 'text-slate-200' : 'text-slate-600'}`}>
                                       {item.budget_amount != null ? formatCurrency(parseFloat(item.budget_amount), item.currency) : (isDraft ? 'Set…' : '—')}
@@ -1271,16 +1397,17 @@ export default function PurchaseOrderDetail() {
                                   )}
                                   {isEditingCost ? (
                                     <input autoFocus type="number" min="0" step="any"
+                                      disabled={inlineSaving}
                                       value={inlineEdit!.value}
                                       onChange={e => setInlineEdit(v => v ? { ...v, value: e.target.value } : v)}
                                       onBlur={handleSaveInline}
-                                      onKeyDown={e => { if (e.key === 'Enter') handleSaveInline(); if (e.key === 'Escape') setInlineEdit(null); }}
+                                      onKeyDown={e => { if (e.key === 'Enter') handleSaveInline(); if (e.key === 'Escape' && !inlineError) setInlineEdit(null); }}
                                       className="w-24 border border-blue-400 rounded px-1 py-0.5 text-xs text-right focus:outline-none"
                                     />
                                   ) : (
                                     <span
                                       className={isDraft ? 'cursor-pointer hover:text-blue-600 flex items-center justify-end gap-1 group/cell' : ''}
-                                      onClick={() => isDraft && setInlineEdit({ itemId: item.id, field: 'cost_price', value: item.cost_price || '' })}
+                                      onClick={() => isDraft && startInlineEdit(item, 'cost_price', item.cost_price || '')}
                                     >
                                       {formatCurrency(parseFloat(item.cost_price || '0'), item.currency)}
                                       {isDraft && <Pencil className="w-2.5 h-2.5 opacity-0 group-hover/cell:opacity-40" />}
@@ -1291,16 +1418,17 @@ export default function PurchaseOrderDetail() {
                               <td className="px-3 py-3 text-right text-xs text-slate-600">
                                 {isEditingSell ? (
                                   <input autoFocus type="number" min="0" step="any"
+                                    disabled={inlineSaving}
                                     value={inlineEdit!.value}
                                     onChange={e => setInlineEdit(v => v ? { ...v, value: e.target.value } : v)}
                                     onBlur={handleSaveInline}
-                                    onKeyDown={e => { if (e.key === 'Enter') handleSaveInline(); if (e.key === 'Escape') setInlineEdit(null); }}
+                                    onKeyDown={e => { if (e.key === 'Enter') handleSaveInline(); if (e.key === 'Escape' && !inlineError) setInlineEdit(null); }}
                                     className="w-24 border border-blue-400 rounded px-1 py-0.5 text-xs text-right focus:outline-none"
                                   />
                                 ) : (
                                   <span
                                     className={isDraft ? 'cursor-pointer hover:text-blue-600 flex items-center justify-end gap-1 group/cell' : ''}
-                                    onClick={() => isDraft && setInlineEdit({ itemId: item.id, field: 'sell_price', value: item.sell_price || '' })}
+                                    onClick={() => isDraft && startInlineEdit(item, 'sell_price', item.sell_price || '')}
                                   >
                                     {formatCurrency(parseFloat(item.sell_price || '0'), item.currency)}
                                     {isDraft && <Pencil className="w-2.5 h-2.5 opacity-0 group-hover/cell:opacity-40" />}

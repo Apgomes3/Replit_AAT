@@ -2,10 +2,11 @@ import { Router, Response } from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
-import { query } from '../db';
+import { query, withTransaction } from '../db';
 import { authenticate, requireModuleAccess, AuthRequest } from '../middleware/auth';
 import { createNotification, notifyAdminsAndManagers } from '../db/notifications';
 import { logAudit } from '../db/audit';
+import { versionMatches, versionConflict, withVersion } from '../lib/concurrency';
 
 const uploadDir = path.join(__dirname, '../../uploads');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -209,7 +210,7 @@ router.get('/purchase-orders', authenticate, async (req: AuthRequest, res: Respo
     params
   );
   const rows = await query(
-    `SELECT po.id, po.po_code, po.status, po.notes, po.created_at, po.updated_at,
+    `SELECT po.id, po.po_code, po.status, po.notes, po.created_at, po.updated_at, po.xmin::text AS version,
       proj.project_code, proj.project_name,
       u.first_name || ' ' || u.last_name AS created_by_name,
       a.first_name || ' ' || a.last_name AS approved_by_name,
@@ -227,7 +228,7 @@ router.get('/purchase-orders', authenticate, async (req: AuthRequest, res: Respo
      LIMIT $${p} OFFSET $${p+1}`,
     [...params, parseInt(page_size), offset]
   );
-  res.json({ items: rows.rows, pagination: { total: parseInt(countRes.rows[0].count), page: parseInt(page), page_size: parseInt(page_size) } });
+  res.json({ items: rows.rows.map(withVersion), pagination: { total: parseInt(countRes.rows[0].count), page: parseInt(page), page_size: parseInt(page_size) } });
 });
 
 // CREATE
@@ -316,7 +317,7 @@ router.post('/purchase-orders/:id/clone', authenticate, async (req: AuthRequest,
 router.get('/purchase-orders/:id', authenticate, async (req: AuthRequest, res: Response) => {
   const { id } = req.params;
   const poRes = await query(
-    `SELECT po.*, proj.project_code, proj.project_name,
+    `SELECT po.*, po.xmin::text AS version, proj.project_code, proj.project_name,
       u.first_name || ' ' || u.last_name AS created_by_name,
       u.email AS created_by_email,
       a.first_name || ' ' || a.last_name AS approved_by_name
@@ -358,7 +359,7 @@ router.get('/purchase-orders/:id', authenticate, async (req: AuthRequest, res: R
   ]);
 
   res.json({
-    ...po,
+    ...withVersion(po),
     items: items.rows,
     systems: systems.rows,
     history: history.rows,
@@ -372,19 +373,31 @@ router.put('/purchase-orders/:id', authenticate, async (req: AuthRequest, res: R
   const { project_id, notes, system_ids, vendor_name, required_by_date, payment_terms, shipping_terms, priority } = req.body;
   const procError = validateProcurementFields({ priority, vendor_name, payment_terms, shipping_terms, required_by_date });
   if (procError) return res.status(400).json({ error: { code: 'VALIDATION_FAILED', message: procError } });
-  const existing = await query('SELECT * FROM purchase_orders WHERE id=$1', [id]);
-  if (!existing.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'PO not found' } });
-  if (existing.rows[0].status !== 'draft') return res.status(400).json({ error: { code: 'LOCKED', message: 'Only draft POs can be edited' } });
-
-  await query(
-    `UPDATE purchase_orders SET project_id=$1, notes=$2, vendor_name=$3, required_by_date=$4, payment_terms=$5, shipping_terms=$6, priority=$7, updated_at=now() WHERE id=$8`,
-    [project_id || null, notes || null, vendor_name || null, required_by_date || null, payment_terms || null, shipping_terms || null, priority || 'normal', id]
-  );
-  if (Array.isArray(system_ids)) {
-    await query('DELETE FROM po_systems WHERE po_id=$1', [id]);
-    for (const sid of system_ids) {
-      await query('INSERT INTO po_systems (po_id,system_id) VALUES ($1,$2) ON CONFLICT DO NOTHING', [id, sid]);
-    }
+  let updated: any;
+  try {
+    updated = await withTransaction(async db => {
+      const existing = (await db.query('SELECT *, xmin::text AS version FROM purchase_orders WHERE id=$1 FOR UPDATE', [id])).rows[0];
+      if (!existing) throw Object.assign(new Error('PO not found'), { status: 404, code: 'NOT_FOUND' });
+      if (req.body?.expected_version !== undefined && !versionMatches(existing, req.body.expected_version)) {
+        throw Object.assign(new Error('Purchase order has changed.'), { status: 409, code: 'VERSION_CONFLICT', current_record: existing });
+      }
+      if (existing.status !== 'draft') throw Object.assign(new Error('Only draft POs can be edited'), { status: 400, code: 'LOCKED' });
+      const saved = (await db.query(
+        `UPDATE purchase_orders SET project_id=$1, notes=$2, vendor_name=$3, required_by_date=$4, payment_terms=$5, shipping_terms=$6, priority=$7, updated_at=now() WHERE id=$8 RETURNING *, xmin::text AS version`,
+        [project_id || null, notes || null, vendor_name || null, required_by_date || null, payment_terms || null, shipping_terms || null, priority || 'normal', id]
+      )).rows[0];
+      if (Array.isArray(system_ids)) {
+        await db.query('DELETE FROM po_systems WHERE po_id=$1', [id]);
+        for (const sid of system_ids) {
+          await db.query('INSERT INTO po_systems (po_id,system_id) VALUES ($1,$2) ON CONFLICT DO NOTHING', [id, sid]);
+        }
+      }
+      return saved;
+    });
+  } catch (error: any) {
+    if (error.status === 409 && error.code === 'VERSION_CONFLICT') return res.status(409).json(versionConflict(error.current_record));
+    if (error.status) return res.status(error.status).json({ error: { code: error.code, message: error.message } });
+    throw error;
   }
   await logAudit(req.user!.id, 'purchase_order', String(id), 'UPDATE', {
     summary: 'Purchase order details updated',
@@ -393,7 +406,7 @@ router.put('/purchase-orders/:id', authenticate, async (req: AuthRequest, res: R
     required_by_date: required_by_date || null,
     priority: priority || 'normal',
   });
-  res.json({ ok: true });
+  res.json({ ok: true, version: withVersion(updated).version });
 });
 
 // PATCH PROCUREMENT META (vendor, dates, terms, priority — editable regardless of status)
@@ -401,15 +414,27 @@ router.patch('/purchase-orders/:id/procurement-meta', authenticate, async (req: 
   const { id } = req.params;
   const user = req.user!;
   if (!canTransition(user.role)) return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Not authorised' } });
-  const existing = await query('SELECT id FROM purchase_orders WHERE id=$1', [id]);
-  if (!existing.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'PO not found' } });
   const { vendor_name, required_by_date, payment_terms, shipping_terms, priority } = req.body;
   const procError = validateProcurementFields({ priority, vendor_name, payment_terms, shipping_terms, required_by_date });
   if (procError) return res.status(400).json({ error: { code: 'VALIDATION_FAILED', message: procError } });
-  await query(
-    `UPDATE purchase_orders SET vendor_name=$1, required_by_date=$2, payment_terms=$3, shipping_terms=$4, priority=$5, updated_at=now() WHERE id=$6`,
-    [vendor_name ?? null, required_by_date ?? null, payment_terms ?? null, shipping_terms ?? null, priority ?? 'normal', id]
-  );
+  let updated: any;
+  try {
+    updated = await withTransaction(async db => {
+      const existing = (await db.query('SELECT *, xmin::text AS version FROM purchase_orders WHERE id=$1 FOR UPDATE', [id])).rows[0];
+      if (!existing) throw Object.assign(new Error('PO not found'), { status: 404, code: 'NOT_FOUND' });
+      if (req.body?.expected_version !== undefined && !versionMatches(existing, req.body.expected_version)) {
+        throw Object.assign(new Error('Purchase order has changed.'), { status: 409, code: 'VERSION_CONFLICT', current_record: existing });
+      }
+      return (await db.query(
+        `UPDATE purchase_orders SET vendor_name=$1, required_by_date=$2, payment_terms=$3, shipping_terms=$4, priority=$5, updated_at=now() WHERE id=$6 RETURNING *, xmin::text AS version`,
+        [vendor_name ?? null, required_by_date ?? null, payment_terms ?? null, shipping_terms ?? null, priority ?? 'normal', id]
+      )).rows[0];
+    });
+  } catch (error: any) {
+    if (error.status === 409 && error.code === 'VERSION_CONFLICT') return res.status(409).json(versionConflict(error.current_record));
+    if (error.status) return res.status(error.status).json({ error: { code: error.code, message: error.message } });
+    throw error;
+  }
   await logAudit(user.id, 'purchase_order', String(id), 'UPDATE', {
     summary: 'Procurement details updated',
     vendor_name: vendor_name ?? null,
@@ -418,7 +443,7 @@ router.patch('/purchase-orders/:id/procurement-meta', authenticate, async (req: 
     shipping_terms: shipping_terms ?? null,
     priority: priority ?? 'normal',
   });
-  res.json({ ok: true });
+  res.json({ ok: true, version: withVersion(updated).version });
 });
 
 // SUBMIT for approval
@@ -703,19 +728,26 @@ router.post('/purchase-orders/:id/items', authenticate, async (req: AuthRequest,
   const { product_master_id, quantity, cost_price, sell_price, currency, notes, system_id, project_equipment_item_id, tank_id, uom } = req.body;
   const itemError = validateItemFields({ uom, quantity, cost_price });
   if (itemError) return res.status(400).json({ error: { code: 'VALIDATION_FAILED', message: itemError } });
-  const poRes = await query('SELECT status FROM purchase_orders WHERE id=$1', [id]);
-  if (!poRes.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'PO not found' } });
-  if (poRes.rows[0].status !== 'draft') return res.status(400).json({ error: { code: 'LOCKED', message: 'Items can only be added to draft POs' } });
-
-  const maxSort = await query('SELECT COALESCE(MAX(sort_order),0) AS m FROM po_items WHERE po_id=$1', [id]);
-  const sortOrder = parseInt(maxSort.rows[0].m) + 10;
-
-  const r = await query(
-    `INSERT INTO po_items (po_id,product_master_id,quantity,cost_price,sell_price,currency,notes,sort_order,system_id,project_equipment_item_id,tank_id,uom)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
-    [id, product_master_id || null, quantity || 1, cost_price || null, sell_price || null, currency || 'USD', notes || null, sortOrder, system_id || null, project_equipment_item_id || null, tank_id || null, uom || 'EA']
-  );
-  res.status(201).json(r.rows[0]);
+  try {
+    const item = await withTransaction(async db => {
+      const po = (await db.query('SELECT status FROM purchase_orders WHERE id=$1 FOR UPDATE', [id])).rows[0];
+      if (!po) throw Object.assign(new Error('PO not found'), { status: 404, code: 'NOT_FOUND' });
+      if (po.status !== 'draft') throw Object.assign(new Error('Items can only be added to draft POs'), { status: 400, code: 'LOCKED' });
+      const maxSort = await db.query('SELECT COALESCE(MAX(sort_order),0) AS m FROM po_items WHERE po_id=$1', [id]);
+      const sortOrder = parseInt(maxSort.rows[0].m) + 10;
+      const inserted = await db.query(
+        `INSERT INTO po_items (po_id,product_master_id,quantity,cost_price,sell_price,currency,notes,sort_order,system_id,project_equipment_item_id,tank_id,uom)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+        [id, product_master_id || null, quantity || 1, cost_price || null, sell_price || null, currency || 'USD', notes || null, sortOrder, system_id || null, project_equipment_item_id || null, tank_id || null, uom || 'EA']
+      );
+      const bumped = await db.query('UPDATE purchase_orders SET updated_at=now() WHERE id=$1 RETURNING xmin::text AS version', [id]);
+      return { ...inserted.rows[0], version: bumped.rows[0]?.version };
+    });
+    res.status(201).json(item);
+  } catch (error: any) {
+    if (error.status) return res.status(error.status).json({ error: { code: error.code, message: error.message } });
+    throw error;
+  }
 });
 
 // UPDATE ITEM
@@ -724,25 +756,46 @@ router.put('/purchase-orders/:id/items/:itemId', authenticate, async (req: AuthR
   const { quantity, cost_price, sell_price, currency, notes, system_id, budget_amount, uom } = req.body;
   const itemError = validateItemFields({ uom, quantity, cost_price });
   if (itemError) return res.status(400).json({ error: { code: 'VALIDATION_FAILED', message: itemError } });
-  const poRes = await query('SELECT status FROM purchase_orders WHERE id=$1', [id]);
-  if (!poRes.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'PO not found' } });
-  if (poRes.rows[0].status !== 'draft') return res.status(400).json({ error: { code: 'LOCKED', message: 'Items can only be edited on draft POs' } });
-
-  const r = await query(
-    `UPDATE po_items SET quantity=$1,cost_price=$2,sell_price=$3,currency=$4,notes=$5,system_id=$6,budget_amount=$7,uom=COALESCE($8, uom) WHERE id=$9 AND po_id=$10 RETURNING *`,
-    [quantity, cost_price || null, sell_price || null, currency || 'USD', notes || null, system_id || null, budget_amount != null ? budget_amount : null, uom ?? null, itemId, id]
-  );
-  res.json(r.rows[0]);
+  try {
+    const saved = await withTransaction(async db => {
+      const po = (await db.query('SELECT *, xmin::text AS version FROM purchase_orders WHERE id=$1 FOR UPDATE', [id])).rows[0];
+      if (!po) throw Object.assign(new Error('PO not found'), { status: 404, code: 'NOT_FOUND' });
+      if (req.body?.expected_version !== undefined && !versionMatches(po, req.body.expected_version)) {
+        throw Object.assign(new Error('Purchase order has changed.'), { status: 409, code: 'VERSION_CONFLICT', current_record: po });
+      }
+      if (po.status !== 'draft') throw Object.assign(new Error('Items can only be edited on draft POs'), { status: 400, code: 'LOCKED' });
+      const item = await db.query(
+        `UPDATE po_items SET quantity=$1,cost_price=$2,sell_price=$3,currency=$4,notes=$5,system_id=$6,budget_amount=$7,uom=COALESCE($8, uom) WHERE id=$9 AND po_id=$10 RETURNING *`,
+        [quantity, cost_price || null, sell_price || null, currency || 'USD', notes || null, system_id || null, budget_amount != null ? budget_amount : null, uom ?? null, itemId, id]
+      );
+      if (!item.rows[0]) throw Object.assign(new Error('PO item not found'), { status: 404, code: 'NOT_FOUND' });
+      const bumped = await db.query('UPDATE purchase_orders SET updated_at=now() WHERE id=$1 RETURNING xmin::text AS version', [id]);
+      return { ...item.rows[0], version: bumped.rows[0]?.version };
+    });
+    res.json(saved);
+  } catch (error: any) {
+    if (error.status === 409 && error.code === 'VERSION_CONFLICT') return res.status(409).json(versionConflict(error.current_record));
+    if (error.status) return res.status(error.status).json({ error: { code: error.code, message: error.message } });
+    throw error;
+  }
 });
 
 // DELETE ITEM
 router.delete('/purchase-orders/:id/items/:itemId', authenticate, async (req: AuthRequest, res: Response) => {
   const { id, itemId } = req.params;
-  const poRes = await query('SELECT status FROM purchase_orders WHERE id=$1', [id]);
-  if (!poRes.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'PO not found' } });
-  if (poRes.rows[0].status !== 'draft') return res.status(400).json({ error: { code: 'LOCKED', message: 'Items can only be removed from draft POs' } });
-  await query('DELETE FROM po_items WHERE id=$1 AND po_id=$2', [itemId, id]);
-  res.json({ ok: true });
+  try {
+    await withTransaction(async db => {
+      const po = (await db.query('SELECT status FROM purchase_orders WHERE id=$1 FOR UPDATE', [id])).rows[0];
+      if (!po) throw Object.assign(new Error('PO not found'), { status: 404, code: 'NOT_FOUND' });
+      if (po.status !== 'draft') throw Object.assign(new Error('Items can only be removed from draft POs'), { status: 400, code: 'LOCKED' });
+      await db.query('DELETE FROM po_items WHERE id=$1 AND po_id=$2', [itemId, id]);
+      await db.query('UPDATE purchase_orders SET updated_at=now() WHERE id=$1', [id]);
+    });
+    res.json({ ok: true });
+  } catch (error: any) {
+    if (error.status) return res.status(error.status).json({ error: { code: error.code, message: error.message } });
+    throw error;
+  }
 });
 
 // BULK ASSIGN DESIGNATED USER

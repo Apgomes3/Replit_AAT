@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authenticate, AuthRequest, requireModuleAccess, requireModuleManage } from '../middleware/auth';
 import { query, withTransaction } from '../db';
+import { versionMatches, withVersion, versionConflict } from '../lib/concurrency';
 
 const router = Router();
 router.use(authenticate, requireModuleAccess('business_development'));
@@ -17,7 +18,7 @@ const flatSource = (body: any) => ({
   ...(body.source !== undefined ? { source: body.source } : {}),
 });
 const aliases = (row: any) => ({
-  ...row,
+  ...withVersion(row),
   contact_name: row.contact_details?.name ?? null,
   contact_email: row.contact_details?.email ?? null,
   contact_phone: row.contact_details?.phone ?? null,
@@ -71,7 +72,7 @@ router.get('/', async (req, res, next) => {
     const page = Math.max(1, Number(req.query.page) || 1), size = Math.min(200, Math.max(1, Number(req.query.page_size) || 25));
     const predicate = where.length ? `WHERE ${where.join(' AND ')}` : '';
     const count = await query(`SELECT COUNT(*)::int AS count FROM enquiries e JOIN clients c ON c.id=e.client_id ${predicate}`, params);
-    const rows = await query(`SELECT e.*, c.name AS client_name, p.project_code, p.project_name, d.book_code AS design_book_code
+    const rows = await query(`SELECT e.*, e.xmin::text AS version, c.name AS client_name, p.project_code, p.project_name, d.book_code AS design_book_code
       FROM enquiries e JOIN clients c ON c.id=e.client_id LEFT JOIN projects p ON p.id=e.project_id LEFT JOIN design_books d ON d.id=e.design_book_id
       ${predicate} ORDER BY e.updated_at DESC LIMIT $${params.length+1} OFFSET $${params.length+2}`, [...params, size, (page-1)*size]);
     res.json({ data: rows.rows.map(aliases), pagination: { page, page_size: size, total: count.rows[0].count } });
@@ -102,13 +103,13 @@ router.get('/:id', async (req, res, next) => {
   try {
     const enquiryId = String(req.params.id);
     if (!UUID.test(enquiryId)) return res.status(400).json({ error: { code: 'VALIDATION', message: 'id must be a valid UUID.' } });
-    const enquiry = await query(`SELECT e.*, c.name AS client_name, p.project_code,p.project_name,d.book_code AS design_book_code
+    const enquiry = await query(`SELECT e.*, e.xmin::text AS version, c.name AS client_name, p.project_code,p.project_name,d.book_code AS design_book_code
       FROM enquiries e JOIN clients c ON c.id=e.client_id LEFT JOIN projects p ON p.id=e.project_id LEFT JOIN design_books d ON d.id=e.design_book_id WHERE e.id=$1`, [req.params.id]);
     if (!enquiry.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Enquiry not found.' } });
     const activities = await query('SELECT * FROM enquiry_activities WHERE enquiry_id=$1 ORDER BY created_at DESC LIMIT 100', [req.params.id]);
     const quote = await query('SELECT * FROM enquiry_quotes WHERE enquiry_id=$1', [req.params.id]);
     const lines = quote.rows[0] ? await query('SELECT * FROM enquiry_quote_lines WHERE quote_id=$1 ORDER BY sort_order,id', [quote.rows[0].id]) : { rows: [] };
-    res.json({ ...aliases(enquiry.rows[0]), activities: activities.rows, quote: quote.rows[0] ? { ...quote.rows[0], lines: lines.rows } : null });
+     res.json({ ...aliases(enquiry.rows[0]), activities: activities.rows, quote: quote.rows[0] ? { ...quote.rows[0], lines: lines.rows } : null });
   } catch (e) { next(e); }
 });
 router.patch('/:id', requireModuleManage('business_development'), referenceModuleAccess, async (req: AuthRequest, res, next) => {
@@ -116,6 +117,7 @@ router.patch('/:id', requireModuleManage('business_development'), referenceModul
     const enquiryId = String(req.params.id);
     if (!UUID.test(enquiryId)) return res.status(400).json({ error: { code: 'VALIDATION', message: 'id must be a valid UUID.' } });
     const b=req.body||{};
+    const expectedVersion = b.expected_version;
     if (b.status && !statuses.includes(b.status)) return res.status(400).json({error:{code:'VALIDATION',message:'Invalid status.'}});
     if (Object.prototype.hasOwnProperty.call(b, 'received_date') && b.received_date === null) return res.status(400).json({error:{code:'VALIDATION',message:'received_date cannot be null.',field:'received_date'}});
     if (b.title !== undefined && required(b.title, 'title')) return res.status(400).json({error:{code:'VALIDATION',message:'title is required.',field:'title'}});
@@ -133,9 +135,9 @@ router.patch('/:id', requireModuleManage('business_development'), referenceModul
     if (b.source_metadata !== undefined || b.source !== undefined) { vals.push(flatSource(b)); set.push(`source_metadata=$${vals.length}`); }
     if (!set.length) return res.status(400).json({error:{code:'VALIDATION',message:'At least one enquiry field is required.'}});
     vals.push(req.user!.id); set.push(`updated_by=$${vals.length}`,'updated_at=NOW()');
-    const updated=await withTransaction(async db=>{ const current=(await db.query('SELECT * FROM enquiries WHERE id=$1 FOR UPDATE', [req.params.id])).rows[0]; if(!current) throw Object.assign(new Error('Enquiry not found.'),{status:404,code:'NOT_FOUND'}); if (b.client_id !== undefined && b.client_id === null) throw Object.assign(new Error('client_id cannot be null.'),{status:400,code:'VALIDATION'}); if (b.client_id !== undefined && !(await db.query('SELECT id FROM clients WHERE id=$1',[b.client_id])).rows[0]) throw Object.assign(new Error('Client not found.'),{status:404,code:'NOT_FOUND'}); const effectiveProject = b.project_id !== undefined ? b.project_id : current.project_id; const effectiveDesign = b.design_book_id !== undefined ? b.design_book_id : current.design_book_id; const effectiveReceived = b.received_date !== undefined ? b.received_date : current.received_date; const effectiveDue = b.due_date !== undefined ? b.due_date : current.due_date; if (effectiveDue && dateOrderError(effectiveReceived, effectiveDue)) throw Object.assign(new Error(dateOrderError(effectiveReceived, effectiveDue)!),{status:400,code:'VALIDATION'}); await references(db,effectiveProject,effectiveDesign); const r=await db.query(`UPDATE enquiries SET ${set.join(',')} WHERE id=$1 RETURNING *`,vals); await record(db,req.params.id,req.user!.id,'updated',{changes:b}); return r.rows[0]; });
+     const updated=await withTransaction(async db=>{ const current=(await db.query('SELECT *, xmin::text AS version FROM enquiries WHERE id=$1 FOR UPDATE', [req.params.id])).rows[0]; if(!current) throw Object.assign(new Error('Enquiry not found.'),{status:404,code:'NOT_FOUND'}); if (expectedVersion !== undefined && !versionMatches(current, expectedVersion)) throw Object.assign(new Error('This record changed since it was loaded.'), { status: 409, code: 'VERSION_CONFLICT', current_record: aliases(current) }); if (b.client_id !== undefined && b.client_id === null) throw Object.assign(new Error('client_id cannot be null.'),{status:400,code:'VALIDATION'}); if (b.client_id !== undefined && !(await db.query('SELECT id FROM clients WHERE id=$1',[b.client_id])).rows[0]) throw Object.assign(new Error('Client not found.'),{status:404,code:'NOT_FOUND'}); const effectiveProject = b.project_id !== undefined ? b.project_id : current.project_id; const effectiveDesign = b.design_book_id !== undefined ? b.design_book_id : current.design_book_id; const effectiveReceived = b.received_date !== undefined ? b.received_date : current.received_date; const effectiveDue = b.due_date !== undefined ? b.due_date : current.due_date; if (effectiveDue && dateOrderError(effectiveReceived, effectiveDue)) throw Object.assign(new Error(dateOrderError(effectiveReceived, effectiveDue)!),{status:400,code:'VALIDATION'}); await references(db,effectiveProject,effectiveDesign); const r=await db.query(`UPDATE enquiries SET ${set.join(',')} WHERE id=$1 RETURNING *, xmin::text AS version`,vals); await record(db,req.params.id,req.user!.id,'updated',{changes:b}); return r.rows[0]; });
     res.json(aliases(updated));
-  } catch(e:any){if(e.status)return res.status(e.status).json({error:{code:e.code,message:e.message}});next(e);}
+  } catch(e:any){if(e.status === 409 && e.code === 'VERSION_CONFLICT') return res.status(409).json(versionConflict(e.current_record)); if(e.status)return res.status(e.status).json({error:{code:e.code,message:e.message}});next(e);}
 });
 router.post('/:id/create-project', requireModuleManage('business_development'), requireModuleManage('projects'), async (req: AuthRequest, res, next) => {
   try {

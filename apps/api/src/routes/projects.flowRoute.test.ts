@@ -35,6 +35,9 @@ vi.mock('../db', () => {
     if (sql.includes('SELECT rma.access_level')) {
       return { rows: [{ access_level: 'manage' }] };
     }
+    if (sql.includes('SELECT *, xmin::text AS version FROM systems WHERE id=$1 FOR UPDATE')) {
+      return { rows: [{ ...state.currentSystem, id: 'system-1', version: '9' }] };
+    }
     if (sql.includes('SELECT * FROM systems WHERE id=$1')) {
       return { rows: [{ ...state.currentSystem }] };
     }
@@ -184,6 +187,18 @@ describe('system Flow Route allocation persistence', () => {
 
     expect(response.status, JSON.stringify(response.body)).toBe(200);
     expect(state.calls.some(call => call.sql.includes('UPDATE systems SET'))).toBe(true);
+  });
+
+  it('rejects a Flow Route write using a stale expected_version before any draft rows change', async () => {
+    const response = await request(app, {
+      ...basePayload,
+      expected_version: '8',
+    });
+    expect(response.status).toBe(409);
+    expect(response.body.error.code).toBe('VERSION_CONFLICT');
+    expect(response.body.error.current_version).toBe('9');
+    expect(response.body.error.current_record.id).toBe('system-1');
+    expect(state.calls.some(call => call.sql.includes('UPDATE systems SET'))).toBe(false);
   });
 
   it('keeps legacy explicit Break Tank allocations allocated and rejects matching another source', async () => {

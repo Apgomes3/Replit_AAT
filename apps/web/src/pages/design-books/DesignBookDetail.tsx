@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { useEffect, useState, type ChangeEvent } from 'react';
 import api from '../../lib/api';
 import StatusBadge from '../../components/ui/StatusBadge';
+import ProtectedDraftBar from '../../components/ui/ProtectedDraftBar';
 import EntityCode from '../../components/ui/EntityCode';
 import Button from '../../components/ui/Button';
 import {
@@ -3701,10 +3702,12 @@ function ThermalTab({
   book,
   readOnly,
   onRefresh,
+  userId,
 }: {
   book: any;
   readOnly: boolean;
   onRefresh: () => void;
+  userId?: string;
 }) {
   const items: any[] = book.thermal_calculations || [];
   const constructionDefaults: any[] = (book.thermal_construction_defaults || [])
@@ -3719,7 +3722,10 @@ function ThermalTab({
     operational: false,
   });
   const [form, setForm] = useState<any>({});
+  const [baseline, setBaseline] = useState<any>({});
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<any>(null);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
   useEffect(() => {
     if (!selected?.system_id) return;
     const current = items.find(item => item.system_id === selected.system_id);
@@ -3733,7 +3739,7 @@ function ThermalTab({
   const correlationItems: any[] = correlationLibrary?.items || [];
   const agitationClasses: any[] = correlationLibrary?.classes || [];
 
-  const open = (item: any) => {
+  const open = (item: any, expectedVersion = book.version ?? book.updated_at ?? null) => {
     const calculation = item.calculation ||
       item.result_snapshot ||
       item.saved?.result_snapshot ||
@@ -3797,7 +3803,8 @@ function ThermalTab({
     const overrides = correlationSnapshot.overrides ||
       existing.agitation_correlation_overrides || {};
     setSelected(item);
-    setForm({
+    setSaveError(null);
+    const draft = {
       ambient_air_temperature_c: existing.ambient_air_temperature_c ?? '',
       relative_humidity_pct: existing.relative_humidity_pct ?? 60,
        surrounding_surface_temperature_c: existing.surrounding_surface_temperature_c ?? '',
@@ -3849,7 +3856,10 @@ function ThermalTab({
       capacity_margin_pct: existing.capacity_margin_pct ?? 10,
       deviation_justification: existing.deviation_justification ?? '',
       custom_tank_wall_areas_m2: existing.custom_tank_wall_areas_m2 ?? {},
-    });
+      _expected_version: expectedVersion,
+    };
+    setBaseline(draft);
+    setForm(draft);
   };
 
   const update = (key: string, value: any) => setForm((current: any) => ({ ...current, [key]: value }));
@@ -3893,17 +3903,21 @@ function ThermalTab({
       item => item.class_code === form.agitation_class && item.status === 'approved',
     );
     if (!approvedCorrelation) return;
+    const resolvedDefaults = {
+      agitation_correlation_id: approvedCorrelation.id,
+      agitation_correlation_version: approvedCorrelation.version,
+      agitation_correlation_approved: true,
+      ...thermalCorrelationDefaults(approvedCorrelation),
+    };
     setForm((current: any) => {
       if (current.agitation_correlation_id || current.agitation_class !== form.agitation_class) return current;
-      return {
-        ...current,
-        agitation_correlation_id: approvedCorrelation.id,
-        agitation_correlation_version: approvedCorrelation.version,
-        agitation_correlation_approved: true,
-        ...thermalCorrelationDefaults(approvedCorrelation),
-      };
+      return { ...current, ...resolvedDefaults };
     });
+    setBaseline((current: any) => JSON.stringify(current) === JSON.stringify(form)
+      ? { ...current, ...resolvedDefaults }
+      : current);
   }, [
+    baseline,
     correlationItems,
     form.agitation_class,
     form.agitation_correlation_id,
@@ -4005,17 +4019,49 @@ function ThermalTab({
         deviation_justification: form.deviation_justification,
         custom_tank_wall_areas_m2: form.custom_tank_wall_areas_m2,
       };
-      const response = await api.put(`/design-books/${book.id}/thermal/${selected.system_id}`, { inputs });
+      const response = await api.put(`/design-books/${book.id}/thermal/${selected.system_id}`, {
+        expected_version: Object.prototype.hasOwnProperty.call(form || {}, '_expected_version')
+          ? form._expected_version
+          : book.version ?? book.updated_at ?? null,
+        inputs,
+      });
       toast.success(response.data.calculation?.status === 'Ready'
         ? 'Thermal calculation saved and Ready'
         : 'Thermal inputs saved with blockers');
       setSelected(response.data);
+      const committedForm = {
+        ...form,
+        _expected_version: response.data.version ?? form._expected_version ?? null,
+      };
+      setForm(committedForm);
+      setBaseline(committedForm);
+      setSaveError(null);
+      setSavedAt(Date.now());
       await onRefresh();
     } catch (error: any) {
+      setSaveError(error);
+      if (error?.response?.status === 409) {
+        toast.error('Thermal calculation was not saved because the Design Book changed');
+        return;
+      }
       toast.error(error?.response?.data?.error?.message || 'Unable to save thermal calculation');
     } finally {
       setSaving(false);
     }
+  };
+
+  const reloadThermalAfterConflict = async () => {
+    if (!selected) return;
+    const systemId = selected.system_id;
+    await onRefresh();
+    const [response, currentBookResponse] = await Promise.all([
+      api.get(`/design-books/${book.id}/thermal`),
+      api.get(`/design-books/${book.id}`),
+    ]);
+    const current = (response.data.items || []).find((item: any) => item.system_id === systemId);
+    if (current) open(current, currentBookResponse.data.version ?? currentBookResponse.data.updated_at ?? null);
+    else setSelected(null);
+    setSaveError(null);
   };
 
   if (!items.length) {
@@ -4170,6 +4216,22 @@ function ThermalTab({
             <div className="flex gap-2 text-[#456b7d]"><LockKeyhole className="mt-0.5 h-4 w-4 shrink-0" /><span><b className="block">{readOnly ? 'Frozen evidence' : 'Draft controls'}</b><small className="text-[#718894]">{readOnly ? 'Editing is disabled' : 'Save to recalculate'}</small></span></div>
           </div>
           <ThermalWallBasisChangeNotice change={wallBasisChange} />
+          <ProtectedDraftBar
+            storageKey={`design-book-thermal:${userId ?? 'anonymous'}:${book.id}:${selected.system_id}`}
+            value={form}
+            baseline={baseline}
+            version={book.version ?? book.updated_at ?? null}
+            savedAt={savedAt}
+            enabled={!!userId && !readOnly}
+            saving={saving}
+            error={saveError}
+            onSave={save}
+            onConflictReload={reloadThermalAfterConflict}
+            onRestore={draft => {
+              setForm(draft);
+              setSaveError(null);
+            }}
+          />
 
           <div className="flex flex-col gap-6">
           <section className="order-2">
@@ -4592,7 +4654,10 @@ export default function DesignBookDetail() {
   const tab: Tab = isDesignBookTab(tabParam) ? tabParam : 'exhibits';
   const [editMode, setEditMode] = useState(false);
   const [editForm, setEditForm] = useState<any>(null);
+  const [editSession, setEditSession] = useState<{ bookId: string | undefined; baseline: any; version: any } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<any>(null);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
   const [showNewExhibit, setShowNewExhibit] = useState(false);
   const [showNewLSS, setShowNewLSS] = useState(false);
   const [showRelease, setShowRelease] = useState(false);
@@ -4646,6 +4711,15 @@ export default function DesignBookDetail() {
   const canSubmitReview = isDesigner && (book.status === 'Draft' || book.status === 'In Progress');
   const canApprove = isManager && book.status === 'For Review';
   const canRelease = isManager && book.status === 'Approved';
+  const liveEditBaseline = {
+    book_title: book.book_title,
+    project_id: book.project_id || '',
+    description: book.description || '',
+    revision: book.revision || 'A',
+    notes: book.notes || '',
+    _expected_version: book.version ?? book.updated_at ?? null,
+  };
+  const editBaseline = editSession?.bookId === id ? editSession.baseline : liveEditBaseline;
 
   const exhibitMap = new Map<string | null, any[]>();
   for (const t of tanks) {
@@ -4666,12 +4740,29 @@ export default function DesignBookDetail() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await api.put(`/design-books/${id}`, editForm);
+      const { _expected_version: draftVersion, ...metadataPayload } = editForm;
+      const expectedVersion = Object.prototype.hasOwnProperty.call(editForm || {}, '_expected_version')
+        ? draftVersion
+        : book.version ?? book.updated_at ?? null;
+      const response = await api.put(`/design-books/${id}`, {
+        ...metadataPayload,
+        expected_version: expectedVersion,
+      });
       toast.success('Design book updated');
+      setSaveError(null);
+      setSavedAt(Date.now());
+      setEditForm(null);
+      setEditSession(null);
+      if (response.data?.version != null) {
+        qc.setQueryData(['design-book', id], (current: any) => current
+          ? { ...current, ...response.data }
+          : current);
+      }
       qc.invalidateQueries({ queryKey: ['design-book', id] });
       qc.invalidateQueries({ queryKey: ['design-books'] });
       setEditMode(false);
     } catch (err: any) {
+      setSaveError(err);
       toast.error(err?.response?.data?.error?.message || 'Failed to save');
     } finally {
       setSaving(false);
@@ -4718,14 +4809,25 @@ export default function DesignBookDetail() {
 
   const startEdit = () => {
     if (isDesignReadOnly) return;
-    setEditForm({
-      book_title: book.book_title,
-      project_id: book.project_id || '',
-      description: book.description || '',
-      revision: book.revision || 'A',
-      notes: book.notes || '',
-    });
+    const baseline = {
+      ...liveEditBaseline,
+      _expected_version: book.version ?? book.updated_at ?? null,
+    };
+    setEditSession({ bookId: id, baseline, version: baseline._expected_version });
+    setEditForm(baseline);
+    setSaveError(null);
     setEditMode(true);
+  };
+
+  const reloadBookAfterConflict = async () => {
+    await qc.fetchQuery({
+      queryKey: ['design-book', id],
+      queryFn: () => api.get(`/design-books/${id}`).then(r => r.data),
+    });
+    setEditForm(null);
+    setEditSession(null);
+    setEditMode(false);
+    setSaveError(null);
   };
 
   const tabLabels: Record<Tab, string> = {
@@ -4793,6 +4895,31 @@ export default function DesignBookDetail() {
         <ChevronRight className="w-3.5 h-3.5" />
         <span className="text-stone-800 font-medium">{book.book_code}</span>
       </nav>
+
+      <div className="mb-4">
+        <ProtectedDraftBar
+          storageKey={`design-book-metadata:${user?.id ?? 'anonymous'}:${id}`}
+          value={editForm || editBaseline}
+          baseline={editBaseline}
+          version={book.version ?? book.updated_at ?? null}
+          savedAt={savedAt}
+          enabled={!!user?.id && !isDesignReadOnly && isDesigner && canManageDesignBooks}
+          saving={saving}
+          error={saveError}
+          onSave={handleSave}
+          onConflictReload={reloadBookAfterConflict}
+          onRestore={draft => {
+            const expectedVersion = Object.prototype.hasOwnProperty.call(draft || {}, '_expected_version')
+              ? draft._expected_version
+              : book.version ?? book.updated_at ?? null;
+            const baseline = { ...liveEditBaseline, _expected_version: expectedVersion };
+            setEditSession({ bookId: id, baseline, version: expectedVersion });
+            setEditForm(draft);
+            setEditMode(true);
+            setSaveError(null);
+          }}
+        />
+      </div>
 
       {/* Header card */}
       <div className="bg-white rounded-2xl border border-stone-200 p-6 mb-5">
@@ -4987,6 +5114,7 @@ export default function DesignBookDetail() {
           book={book}
           readOnly={isDesignReadOnly}
           onRefresh={refresh}
+          userId={user?.id}
         />
       )}
 

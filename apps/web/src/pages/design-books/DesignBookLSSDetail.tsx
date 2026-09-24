@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import api from '../../lib/api';
 import StatusBadge from '../../components/ui/StatusBadge';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
+import ProtectedDraftBar from '../../components/ui/ProtectedDraftBar';
 import {
   ChevronRight, Activity, Pencil, Save, X, Plus, Trash2,
   Waves, Gauge, GitBranch, Settings2, AlertCircle, Check,
@@ -1106,8 +1107,6 @@ const FLOW_LOOP_FIELDS = [
   'bio_degas_m3h',
   'link_bio_degas',
 ] as const;
-const FLOW_UNSAVED_CONFIRMATION = 'You have unsaved Flow Route changes. Leave this page and discard them?';
-
 function createFlowDraft(system: any) {
   const draft: Record<string, any> = {};
   for (const n of [1, 2, 3]) {
@@ -1645,6 +1644,13 @@ export default function DesignBookLSSDetail() {
     // mounted Pump Selection view synchronized after a successful save.
     qc.invalidateQueries({ queryKey: ['pump-selections', systemId, bookId] });
   };
+  const updateSystemAfterSave = (savedSystem: any) => {
+    if (!savedSystem?.version) return;
+    systemRef.current = { ...(systemRef.current || {}), ...savedSystem };
+    qc.setQueryData(['system', systemId], (current: any) => current
+      ? { ...current, ...savedSystem }
+      : current);
+  };
 
   // Flow Route saves can change the UV side-stream list while the UV query is
   // inactive. Refresh it explicitly so switching tabs never reveals cached data.
@@ -1718,11 +1724,35 @@ export default function DesignBookLSSDetail() {
   const [flowEditMode, setFlowEditMode] = useState(false);
   const [flowSaving,   setFlowSaving]   = useState(false);
   const [flowForm,     setFlowForm]     = useState<any>(null);
+  const [flowSaveError, setFlowSaveError] = useState<any>(null);
+  const [flowSavedAt, setFlowSavedAt] = useState<number | null>(null);
+  const flowDraftSessionRef = useRef<{
+    systemId: string;
+    baseline: Record<string, any>;
+    version: any;
+  } | null>(null);
+  const beginFlowDraftSession = (expectedVersion?: any) => {
+    if (flowDraftSessionRef.current?.systemId === systemId) return flowDraftSessionRef.current;
+    const version = expectedVersion !== undefined
+      ? expectedVersion
+      : system.version ?? system.updated_at ?? null;
+    const baseline = { ...createFlowDraft(system), _expected_version: version };
+    flowDraftSessionRef.current = { systemId: systemId!, baseline, version };
+    return flowDraftSessionRef.current;
+  };
+  const activateFlowDraft = (draft: Record<string, any>) => {
+    const session = beginFlowDraftSession(draft._expected_version);
+    setFlowForm({ ...draft, _expected_version: session.version });
+  };
   const [inlineLoopRename, setInlineLoopRename] = useState<{ loopNumber: number; value: string } | null>(null);
-  const setFF = (k: string, v: any) => setFlowForm((f: any) => ({
-    ...(f || createFlowDraft(systemRef.current)),
-    [k]: v,
-  }));
+  const setFF = (k: string, v: any) => {
+    const session = beginFlowDraftSession();
+    setFlowForm((f: any) => ({
+      ...(f || session.baseline),
+      _expected_version: session.version,
+      [k]: v,
+    }));
+  };
   useEffect(() => {
     const draft = biologicalMedia?.case;
     setBiologicalMediaForm({
@@ -1961,22 +1991,28 @@ export default function DesignBookLSSDetail() {
     }
   };
   const setFlowSideStreams = (update: (streams: any[]) => any[]) => {
+    const session = beginFlowDraftSession();
     setFlowForm((draft: any) => ({
-      ...(draft || createFlowDraft(systemRef.current)),
+      ...(draft || session.baseline),
+      _expected_version: session.version,
       side_streams: update([...(draft?.side_streams || createFlowDraft(systemRef.current).side_streams)]),
     }));
   };
   const setFractionatorAllocations = (update: (allocations: any[]) => any[]) => {
+    const session = beginFlowDraftSession();
     setFlowForm((draft: any) => ({
-      ...(draft || createFlowDraft(systemRef.current)),
+      ...(draft || session.baseline),
+      _expected_version: session.version,
       fractionator_allocations: update([
         ...(draft?.fractionator_allocations || createFlowDraft(systemRef.current).fractionator_allocations),
       ]),
     }));
   };
   const setSandFilterAllocations = (update: (allocations: any[]) => any[]) => {
+    const session = beginFlowDraftSession();
     setFlowForm((draft: any) => ({
-      ...(draft || createFlowDraft(systemRef.current)),
+      ...(draft || session.baseline),
+      _expected_version: session.version,
       sand_filter_allocations: update([
         ...(draft?.sand_filter_allocations || createFlowDraft(systemRef.current).sand_filter_allocations),
       ]),
@@ -1991,8 +2027,13 @@ export default function DesignBookLSSDetail() {
   const setLRF = (k: string, v: any) => {
     setListRowForm((f: any) => ({ ...f, [k]: v }));
     if (listEditRow !== null) {
+      const session = beginFlowDraftSession();
       const draftKey = `loop${listEditRow}_${k}`;
-      setFlowForm((f: any) => ({ ...(f || createFlowDraft(systemRef.current)), [draftKey]: v }));
+      setFlowForm((f: any) => ({
+        ...(f || session.baseline),
+        _expected_version: session.version,
+        [draftKey]: v,
+      }));
     }
   };
 
@@ -2066,6 +2107,10 @@ export default function DesignBookLSSDetail() {
   const hasUnsavedFlowChanges = Boolean(
     system && flowForm && !flowDraftMatchesSystem(flowForm, system),
   );
+  const flowSession = flowDraftSessionRef.current?.systemId === systemId
+    ? flowDraftSessionRef.current
+    : null;
+  const flowBaseline = flowSession?.baseline || (system ? createFlowDraft(system) : {});
 
   const handleTabChange = (nextTab: LssTab) => {
     const nextParams = new URLSearchParams(searchParams);
@@ -2095,78 +2140,33 @@ export default function DesignBookLSSDetail() {
     nextTabElement?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
   };
 
-  useEffect(() => {
-    if (!hasUnsavedFlowChanges) return;
-
-    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = '';
-    };
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [hasUnsavedFlowChanges]);
-
-  useEffect(() => {
-    if (!hasUnsavedFlowChanges) return;
-
-    const originalPushState = window.history.pushState.bind(window.history);
-    const originalReplaceState = window.history.replaceState.bind(window.history);
-    const currentHistoryIndex = window.history.state?.idx;
-    let restoringHistory = false;
-
-    const shouldAllowNavigation = (url?: string | URL | null) => {
-      if (!url) return true;
-      const destination = new URL(String(url), window.location.href);
-      if (destination.origin !== window.location.origin || destination.pathname === location.pathname) return true;
-      return window.confirm(FLOW_UNSAVED_CONFIRMATION);
-    };
-
-    window.history.pushState = (state, unused, url) => {
-      if (shouldAllowNavigation(url)) originalPushState(state, unused, url);
-    };
-    window.history.replaceState = (state, unused, url) => {
-      if (shouldAllowNavigation(url)) originalReplaceState(state, unused, url);
-    };
-
-    const handlePopState = (event: PopStateEvent) => {
-      if (restoringHistory) {
-        restoringHistory = false;
-        return;
-      }
-      const nextHistoryIndex = event.state?.idx;
-      const nextUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-      const currentUrl = `${location.pathname}${location.search}${location.hash}`;
-      if (
-        nextUrl === currentUrl
-        || window.location.pathname === location.pathname
-        || window.confirm(FLOW_UNSAVED_CONFIRMATION)
-      ) return;
-
-      restoringHistory = true;
-      event.stopImmediatePropagation();
-      window.history.go(
-        typeof currentHistoryIndex === 'number' && typeof nextHistoryIndex === 'number'
-          ? currentHistoryIndex - nextHistoryIndex
-          : 1,
-      );
-    };
-
-    window.addEventListener('popstate', handlePopState, true);
-    return () => {
-      window.history.pushState = originalPushState;
-      window.history.replaceState = originalReplaceState;
-      window.removeEventListener('popstate', handlePopState, true);
-    };
-  }, [hasUnsavedFlowChanges, location.pathname, location.search]);
-
   const clearFlowDraft = () => {
     setInlineLoopRename(null);
     setFlowForm(null);
+    flowDraftSessionRef.current = null;
     setFlowEditMode(false);
     setListEditRow(null);
     setListRowForm(null);
     setListRowOriginal(null);
     setExpandedCardLoops([1]);
+    setFlowSaveError(null);
+  };
+
+  const reloadFlowRouteAfterConflict = async () => {
+    const freshSystem = await qc.fetchQuery({
+      queryKey: ['system', systemId],
+      queryFn: () => api.get(`/systems/${systemId}`).then(r => r.data),
+    });
+    const version = freshSystem.version ?? freshSystem.updated_at ?? null;
+    flowDraftSessionRef.current = {
+      systemId: systemId!,
+      baseline: { ...createFlowDraft(freshSystem), _expected_version: version },
+      version,
+    };
+    setFlowForm(null);
+    setFlowEditMode(false);
+    setFlowSaveError(null);
+    systemRef.current = freshSystem;
   };
 
   const getFlowDraftRow = (draft: any, n: number) => ({
@@ -2384,7 +2384,8 @@ export default function DesignBookLSSDetail() {
   };
 
   const startFlowEdit = (addLoop?: number) => {
-    const draft = flowForm || createFlowDraft(system);
+    const session = beginFlowDraftSession();
+    const draft = { ...(flowForm || session.baseline), _expected_version: session.version };
     const active = [1, 2, 3].filter(n => flowDraftLoopHasData(draft, n));
     const expanded = addLoop && !active.includes(addLoop)
       ? [...active, addLoop]
@@ -2402,7 +2403,8 @@ export default function DesignBookLSSDetail() {
     if (validationMessage) return toast.error(validationMessage);
     setFlowSaving(true);
     try {
-      await api.put(`/systems/${systemId}`, {
+      const response = await api.put(`/systems/${systemId}`, {
+        expected_version: flowForm?._expected_version ?? flowDraftSessionRef.current?.version ?? null,
         system_code:          system.system_code,
         system_name:          system.system_name,
         system_type:          system.system_type          || null,
@@ -2417,13 +2419,21 @@ export default function DesignBookLSSDetail() {
         design_book_id:       bookId,
         ...buildFlowLoopFields(flowForm),
       });
+      updateSystemAfterSave(response.data);
       toast.success('Flow route saved');
+      setFlowSaveError(null);
+      setFlowSavedAt(Date.now());
       clearFlowDraft();
       refresh();
       await qc.invalidateQueries({ queryKey: ['pump-selections', systemId, bookId] });
       await refreshUvSelection();
     } catch (error: any) {
-      toast.error(error?.response?.data?.error?.message || 'Failed to save flow route');
+      setFlowSaveError(error);
+      if (error?.response?.status === 409) {
+        toast.error('Flow Route was not saved because the server version changed');
+      } else {
+        toast.error(error?.response?.data?.error?.message || 'Failed to save flow route');
+      }
     } finally {
       setFlowSaving(false);
     }
@@ -2439,7 +2449,8 @@ export default function DesignBookLSSDetail() {
     if (validationMessage) return toast.error(validationMessage);
     setFlowSaving(true);
     try {
-      await api.put(`/systems/${systemId}`, {
+      const response = await api.put(`/systems/${systemId}`, {
+        expected_version: draft._expected_version ?? flowDraftSessionRef.current?.version ?? null,
         system_code:         system.system_code,
         system_name:         system.system_name,
         system_type:         system.system_type         || null,
@@ -2454,7 +2465,10 @@ export default function DesignBookLSSDetail() {
         design_book_id:      bookId,
         ...buildFlowLoopFields(draft),
       });
+      updateSystemAfterSave(response.data);
       toast.success(`Loop ${n} saved`);
+      setFlowSaveError(null);
+      setFlowSavedAt(Date.now());
       // Await refetch so the loop stays visible in the list until new data arrives
       await qc.refetchQueries({ queryKey: ['system', systemId] });
       qc.invalidateQueries({ queryKey: ['design-book', bookId] });
@@ -2464,10 +2478,16 @@ export default function DesignBookLSSDetail() {
       setListRowForm(null);
       setListRowOriginal(null);
       setFlowForm(null);
+      flowDraftSessionRef.current = null;
       setFlowEditMode(false);
       setExpandedCardLoops([1]);
-    } catch {
-      toast.error('Failed to save loop');
+    } catch (error: any) {
+      setFlowSaveError(error);
+      if (error?.response?.status === 409) {
+        toast.error('Loop was not saved because the server version changed');
+      } else {
+        toast.error('Failed to save loop');
+      }
     } finally {
       setFlowSaving(false);
     }
@@ -2477,8 +2497,10 @@ export default function DesignBookLSSDetail() {
     if (!confirm(`Remove Loop ${n}? This will clear all its configuration.`)) return;
     setFlowSaving(true);
     try {
-      const draft = flowForm || createFlowDraft(system);
-      await api.put(`/systems/${systemId}`, {
+      const session = beginFlowDraftSession();
+      const draft = { ...(flowForm || session.baseline), _expected_version: session.version };
+      const response = await api.put(`/systems/${systemId}`, {
+        expected_version: draft._expected_version ?? flowDraftSessionRef.current?.version ?? null,
         system_code:         system.system_code,
         system_name:         system.system_name,
         system_type:         system.system_type         || null,
@@ -2493,12 +2515,20 @@ export default function DesignBookLSSDetail() {
         design_book_id:      bookId,
         ...buildFlowLoopFields(draft, n),
       });
+      updateSystemAfterSave(response.data);
       toast.success(`Loop ${n} removed`);
+      setFlowSaveError(null);
+      setFlowSavedAt(Date.now());
       clearFlowDraft();
       refresh();
       await refreshUvSelection();
-    } catch {
-      toast.error('Failed to remove loop');
+    } catch (error: any) {
+      setFlowSaveError(error);
+      if (error?.response?.status === 409) {
+        toast.error('Loop was not removed because the server version changed');
+      } else {
+        toast.error('Failed to remove loop');
+      }
     } finally {
       setFlowSaving(false);
     }
@@ -4601,6 +4631,27 @@ export default function DesignBookLSSDetail() {
               </div>
             </div>
 
+            <div className="px-5 pt-3">
+              <ProtectedDraftBar
+                storageKey={`flow-route:${user?.id ?? 'anonymous'}:${systemId}`}
+                value={flowForm || flowBaseline}
+                baseline={flowBaseline}
+                version={flowSession ? flowSession.version : system.version ?? system.updated_at ?? null}
+                savedAt={flowSavedAt}
+                enabled={!!user?.id && !readOnly && !usesFrozenPackage}
+                saving={flowSaving}
+                error={flowSaveError}
+                onSave={saveFlowRoute}
+                onConflictReload={reloadFlowRouteAfterConflict}
+                onRestore={draft => {
+                  activateFlowDraft(draft);
+                  setFlowEditMode(true);
+                  setFlowSaveError(null);
+                  setExpandedCardLoops([1, 2, 3].filter(n => n === 1 || flowDraftLoopHasData(draft, n)));
+                }}
+              />
+            </div>
+
             <div data-testid="flow-route-linked-exhibits" className="flex flex-wrap items-start gap-3 border-b border-stone-100 bg-stone-50/40 px-5 py-3">
               <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-stone-500">
                 <GitBranch className="h-3.5 w-3.5 text-blue-500" />
@@ -5137,7 +5188,7 @@ export default function DesignBookLSSDetail() {
                                   <button onClick={() => {
                                     const draft = flowForm || createFlowDraft(system);
                                     setListEditRow(n);
-                                    setFlowForm(draft);
+                                    activateFlowDraft(draft);
                                     setListRowOriginal(getFlowDraftRow(draft, n));
                                     setListRowForm(getFlowDraftRow(draft, n));
                                   }} className="flex items-center gap-1 rounded border border-stone-200 bg-white px-2 py-1 text-xs text-stone-500 hover:text-blue-600">
@@ -5145,7 +5196,7 @@ export default function DesignBookLSSDetail() {
                                   </button>
                                   <button onClick={() => {
                                     const draft = flowForm || createFlowDraft(system);
-                                    setFlowForm(draft);
+                                    activateFlowDraft(draft);
                                     setExpandedCardLoops(prev => prev.includes(n) ? prev : [...prev, n]);
                                     setFlowEditMode(true);
                                     setFlowViewMode('card');
@@ -5175,7 +5226,7 @@ export default function DesignBookLSSDetail() {
                     <button onClick={() => {
                       const draft = flowForm || createFlowDraft(system);
                       setListEditRow(nextLoopToAdd!);
-                      setFlowForm(draft);
+                      activateFlowDraft(draft);
                       setListRowOriginal(getFlowDraftRow(draft, nextLoopToAdd!));
                       setListRowForm(getFlowDraftRow(draft, nextLoopToAdd!));
                     }} className="flex items-center gap-1.5 text-xs text-stone-400 hover:text-blue-600 transition-colors">

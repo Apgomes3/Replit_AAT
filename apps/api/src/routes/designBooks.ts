@@ -48,6 +48,7 @@ import {
   UVStreamInput,
 } from '../lib/uvCalculations';
 import { pipeVelocity } from '../lib/pipeSizing';
+import { versionMatches, versionConflict, withVersion } from '../lib/concurrency';
 
 const router = Router();
 router.use(authenticate, (req: AuthRequest, res: Response, next) => {
@@ -2347,6 +2348,19 @@ async function saveThermalCalculation(req: AuthRequest, res: Response) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
+    const book = (await client.query(
+      'SELECT *, xmin::text AS version FROM design_books WHERE id=$1 FOR UPDATE',
+      [routeParam(req.params.id)],
+    )).rows[0];
+    if (!book) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Design Book not found' } });
+    }
+    if (req.body?.expected_version !== undefined &&
+        !versionMatches(book, req.body.expected_version)) {
+      await client.query('ROLLBACK');
+      return res.status(409).json(versionConflict(book));
+    }
     const context = await loadReleaseContext(
       routeParam(req.params.id),
       client.query.bind(client) as DbRunner,
@@ -2466,10 +2480,15 @@ async function saveThermalCalculation(req: AuthRequest, res: Response) {
       },
       req.ip,
     );
+    const updatedBook = await client.query(
+      'UPDATE design_books SET updated_at=NOW() WHERE id=$1 RETURNING xmin::text AS version',
+      [routeParam(req.params.id)],
+    );
     await client.query('COMMIT');
     res.json({
       ...item,
       saved: saved.rows[0],
+      version: updatedBook.rows[0]?.version,
       calculation,
       current_preview: calculation,
       status: calculation.status,
@@ -2507,7 +2526,7 @@ router.get('/design-books', authenticate, async (req: AuthRequest, res: Response
   if (projectId) { params.push(projectId); filters.push(`db.project_id = $${params.length}`); }
   const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
   const result = await query(
-    `SELECT db.*, p.project_code, p.project_name, p.client_name,
+    `SELECT db.*, db.xmin::text AS version, p.project_code, p.project_name, p.client_name,
        u.first_name || ' ' || u.last_name as created_by_name
      FROM design_books db
      LEFT JOIN projects p ON db.project_id = p.id
@@ -2516,12 +2535,12 @@ router.get('/design-books', authenticate, async (req: AuthRequest, res: Response
      ORDER BY db.created_at DESC`,
     params
   );
-  res.json({ items: result.rows });
+  res.json({ items: result.rows.map(withVersion) });
 });
 
 router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Response) => {
   const book = await query(
-    `SELECT db.*, p.project_code, p.project_name, p.client_name, p.site_name, p.country, p.project_scopes,
+    `SELECT db.*, db.xmin::text AS version, p.project_code, p.project_name, p.client_name, p.site_name, p.country, p.project_scopes,
        u.first_name || ' ' || u.last_name as created_by_name,
        ru.first_name || ' ' || ru.last_name as released_by_name,
        su.first_name || ' ' || su.last_name as review_submitted_by_name,
@@ -2835,7 +2854,7 @@ router.get('/design-books/:id', authenticate, async (req: AuthRequest, res: Resp
         };
 
   res.json({
-    ...row,
+    ...withVersion(row),
     ...responsePackage,
     id: row.id,
     book_code: row.book_code,
@@ -2880,21 +2899,48 @@ router.post('/design-books', authenticate, requireRole('admin', 'engineer'), asy
 
 router.put('/design-books/:id', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
   const { book_title, project_id, description, revision, status, notes } = req.body;
-  const existing = await query('SELECT status FROM design_books WHERE id=$1', [req.params.id]);
-  if (!existing.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Design book not found' } });
-  if (status && status !== existing.rows[0].status) {
-    return res.status(400).json({
-      error: { code: 'WORKFLOW_ACTION_REQUIRED', message: 'Use the Design Book review, approval, or release action to change workflow status.' },
-    });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const existing = (await client.query('SELECT *, xmin::text AS version FROM design_books WHERE id=$1 FOR UPDATE', [req.params.id])).rows[0];
+    if (!existing) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Design book not found' } });
+    }
+    if (req.body?.expected_version !== undefined &&
+        !versionMatches(existing, req.body.expected_version)) {
+      await client.query('ROLLBACK');
+      return res.status(409).json(versionConflict(existing));
+    }
+    if (status && status !== existing.status) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        error: { code: 'WORKFLOW_ACTION_REQUIRED', message: 'Use the Design Book review, approval, or release action to change workflow status.' },
+      });
+    }
+    if (!isDesignBookContentEditable(existing.status)) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: {
+          code: 'DESIGN_BOOK_NOT_EDITABLE',
+          message: 'Design Books are read-only while under review, approved, or released. Create a new revision or return to design before editing.',
+        },
+      });
+    }
+    const result = await client.query(
+      `UPDATE design_books SET book_title=$1, project_id=$2, description=$3, revision=$4, status=$5, notes=$6, updated_at=NOW()
+       WHERE id=$7 AND status <> 'Released' RETURNING *, xmin::text AS version`,
+      [book_title, project_id || null, description || null, revision || 'A', existing.status, notes || null, req.params.id]
+    );
+    await client.query('COMMIT');
+    if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Design book not found' } });
+    res.json(withVersion(result.rows[0]));
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
   }
-  if (!await ensureBookEditable(routeParam(req.params.id), res)) return;
-  const result = await query(
-    `UPDATE design_books SET book_title=$1, project_id=$2, description=$3, revision=$4, status=$5, notes=$6, updated_at=NOW()
-     WHERE id=$7 AND status <> 'Released' RETURNING *`,
-    [book_title, project_id || null, description || null, revision || 'A', existing.rows[0].status, notes || null, req.params.id]
-  );
-  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Design book not found' } });
-  res.json(result.rows[0]);
 });
 
 router.delete('/design-books/:id', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {

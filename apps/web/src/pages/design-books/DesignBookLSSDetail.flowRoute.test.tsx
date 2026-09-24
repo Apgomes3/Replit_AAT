@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@testing-library/jest-dom/vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { BrowserRouter, MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import { createMemoryRouter, RouterProvider, MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import DesignBookLSSDetail from './DesignBookLSSDetail';
 import api from '../../lib/api';
@@ -196,19 +196,16 @@ function renderBrowserFlowRoute() {
     if (url === '/design-books/book-1/uv/system-1') return Promise.resolve({ data: { uv_streams: [], selectable_revisions: [], saved_selection: null } });
     return Promise.reject(new Error(`Unexpected GET ${url}`));
   });
-  window.history.replaceState({}, '', '/design-books/book-1/lss/system-1?tab=flow');
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },
   });
+  const router = createMemoryRouter([
+    { path: '/design-books/:bookId/lss/:systemId', element: <><LocationProbe /><DesignBookLSSDetail /></> },
+    { path: '/design-books/:bookId', element: <><LocationProbe /><div>Design book destination</div></> },
+  ], { initialEntries: ['/design-books/book-1/lss/system-1?tab=flow'] });
   return render(
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <LocationProbe />
-        <Routes>
-          <Route path="/design-books/:bookId/lss/:systemId" element={<DesignBookLSSDetail />} />
-          <Route path="/design-books/:bookId" element={<div>Design book destination</div>} />
-        </Routes>
-      </BrowserRouter>
+      <RouterProvider router={router} />
     </QueryClientProvider>,
   );
 }
@@ -1191,7 +1188,6 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
 
   it('blocks destructive in-app navigation until unsaved Flow Route edits are confirmed', async () => {
     const user = userEvent.setup();
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
     const rendered = renderBrowserFlowRoute();
     await screen.findByRole('heading', { name: 'Primary Life Support' });
     const route = within(document.querySelector('#flow-route')!);
@@ -1202,16 +1198,15 @@ describe('DesignBookLSSDetail Flow Route allocations', () => {
     await user.type(allocation, '55');
 
     await user.click(screen.getByRole('link', { name: 'Back to Life Support Systems' }));
-    expect(confirmSpy).toHaveBeenCalledWith(
-      'You have unsaved Flow Route changes. Leave this page and discard them?',
-    );
+    expect(screen.getByRole('dialog', { name: 'Unsaved changes' })).toBeInTheDocument();
     expect(screen.getByTestId('location')).toHaveTextContent(
       '/design-books/book-1/lss/system-1?tab=flow',
     );
     expect(route.getByRole('spinbutton', { name: 'Loop 1 flow allocation percentage' })).toHaveValue(55);
 
-    confirmSpy.mockReturnValue(true);
+    await user.click(screen.getByRole('button', { name: 'Keep editing' }));
     await user.click(screen.getByRole('link', { name: 'Back to Life Support Systems' }));
+    await user.click(screen.getByRole('button', { name: 'Leave' }));
     await screen.findByText('Design book destination');
     expect(screen.getByTestId('location')).toHaveTextContent('/design-books/book-1?tab=lss');
 
