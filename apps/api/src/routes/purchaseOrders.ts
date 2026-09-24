@@ -7,6 +7,7 @@ import { authenticate, requireModuleAccess, AuthRequest } from '../middleware/au
 import { createNotification, notifyAdminsAndManagers } from '../db/notifications';
 import { logAudit } from '../db/audit';
 import { versionMatches, versionConflict, withVersion } from '../lib/concurrency';
+import { createKeyError, findCreateRetry } from '../lib/createIdempotency';
 
 const uploadDir = path.join(__dirname, '../../uploads');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -233,46 +234,54 @@ router.get('/purchase-orders', authenticate, async (req: AuthRequest, res: Respo
 
 // CREATE
 router.post('/purchase-orders', authenticate, async (req: AuthRequest, res: Response) => {
-  const { project_id, notes, system_ids, vendor_name, required_by_date, payment_terms, shipping_terms, priority } = req.body;
+  const { project_id, notes, system_ids, vendor_name, required_by_date, payment_terms, shipping_terms, priority, idempotency_key } = req.body || {};
   const user = req.user!;
+  if (createKeyError(idempotency_key)) return res.status(400).json({ error: { code: 'VALIDATION_FAILED', message: createKeyError(idempotency_key) } });
   const procError = validateProcurementFields({ priority, vendor_name, payment_terms, shipping_terms, required_by_date });
   if (procError) return res.status(400).json({ error: { code: 'VALIDATION_FAILED', message: procError } });
-  const yearSeq = await query(`SELECT TO_CHAR(now(),'YYYY') AS yr, nextval('po_code_seq') AS seq`);
-  const { yr, seq } = yearSeq.rows[0];
-  const po_code = `PO-${yr}-${String(seq).padStart(4, '0')}`;
-  const initialStatus = user.role === 'hq_manager' ? 'purchase_order' : 'draft';
-  const approved_by = user.role === 'hq_manager' ? user.id : null;
+  try {
+    const result = await withTransaction(async db => {
+      const existing = await findCreateRetry(db, 'purchase_orders', user.id, idempotency_key || null);
+      if (existing) return { po: existing, replayed: true };
+      const yearSeq = await db.query(`SELECT TO_CHAR(now(),'YYYY') AS yr, nextval('po_code_seq') AS seq`);
+      const { yr, seq } = yearSeq.rows[0];
+      const po_code = `PO-${yr}-${String(seq).padStart(4, '0')}`;
+      const initialStatus = user.role === 'hq_manager' ? 'purchase_order' : 'draft';
+      const approved_by = user.role === 'hq_manager' ? user.id : null;
 
-  let poRes;
-  if (user.role === 'hq_manager') {
-    poRes = await query(
-      `INSERT INTO purchase_orders (po_code, project_id, status, notes, created_by, approved_by, approved_at, vendor_name, required_by_date, payment_terms, shipping_terms, priority)
-       VALUES ($1,$2,$3,$4,$5,$6,now(),$7,$8,$9,$10,$11) RETURNING *`,
-      [po_code, project_id || null, initialStatus, notes || null, user.id, approved_by,
-       vendor_name || null, required_by_date || null, payment_terms || null, shipping_terms || null, priority || 'normal']
-    );
-  } else {
-    poRes = await query(
-      `INSERT INTO purchase_orders (po_code, project_id, status, notes, created_by, vendor_name, required_by_date, payment_terms, shipping_terms, priority)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
-      [po_code, project_id || null, initialStatus, notes || null, user.id,
-       vendor_name || null, required_by_date || null, payment_terms || null, shipping_terms || null, priority || 'normal']
-    );
+      let poRes;
+      if (user.role === 'hq_manager') {
+        poRes = await db.query(
+          `INSERT INTO purchase_orders (po_code, project_id, status, notes, created_by, approved_by, approved_at, vendor_name, required_by_date, payment_terms, shipping_terms, priority, idempotency_key)
+           VALUES ($1,$2,$3,$4,$5,$6,now(),$7,$8,$9,$10,$11,$12) RETURNING *`,
+          [po_code, project_id || null, initialStatus, notes || null, user.id, approved_by,
+            vendor_name || null, required_by_date || null, payment_terms || null, shipping_terms || null, priority || 'normal', idempotency_key || null]
+        );
+      } else {
+        poRes = await db.query(
+          `INSERT INTO purchase_orders (po_code, project_id, status, notes, created_by, vendor_name, required_by_date, payment_terms, shipping_terms, priority, idempotency_key)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+          [po_code, project_id || null, initialStatus, notes || null, user.id,
+            vendor_name || null, required_by_date || null, payment_terms || null, shipping_terms || null, priority || 'normal', idempotency_key || null]
+        );
+      }
+      const po = poRes.rows[0];
+
+      if (Array.isArray(system_ids) && system_ids.length) {
+        for (const sid of system_ids) {
+          await db.query('INSERT INTO po_systems (po_id,system_id) VALUES ($1,$2) ON CONFLICT DO NOTHING', [po.id, sid]);
+        }
+      }
+      await db.query(
+        `INSERT INTO po_lifecycle_history (po_id,from_status,to_status,changed_by,comment) VALUES ($1,null,$2,$3,$4)`,
+        [po.id, initialStatus, user.id, user.role === 'hq_manager' ? 'Self-approved by HQ Manager' : 'PO created']
+      );
+      return { po, replayed: false };
+    });
+    res.status(result.replayed ? 200 : 201).json(result.po);
+  } catch (error) {
+    res.status(500).json({ error: { code: 'CREATE_FAILED', message: 'Could not create purchase order.' } });
   }
-  const po = poRes.rows[0];
-
-  if (Array.isArray(system_ids) && system_ids.length) {
-    for (const sid of system_ids) {
-      await query('INSERT INTO po_systems (po_id,system_id) VALUES ($1,$2) ON CONFLICT DO NOTHING', [po.id, sid]);
-    }
-  }
-
-  await query(
-    `INSERT INTO po_lifecycle_history (po_id,from_status,to_status,changed_by,comment) VALUES ($1,null,$2,$3,$4)`,
-    [po.id, initialStatus, user.id, user.role === 'hq_manager' ? 'Self-approved by HQ Manager' : 'PO created']
-  );
-
-  res.status(201).json(po);
 });
 
 // CLONE

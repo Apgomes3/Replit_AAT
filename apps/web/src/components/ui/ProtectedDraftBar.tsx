@@ -46,6 +46,7 @@ type Props<T> = {
   baseline: T;
   version?: string | null;
   onRestore: (value: T, recovery: RecoveryDraft) => void;
+  onDiscard?: () => void;
   onSave?: () => unknown | Promise<unknown>;
   onConflictReload?: () => unknown | Promise<unknown>;
   saving?: boolean;
@@ -61,7 +62,7 @@ type Props<T> = {
  * (or a matching server baseline) removes it. Version conflicts never autosave.
  */
 export default function ProtectedDraftBar<T>({
-  storageKey, value, baseline, version, onRestore, onSave, onConflictReload,
+  storageKey, value, baseline, version, onRestore, onDiscard, onSave, onConflictReload,
   saving = false, error, enabled = true, savedAt, autosave = false,
 }: Props<T>) {
   const key = `shark-draft:${storageKey}`;
@@ -184,7 +185,7 @@ export default function ProtectedDraftBar<T>({
           {recovery.version != null && version != null && recovery.version !== String(version) && <p className="mb-3 text-sm text-amber-800">The server version changed since this draft was created. Saving it may require conflict resolution.</p>}
           <details className="mb-4 text-xs"><summary className="cursor-pointer">Review recovered draft</summary><pre className="max-h-48 overflow-auto whitespace-pre-wrap">{JSON.stringify(recovery.value, null, 2)}</pre></details>
           <div className="flex justify-end gap-3">
-            <button type="button" onClick={() => { clearRecoveryDraft(storageKey); setRecovery(null); }} className="rounded border px-3 py-2 text-sm">Discard local draft</button>
+            <button type="button" onClick={() => { clearRecoveryDraft(storageKey); onDiscard?.(); setRecovery(null); }} className="rounded border px-3 py-2 text-sm">Discard local draft</button>
             <button type="button" onClick={() => { setRestoredVersion(recovery.version || null); onRestore(recovery.value as T, recovery); setRecovery(null); }} className="rounded bg-blue-700 px-3 py-2 text-sm text-white">Restore draft</button>
           </div>
         </div>

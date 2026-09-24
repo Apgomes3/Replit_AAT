@@ -2605,6 +2605,8 @@ ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS required_by_date DATE;
 ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS payment_terms VARCHAR(100);
 ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS shipping_terms VARCHAR(100);
 ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS priority VARCHAR(20) DEFAULT 'normal';
+ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS idempotency_key UUID;
+CREATE UNIQUE INDEX IF NOT EXISTS purchase_orders_create_key_unique ON purchase_orders(created_by, idempotency_key) WHERE idempotency_key IS NOT NULL;
 ALTER TABLE po_items ADD COLUMN IF NOT EXISTS uom VARCHAR(20) DEFAULT 'EA';
 
 -- USERS: last login timestamp for audit awareness
@@ -3417,6 +3419,8 @@ CREATE TABLE IF NOT EXISTS enquiries (
 CREATE INDEX IF NOT EXISTS idx_enquiries_client ON enquiries(client_id);
 CREATE INDEX IF NOT EXISTS idx_enquiries_project ON enquiries(project_id);
 CREATE INDEX IF NOT EXISTS idx_enquiries_status ON enquiries(status);
+ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS idempotency_key UUID;
+CREATE UNIQUE INDEX IF NOT EXISTS enquiries_create_key_unique ON enquiries(created_by, idempotency_key) WHERE idempotency_key IS NOT NULL;
 ALTER TABLE enquiries DROP CONSTRAINT IF EXISTS enquiries_status_check;
 ALTER TABLE enquiries ADD CONSTRAINT enquiries_status_check CHECK (status IN ('new','in_review','quoted','won','lost','closed'));
 CREATE TABLE IF NOT EXISTS enquiry_activities (

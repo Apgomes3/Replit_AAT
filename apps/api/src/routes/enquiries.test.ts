@@ -3,15 +3,21 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const state = vi.hoisted(() => ({ access: 'manage', counter: 1, enquiry: true, project: false, designBook: true, quote: false, quoteStatus: 'draft' }));
+const state = vi.hoisted(() => ({ access: 'manage', counter: 1, enquiry: true, project: false, designBook: true, quote: false, quoteStatus: 'draft', creates: new Map<string, any>(), inserts: 0 }));
 vi.mock('../db', () => {
   const clientQuery = vi.fn(async (sql: string, params: any[] = []) => {
+    if (sql.includes('idempotency_key=$2')) return { rows: state.creates.has(`${params[0]}:${params[1]}`) ? [state.creates.get(`${params[0]}:${params[1]}`)] : [] };
     if (sql.includes('enquiry_number_counters') && sql.includes('INSERT')) return { rows: [] };
     if (sql.includes('enquiry_number_counters') && sql.includes('SELECT')) return { rows: [{ value: state.counter++ }] };
     if (sql.includes('FROM clients WHERE id=$1')) return { rows: [{ id: '11111111-1111-4111-8111-111111111111', name: 'Client' }] };
     if (sql.includes('FROM projects WHERE id=$1')) return state.project ? { rows: [{ id: '33333333-3333-4333-8333-333333333333' }] } : { rows: [] };
     if (sql.includes('FROM design_books WHERE id=$1')) return state.designBook ? { rows: [{ id: '55555555-5555-4555-8555-555555555555', project_id: null }] } : { rows: [] };
-    if (sql.includes('INSERT INTO enquiries')) return { rows: [{ id: '22222222-2222-4222-8222-222222222222', enquiry_number: params[0], title: params[2], status: params[4], client_id: params[1], contact_details: params[5], source_metadata: params[10] }] };
+    if (sql.includes('INSERT INTO enquiries')) {
+      state.inserts++;
+      const row = { id: `22222222-2222-4222-8222-${String(state.inserts).padStart(12, '0')}`, enquiry_number: params[0], title: params[2], status: params[4], client_id: params[1], contact_details: params[5], source_metadata: params[10] };
+      if (params[12]) state.creates.set(`${params[11]}:${params[12]}`, row);
+      return { rows: [row] };
+    }
     if (sql.includes('INSERT INTO enquiry_activities')) return { rows: [] };
     if (sql.includes('FROM enquiries WHERE id=$1')) return state.enquiry ? { rows: [{ id: '22222222-2222-4222-8222-222222222222', client_id: '11111111-1111-4111-8111-111111111111', design_book_id: state.designBook ? '55555555-5555-4555-8555-555555555555' : null, updated_at: new Date('2026-01-01T00:00:00.000Z'), version: '42' }] } : { rows: [] };
     if (sql.includes('SELECT * FROM enquiry_quotes')) return state.quote ? { rows: [{ id: '66666666-6666-4666-8666-666666666666', enquiry_id: '22222222-2222-4222-8222-222222222222', quote_number: 'QUO-2026-0001', status: state.quoteStatus }] } : { rows: [] };
@@ -30,7 +36,7 @@ vi.mock('../db', () => {
 
 import enquiries from './enquiries';
 
-function request(method: string, path: string, body?: any) {
+function request(method: string, path: string, body?: any, userId = '99999999-9999-4999-8999-999999999999') {
   const app = express();
   app.use(express.json());
   app.use('/api/v1/enquiries', enquiries);
@@ -40,7 +46,7 @@ function request(method: string, path: string, body?: any) {
       const address = server.address() as any;
       const response = await fetch(`http://127.0.0.1:${address.port}${path}`, {
         method,
-        headers: { authorization: `Bearer ${jwt.sign({ id: '99999999-9999-4999-8999-999999999999', role: 'engineer' }, 'edp-secret-change-in-production')}`, 'content-type': 'application/json' },
+        headers: { authorization: `Bearer ${jwt.sign({ id: userId, role: 'engineer' }, 'edp-secret-change-in-production')}`, 'content-type': 'application/json' },
         body: body === undefined ? undefined : JSON.stringify(body),
       });
       const json = await response.json();
@@ -51,7 +57,47 @@ function request(method: string, path: string, body?: any) {
 }
 
 describe('enquiry API contract', () => {
-  beforeEach(() => { state.access = 'manage'; state.counter = 1; state.enquiry = true; state.project = false; state.designBook = true; state.quote = false; state.quoteStatus = 'draft'; });
+  beforeEach(() => { state.access = 'manage'; state.counter = 1; state.enquiry = true; state.project = false; state.designBook = true; state.quote = false; state.quoteStatus = 'draft'; state.creates.clear(); state.inserts = 0; });
+
+  it('returns the first enquiry after its response is lost, scoped to its creator and key', async () => {
+    const key = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const body = { client_id: '11111111-1111-4111-8111-111111111111', title: 'Lost response', idempotency_key: key };
+    const first = await request('POST', '/api/v1/enquiries', body);
+    const retry = await request('POST', '/api/v1/enquiries', body);
+    expect(first.status).toBe(201);
+    expect(retry.status).toBe(200);
+    expect(retry.json.id).toBe(first.json.id);
+    expect(state.inserts).toBe(1);
+    const other = await request('POST', '/api/v1/enquiries', body, '88888888-8888-4888-8888-888888888888');
+    expect(other.status).toBe(201);
+    expect(other.json.id).not.toBe(first.json.id);
+    const next = await request('POST', '/api/v1/enquiries', { ...body, idempotency_key: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' });
+    expect(next.status).toBe(201);
+    expect(next.json.id).not.toBe(first.json.id);
+  });
+
+  it('returns a committed enquiry on a next-day retry before validating the now-past due date', async () => {
+    const body = {
+      client_id: '11111111-1111-4111-8111-111111111111',
+      title: 'Due today',
+      due_date: '2026-09-24',
+      idempotency_key: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    };
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(new Date('2026-09-24T12:00:00Z'));
+      const first = await request('POST', '/api/v1/enquiries', body);
+      vi.setSystemTime(new Date('2026-09-25T12:00:00Z'));
+      const retried = await request('POST', '/api/v1/enquiries', body);
+      expect(first.status).toBe(201);
+      expect(retried.status).toBe(200);
+      expect(retried.json.id).toBe(first.json.id);
+      expect(state.inserts).toBe(1);
+      expect(state.counter).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 
   it('enforces module manage access', async () => {
     state.access = 'view';

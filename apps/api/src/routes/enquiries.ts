@@ -3,6 +3,7 @@ import { authenticate, AuthRequest, requireModuleAccess, requireModuleManage } f
 import { query, withTransaction } from '../db';
 import { versionMatches, withVersion, versionConflict } from '../lib/concurrency';
 import { emitNotification } from '../db/notifications';
+import { createKeyError, findCreateRetry } from '../lib/createIdempotency';
 
 const router = Router();
 router.use(authenticate, requireModuleAccess('business_development'));
@@ -106,18 +107,28 @@ router.get('/', async (req, res, next) => {
 router.post('/', requireModuleManage('business_development'), referenceModuleAccess, async (req: AuthRequest, res, next) => {
   try {
     const b = req.body || {};
-    for (const [v, f] of [[b.client_id,'client_id'],[b.title,'title']] as any[]) { const e = required(v, f); if (e) return res.status(400).json({ error: { code: 'VALIDATION', message: e, field: f } }); }
-    for (const [v, f] of [[b.client_id,'client_id'],[b.project_id,'project_id'],[b.design_book_id,'design_book_id']] as any[]) if (v != null && invalidId(v,f)) return res.status(400).json({ error: { code: 'VALIDATION', message: invalidId(v,f), field: f } });
-    if (b.status && !statuses.includes(b.status)) return res.status(400).json({ error: { code: 'VALIDATION', message: 'Invalid status.', field: 'status' } });
-    if (Object.prototype.hasOwnProperty.call(b, 'received_date') && b.received_date === null) return res.status(400).json({ error: { code: 'VALIDATION', message: 'received_date cannot be null.', field: 'received_date' } });
-    if (dateError(b.received_date,'received_date') || dateError(b.due_date,'due_date') || dateOrderError(b.received_date || new Date().toISOString().slice(0, 10), b.due_date)) return res.status(400).json({ error: { code: 'VALIDATION', message: dateError(b.received_date,'received_date') || dateError(b.due_date,'due_date') || dateOrderError(b.received_date || new Date().toISOString().slice(0, 10), b.due_date) } });
+    if (createKeyError(b.idempotency_key)) return res.status(400).json({ error: { code: 'VALIDATION', message: createKeyError(b.idempotency_key) } });
     const result = await withTransaction(async db => {
+      const existing = await findCreateRetry(db, 'enquiries', req.user!.id, b.idempotency_key || null);
+      if (existing) return { row: existing, replayed: true };
+      const validation = (message: string, field?: string) => {
+        throw Object.assign(new Error(message), { status: 400, code: 'VALIDATION', field });
+      };
+      for (const [v, f] of [[b.client_id,'client_id'],[b.title,'title']] as any[]) { const e = required(v, f); if (e) validation(e, f); }
+      for (const [v, f] of [[b.client_id,'client_id'],[b.project_id,'project_id'],[b.design_book_id,'design_book_id']] as any[]) {
+        if (v != null && invalidId(v, f)) validation(invalidId(v, f)!, f);
+      }
+      if (b.status && !statuses.includes(b.status)) validation('Invalid status.', 'status');
+      if (Object.prototype.hasOwnProperty.call(b, 'received_date') && b.received_date === null) validation('received_date cannot be null.', 'received_date');
+      const dateProblem = dateError(b.received_date, 'received_date') || dateError(b.due_date, 'due_date') ||
+        dateOrderError(b.received_date || new Date().toISOString().slice(0, 10), b.due_date);
+      if (dateProblem) validation(dateProblem);
       if (!(await db.query('SELECT id FROM clients WHERE id=$1', [b.client_id])).rows[0]) throw Object.assign(new Error('Client not found.'), { status: 404, code: 'NOT_FOUND' });
       await references(db, b.project_id || null, b.design_book_id || null);
       const number = await nextNumber(db, `enquiry:${new Date().getUTCFullYear()}`, `ENQ-${new Date().getUTCFullYear()}-`);
-      const inserted = await db.query(`INSERT INTO enquiries(enquiry_number,client_id,title,description,status,contact_details,received_date,due_date,project_id,design_book_id,source_metadata,created_by,updated_by)
-        VALUES($1,$2,$3,$4,$5,$6,COALESCE($7,CURRENT_DATE),$8,$9,$10,$11,$12,$12) RETURNING *`,
-        [number,b.client_id,b.title.trim(),b.description || null,b.status || 'new',flatContact(b),b.received_date || null,b.due_date || null,b.project_id || null,b.design_book_id || null,flatSource(b),req.user!.id]);
+      const inserted = await db.query(`INSERT INTO enquiries(enquiry_number,client_id,title,description,status,contact_details,received_date,due_date,project_id,design_book_id,source_metadata,created_by,updated_by,idempotency_key)
+        VALUES($1,$2,$3,$4,$5,$6,COALESCE($7,CURRENT_DATE),$8,$9,$10,$11,$12,$12,$13) RETURNING *`,
+        [number,b.client_id,b.title.trim(),b.description || null,b.status || 'new',flatContact(b),b.received_date || null,b.due_date || null,b.project_id || null,b.design_book_id || null,flatSource(b),req.user!.id,b.idempotency_key || null]);
       const activityId = await record(db, inserted.rows[0].id, req.user!.id, 'created', { project_id: b.project_id || null, design_book_id: b.design_book_id || null });
       const recipients = (await enquiryStakeholders(db, inserted.rows[0])).filter(id => id !== req.user!.id);
       if (recipients.length) {
@@ -132,10 +143,10 @@ router.post('/', requireModuleManage('business_development'), referenceModuleAcc
           href: `/enquiries/${inserted.rows[0].id}`,
         });
       }
-      return inserted.rows[0];
+      return { row: inserted.rows[0], replayed: false };
     });
-    res.status(201).json(aliases(result));
-  } catch (e: any) { if (e.status) return res.status(e.status).json({ error: { code: e.code, message: e.message } }); next(e); }
+    res.status(result.replayed ? 200 : 201).json(aliases(result.row));
+  } catch (e: any) { if (e.status) return res.status(e.status).json({ error: { code: e.code, message: e.message, ...(e.field ? { field: e.field } : {}) } }); next(e); }
 });
 router.get('/:id', async (req, res, next) => {
   try {

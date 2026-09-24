@@ -5,6 +5,7 @@ import api from '../../lib/api';
 import toast from 'react-hot-toast';
 import EntityCode from '../../components/ui/EntityCode';
 import ProtectedDraftBar, { clearRecoveryDraft } from '../../components/ui/ProtectedDraftBar';
+import { draftCreateKey, persistCreateDraft } from '../../lib/createDraftKey';
 import { useModalFocus } from '../../hooks/useModalFocus';
 import { X, Trash2, Search, Plus, Minus, Network, Paperclip, ChevronDown, ChevronUp, AlertCircle } from 'lucide-react';
 import { currentReturnContext } from '../../lib/navigation';
@@ -42,6 +43,8 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
   const location = useLocation();
   const user = useAuthStore(s => s.user);
+  const storageKey = `purchase-order:${user?.id || 'unknown'}:create`;
+  const [idempotencyKey, setIdempotencyKey] = useState(() => draftCreateKey(storageKey));
   const searchRef = useRef<HTMLInputElement>(null);
   const docRef = useRef<HTMLInputElement>(null);
   const closeModal = () => { if (!saving) onClose(); };
@@ -143,7 +146,7 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
   const poDraft = {
     projectId, currency, notes, vendorName, requiredByDate, paymentTerms, paymentTermsOther,
     shippingTerms, shippingTermsOther, priority, items, documentName: docFile?.name || recoveredDocumentName,
-    partialPoId,
+    partialPoId, idempotencyKey,
   };
   const restoreDraft = (draft: any) => {
     setProjectId(draft.projectId || '');
@@ -157,6 +160,7 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
     setShippingTermsOther(draft.shippingTermsOther || '');
     setPriority(draft.priority || 'normal');
     setPartialPoId(draft.partialPoId || null);
+    setIdempotencyKey(draft.idempotencyKey || crypto.randomUUID());
     setDocFile(null);
     setRecoveredDocumentName(draft.documentName || '');
     const restoredItems = Array.isArray(draft.items) ? draft.items : [];
@@ -235,7 +239,9 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
     try {
       const effectivePaymentTerms = paymentTerms === 'Other' ? (paymentTermsOther || 'Other') : paymentTerms;
       const effectiveShippingTerms = shippingTerms === 'Other' ? (shippingTermsOther || 'Other') : shippingTerms;
+      persistCreateDraft(storageKey, poDraft);
       const poRes = await api.post('/purchase-orders', {
+        idempotency_key: idempotencyKey,
         project_id: projectId || null,
         notes: notes || null,
         vendor_name: vendorName || null,
@@ -246,6 +252,9 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
       });
       const poId = poRes.data.id;
       setPartialPoId(poId);
+      // The header may be committed even if an item response is lost. Persist
+      // its ID before sending any item request so recovery opens that PO.
+      persistCreateDraft(storageKey, { ...poDraft, partialPoId: poId });
 
       await Promise.all(items.map((item, idx) =>
         api.post(`/purchase-orders/${poId}/items`, {
@@ -271,7 +280,7 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
       setDraftSavedAt(Date.now());
       setPartialPoId(null);
       setCreateCommitted(true);
-      clearRecoveryDraft(`purchase-order:${user?.id || 'unknown'}:create`);
+      clearRecoveryDraft(storageKey);
       setNavigateToCreatedPoId(poId);
     } catch (e: any) {
       setCreateError(e);
@@ -305,14 +314,15 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
         <div className="flex-1 overflow-y-auto">
           <div className="px-6 pt-3">
             <ProtectedDraftBar
-              storageKey={`purchase-order:${user?.id || 'unknown'}:create`}
+              storageKey={storageKey}
               value={poDraft}
-              baseline={{ projectId: '', currency: 'USD', notes: '', vendorName: '', requiredByDate: '', paymentTerms: '', paymentTermsOther: '', shippingTerms: '', shippingTermsOther: '', priority: 'normal', items: [], documentName: '', partialPoId: null }}
+              baseline={{ projectId: '', currency: 'USD', notes: '', vendorName: '', requiredByDate: '', paymentTerms: '', paymentTermsOther: '', shippingTerms: '', shippingTermsOther: '', priority: 'normal', items: [], documentName: '', partialPoId: null, idempotencyKey }}
               enabled={!createCommitted}
               saving={saving}
               error={createError}
               savedAt={draftSavedAt}
               onRestore={restoreDraft}
+              onDiscard={() => setIdempotencyKey(crypto.randomUUID())}
               onSave={partialPoId ? undefined : handleCreate}
             />
           </div>
