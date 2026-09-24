@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useLocation, useParams, useNavigate, Link } from 'react-router-dom';
 import { useState, useEffect, useRef } from 'react';
 import api from '../../lib/api';
 import PageHeader from '../../components/ui/PageHeader';
@@ -37,6 +37,7 @@ function fromFlowUnit(val: number, unit: FlowUnit): number {
 export default function SystemDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const qc = useQueryClient();
   const [showTransition, setShowTransition] = useState(false);
   const [newState, setNewState] = useState('');
@@ -74,6 +75,20 @@ export default function SystemDetail() {
     queryFn: () => api.get(`/systems/${id}`).then(r => r.data),
   });
   useRecordTitle(system?.system_name);
+
+  const openPurchaseOrder = (poId: string) => navigate(`/purchase-orders/${poId}`, {
+    state: {
+      from: 'system',
+      returnTo: `${location.pathname}${location.search}`,
+      returnLabel: system?.system_code || 'System',
+      systemId: system?.id,
+      systemName: system?.system_name,
+      systemCode: system?.system_code,
+      projectId: system?.project_id,
+      projectCode: system?.project_code,
+      projectName: system?.project_name,
+    },
+  });
 
   const { data: history } = useQuery({
     queryKey: ['lifecycle', 'system', id],
@@ -286,17 +301,7 @@ export default function SystemDetail() {
         ),
       ]);
       toast.success(`${poRes.data.po_code} created with ${total} item${total !== 1 ? 's' : ''}`);
-      navigate(`/purchase-orders/${poId}`, {
-        state: {
-          from: 'system',
-          systemId: system.id,
-          systemName: system.system_name,
-          systemCode: system.system_code,
-          projectId: system.project_id,
-          projectCode: system.project_code,
-          projectName: system.project_name,
-        },
-      });
+      openPurchaseOrder(poId);
     } catch (e: any) {
       toast.error(e?.response?.data?.error?.message || 'Failed to create PO');
       setQuickPOSaving(false);
@@ -820,7 +825,7 @@ export default function SystemDetail() {
                         <td className={cellCls} onClick={e => e.stopPropagation()}>
                           {eq.released_po_id ? (
                             <button
-                              onClick={e => { e.stopPropagation(); navigate(`/purchase-orders/${eq.released_po_id}`); }}
+                               onClick={e => { e.stopPropagation(); openPurchaseOrder(eq.released_po_id); }}
                               className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 transition-colors"
                               title={`Released in ${eq.released_po_code}`}
                             >
@@ -1118,7 +1123,7 @@ export default function SystemDetail() {
                               <div className="flex items-center gap-2">
                                 {t.released_po_id ? (
                                   <button
-                                    onClick={() => navigate(`/purchase-orders/${t.released_po_id}`)}
+                                     onClick={() => openPurchaseOrder(t.released_po_id)}
                                     className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 transition-colors"
                                     title={`Released in ${t.released_po_code}`}
                                   >

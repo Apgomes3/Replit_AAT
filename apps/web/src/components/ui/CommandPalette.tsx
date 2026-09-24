@@ -10,6 +10,7 @@ import api from '../../lib/api';
 import { useCommandPalette } from '../../store/commandPaletteStore';
 import { useAuthStore } from '../../store/authStore';
 import { SEARCH_SHORTCUT } from '../../lib/shortcuts';
+import { entityHref, moduleForPath } from '../../lib/navigation';
 
 const RECENT_KEY = 'cmd-palette-recent';
 const MAX_RECENT = 6;
@@ -26,17 +27,6 @@ type SearchResult = {
 
 type RecentItem = { href: string; label: string; code?: string; type: string };
 
-function moduleForHref(href: string): string | null {
-  if (href.startsWith('/products')) return 'pim';
-  if (href.startsWith('/purchase-orders')) return 'orders';
-  if (href.startsWith('/projects') || href.startsWith('/systems')) return 'projects';
-  if (href.startsWith('/documents')) return 'documents';
-  if (href.startsWith('/knowledge')) return 'knowledge';
-  if (href.startsWith('/graph')) return 'graph';
-  if (href.startsWith('/design-book')) return 'design_books';
-  return null;
-}
-
 const TYPE_CONFIG: Record<string, { label: string; icon: any; color: string; dot: string }> = {
   project:   { label: 'Project',   icon: FolderOpen, color: 'text-blue-600',   dot: 'bg-blue-500'   },
   system:    { label: 'System',    icon: Network,    color: 'text-sky-600',    dot: 'bg-sky-500'    },
@@ -45,18 +35,6 @@ const TYPE_CONFIG: Record<string, { label: string; icon: any; color: string; dot
   material:  { label: 'Material',  icon: BookOpen,   color: 'text-stone-500',  dot: 'bg-stone-400'  },
   document:  { label: 'Document',  icon: FileText,   color: 'text-blue-600',   dot: 'bg-blue-500'   },
 };
-
-function getHref(r: SearchResult): string {
-  switch (r.type) {
-    case 'project':   return `/projects/${r.id}`;
-    case 'system':    return `/systems/${r.id}`;
-    case 'equipment': return (r as any).system_id ? `/systems/${(r as any).system_id}` : `/projects/${r.id}`;
-    case 'product':   return `/products/masters/${r.id}`;
-    case 'material':  return `/knowledge/materials`;
-    case 'document':  return `/documents/${r.id}`;
-    default:          return '/search';
-  }
-}
 
 function loadRecent(): RecentItem[] {
   try { return JSON.parse(localStorage.getItem(RECENT_KEY) || '[]'); } catch { return []; }
@@ -81,7 +59,7 @@ export default function CommandPalette() {
   const navigate = useNavigate();
   const user = useAuthStore(state => state.user);
   const canSeeHref = (href: string) => {
-    const moduleKey = moduleForHref(href);
+    const moduleKey = moduleForPath(href);
     return !moduleKey || user?.moduleAccess?.[moduleKey] !== 'hidden';
   };
   const inputRef = useRef<HTMLInputElement>(null);
@@ -99,7 +77,7 @@ export default function CommandPalette() {
     staleTime: 10000,
   });
 
-  const results: SearchResult[] = (data?.results ?? []).filter((result: SearchResult) => canSeeHref(getHref(result)));
+  const results: SearchResult[] = (data?.results ?? []).filter((result: SearchResult) => canSeeHref(entityHref(result)));
 
   const grouped = results.reduce((acc: Record<string, SearchResult[]>, r) => {
     (acc[r.type] = acc[r.type] || []).push(r);
@@ -108,7 +86,7 @@ export default function CommandPalette() {
 
   const flatResults: { result: SearchResult; href: string }[] = Object.values(grouped)
     .flat()
-    .map(r => ({ result: r, href: getHref(r) }));
+    .map(r => ({ result: r, href: entityHref(r) }));
 
   useEffect(() => {
     if (!isOpen) { setQuery(''); setCursor(-1); return; }
@@ -304,7 +282,7 @@ export default function CommandPalette() {
                 {items.map(r => {
                   flatIdx++;
                   const idx = flatIdx;
-                  const href = getHref(r);
+                  const href = entityHref(r);
                   const isHighlighted = cursor === idx;
                   return (
                     <button

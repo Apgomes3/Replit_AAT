@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import api from '../../lib/api';
 import toast from 'react-hot-toast';
 import EntityCode from '../../components/ui/EntityCode';
 import { useModalFocus } from '../../hooks/useModalFocus';
 import { X, Trash2, Search, Plus, Minus, Network, Paperclip, ChevronDown, ChevronUp, AlertCircle } from 'lucide-react';
+import { currentReturnContext } from '../../lib/navigation';
 
 const CURRENCIES = ['USD', 'EUR', 'GBP', 'AED', 'SAR', 'SGD', 'AUD', 'CAD', 'JPY', 'CNY'];
 
@@ -37,6 +38,7 @@ type DraftItem = {
 
 export default function CreatePOModal({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const searchRef = useRef<HTMLInputElement>(null);
   const docRef = useRef<HTMLInputElement>(null);
   const modalRef = useModalFocus<HTMLDivElement>({ onClose, initialFocusRef: searchRef });
@@ -216,7 +218,9 @@ export default function CreatePOModal({ onClose }: { onClose: () => void }) {
       }
 
       toast.success(`${poRes.data.po_code} created`);
-      navigate(`/purchase-orders/${poId}`);
+      navigate(`/purchase-orders/${poId}`, {
+        state: currentReturnContext(location.pathname, location.search, location.pathname === '/order-management' ? 'Order queue' : 'Purchase Orders'),
+      });
     } catch (e: any) {
       toast.error(e?.response?.data?.error?.message || 'Failed to create PO');
       setSaving(false);

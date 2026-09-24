@@ -15,6 +15,7 @@ export default function Shell() {
       return false;
     }
   });
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   useEffect(() => {
     try {
@@ -26,9 +27,26 @@ export default function Shell() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#fafaf9]">
-      <LeftNav collapsed={navCollapsed} onToggleCollapsed={() => setNavCollapsed(value => !value)} />
+      {mobileNavOpen && (
+        <button
+          type="button"
+          className="fixed inset-0 z-30 bg-black/30 md:hidden"
+          aria-label="Close navigation"
+          onClick={() => setMobileNavOpen(false)}
+        />
+      )}
+      <div className={`${mobileNavOpen ? 'translate-x-0' : '-translate-x-full'} fixed inset-y-0 left-0 z-40 transition-transform md:hidden`}>
+        <LeftNav
+          collapsed={false}
+          onToggleCollapsed={() => setMobileNavOpen(false)}
+          onNavigate={() => setMobileNavOpen(false)}
+        />
+      </div>
+      <div className="hidden md:block">
+        <LeftNav collapsed={navCollapsed} onToggleCollapsed={() => setNavCollapsed(value => !value)} />
+      </div>
       <div className="flex flex-col flex-1 min-w-0">
-        <TopBar />
+        <TopBar onOpenNavigation={() => setMobileNavOpen(true)} />
         <main className="flex-1 overflow-auto">
           <Outlet />
         </main>

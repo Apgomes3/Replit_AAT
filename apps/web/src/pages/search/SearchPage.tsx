@@ -6,15 +6,7 @@ import EntityCode from '../../components/ui/EntityCode';
 import StatusBadge from '../../components/ui/StatusBadge';
 import { useState, useEffect } from 'react';
 import { Search } from 'lucide-react';
-
-const typeLinks: Record<string, (r: SearchResult) => string> = {
-  project: r => `/projects/${r.id}`,
-  system: r => `/systems/${r.id}`,
-  equipment: r => (r as any).system_id ? `/systems/${(r as any).system_id}` : `/projects/${r.id}`,
-  product: r => `/products/masters/${r.id}`,
-  material: r => `/knowledge/materials`,
-  document: r => `/documents/${r.id}`,
-};
+import { currentReturnContext, entityHref } from '../../lib/navigation';
 
 const typeLabels: Record<string, string> = {
   project: 'Project', system: 'System', equipment: 'Equipment',
@@ -70,9 +62,9 @@ export default function SearchPage() {
               <div className="text-xs text-slate-400 uppercase tracking-wide font-medium mb-2">{typeLabels[type] || type}</div>
               <div className="bg-white border border-slate-200 rounded-lg divide-y divide-slate-100">
                 {(items as SearchResult[]).map(r => {
-                  const href = typeLinks[r.type]?.(r) || '/';
+                  const href = entityHref(r as any);
                   return (
-                    <Link key={r.id} to={href} className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50">
+                    <Link key={r.id} to={href} state={currentReturnContext('/search', searchParams.toString() ? `?${searchParams}` : '', 'Search results')} className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50">
                       <span className={`text-xs px-2 py-0.5 rounded font-medium ${typeColors[r.type] || 'bg-gray-100 text-gray-600'}`}>{typeLabels[r.type] || r.type}</span>
                       <EntityCode code={r.code} />
                       <span className="text-sm text-slate-700 flex-1 truncate">{r.name}</span>

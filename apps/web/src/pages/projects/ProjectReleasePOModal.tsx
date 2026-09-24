@@ -27,9 +27,11 @@ type Item = {
   item_type: 'equipment' | 'tank';
 };
 
-export default function ProjectReleasePOModal({ projectId, projectCode, onClose }: {
+export default function ProjectReleasePOModal({ projectId, projectCode, projectName, returnTo, onClose }: {
   projectId: string;
   projectCode: string;
+  projectName?: string;
+  returnTo: string;
   onClose: () => void;
 }) {
   const navigate = useNavigate();
@@ -94,7 +96,7 @@ export default function ProjectReleasePOModal({ projectId, projectCode, onClose 
         })
       ));
       toast.success(`${poRes.data.po_code} created`);
-      navigate(`/purchase-orders/${poId}`);
+      navigate(`/purchase-orders/${poId}`, { state: { returnTo, returnLabel: projectCode, projectId, projectCode, projectName } });
     } catch (e: any) {
       toast.error(e?.response?.data?.error?.message || 'Failed to create PO');
       setSaving(false);
@@ -160,7 +162,10 @@ export default function ProjectReleasePOModal({ projectId, projectCode, onClose 
               <span className="text-xs text-slate-500">Released in</span>
               <button
                 type="button"
-                onClick={e => { e.preventDefault(); navigate(`/purchase-orders/${item.released_po_id}`); }}
+                onClick={e => {
+                  e.preventDefault();
+                  navigate(`/purchase-orders/${item.released_po_id}`, { state: { returnTo, returnLabel: projectCode, projectId, projectCode, projectName } });
+                }}
                 className="text-xs font-mono text-blue-600 hover:underline"
               >
                 {item.released_po_code}

@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { ChevronLeft } from 'lucide-react';
 
-export type CrumbItem = { label: string; href?: string };
+export type CrumbItem = { label: string; href?: string; state?: unknown };
 
 export default function Breadcrumb({ items }: { items: CrumbItem[] }) {
   const all: CrumbItem[] = [{ label: 'Home', href: '/' }, ...items];
@@ -17,12 +17,13 @@ export default function Breadcrumb({ items }: { items: CrumbItem[] }) {
             {i > 0 && <span className="text-stone-300 text-sm select-none">/</span>}
 
             {isLast ? (
-              <span className="text-sm font-medium text-stone-600 truncate max-w-[200px]">
+              <span aria-current="page" className="text-sm font-medium text-stone-600 truncate max-w-[200px]">
                 {item.label}
               </span>
             ) : item.href ? (
               <Link
                 to={item.href}
+                state={item.state}
                 className="flex items-center gap-1 text-sm text-stone-400 hover:text-blue-600 transition-colors duration-150 group truncate max-w-[160px]"
               >
                 {isFirst && (

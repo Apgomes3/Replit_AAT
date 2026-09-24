@@ -61,6 +61,7 @@ import CommercialOverview from './pages/business-development/CommercialOverview'
 import ClientsList from './pages/business-development/ClientsList';
 import EnquiriesList from './pages/business-development/EnquiriesList';
 import EnquiryDetail from './pages/business-development/EnquiryDetail';
+import { LEGACY_ROUTE_REDIRECTS } from './lib/navigation';
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30000 } } });
 
@@ -110,8 +111,13 @@ export default function App() {
             <Route index element={<HomeHub />} />
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="pim" element={<ModuleGuard moduleKey="pim"><PIMDashboard /></ModuleGuard>} />
-             <Route path="pim/products" element={<ModuleGuard moduleKey="pim"><Navigate to="/products/masters" replace /></ModuleGuard>} />
-             <Route path="pim/components" element={<ModuleGuard moduleKey="pim"><Navigate to="/products/components" replace /></ModuleGuard>} />
+             {LEGACY_ROUTE_REDIRECTS.filter(route => route.from !== '/admin').map(route => (
+               <Route
+                 key={route.from}
+                 path={route.from.slice(1)}
+                 element={<Navigate to={route.to} replace />}
+               />
+             ))}
             <Route path="order-management" element={<ModuleGuard moduleKey="orders"><OrderManagementDashboard /></ModuleGuard>} />
             <Route path="project-management" element={<ModuleGuard moduleKey="projects"><ProjectManagementDashboard /></ModuleGuard>} />
             <Route path="projects" element={<ModuleGuard moduleKey="projects"><ProjectsList /></ModuleGuard>} />

@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../../lib/api';
 import PageHeader from '../../components/ui/PageHeader';
 import QueryError from '../../components/ui/QueryError';
+import { safeReturnTo } from '../../lib/navigation';
 import Button from '../../components/ui/Button';
 import EntityCode from '../../components/ui/EntityCode';
 import toast from 'react-hot-toast';
@@ -140,6 +141,12 @@ export default function PurchaseOrderDetail() {
   const { id } = useParams<{ id: string }>();
   const location = useLocation();
   const fromSystem = location.state?.from === 'system' ? location.state : null;
+  const fromProject = !fromSystem && location.state?.projectId ? location.state : null;
+  const returnTo = safeReturnTo(
+    location.state?.returnTo,
+    fromSystem?.systemId ? `/systems/${fromSystem.systemId}` : fromProject?.projectId ? `/projects/${fromProject.projectId}` : '/purchase-orders',
+  );
+  const returnLabel = typeof location.state?.returnLabel === 'string' ? location.state.returnLabel : 'Purchase Orders';
   const { user } = useAuthStore();
   const qc = useQueryClient();
   const [displayCurrency, setDisplayCurrency] = useState(() => localStorage.getItem('preferred_currency') || 'USD');
@@ -605,6 +612,8 @@ export default function PurchaseOrderDetail() {
   return (
     <div className="flex flex-col h-full">
       <PageHeader
+        returnTo={returnTo}
+        returnLabel={returnLabel}
         title={<span className="flex items-center gap-2"><EntityCode code={po.po_code} /><POStatusBadge status={po.status} /></span>}
         subtitle={po.project_name ? (
           <span className="inline-flex items-center gap-1">
@@ -617,6 +626,9 @@ export default function PurchaseOrderDetail() {
           ...(fromSystem ? [
             { label: fromSystem.projectCode ? `${fromSystem.projectCode} — ${fromSystem.projectName}` : (fromSystem.projectName || 'Project'), href: `/projects/${fromSystem.projectId}` },
             { label: fromSystem.systemCode ? `${fromSystem.systemCode} — ${fromSystem.systemName}` : (fromSystem.systemName || 'System'), href: `/systems/${fromSystem.systemId}` },
+          ] : fromProject ? [
+            { label: fromProject.projectCode ? `${fromProject.projectCode} — ${fromProject.projectName}` : (fromProject.projectName || 'Project'), href: `/projects/${fromProject.projectId}` },
+            { label: 'Purchase Orders' },
           ] : [
             { label: 'Order Management', href: '/order-management' },
             { label: 'Purchase Orders', href: '/purchase-orders' },

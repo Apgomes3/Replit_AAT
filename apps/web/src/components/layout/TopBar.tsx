@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, LogOut, Bell, KeyRound, ChevronDown, X, Check, CheckCheck, ShoppingCart, ThumbsUp, ThumbsDown, ArrowRightLeft, Info } from 'lucide-react';
+import { Search, LogOut, Bell, KeyRound, ChevronDown, X, Check, CheckCheck, ShoppingCart, ThumbsUp, ThumbsDown, ArrowRightLeft, Info, Menu } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import api from '../../lib/api';
 import toast from 'react-hot-toast';
 import { useModalFocus } from '../../hooks/useModalFocus';
+import { entityHref } from '../../lib/navigation';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 interface Notification {
@@ -180,9 +181,9 @@ function NotificationBell() {
         }));
       } catch { /* ignore */ }
     }
-    if (n.entity_type === 'purchase_order' && n.entity_id) {
+    if (n.entity_type && n.entity_id) {
       setOpen(false);
-      navigate(`/purchase-orders/${n.entity_id}`);
+      navigate(entityHref({ type: n.entity_type, id: n.entity_id }));
     }
   };
 
@@ -310,7 +311,7 @@ function NotificationBell() {
 }
 
 // ── TopBar ─────────────────────────────────────────────────────────────────────
-export default function TopBar() {
+export default function TopBar({ onOpenNavigation }: { onOpenNavigation?: () => void }) {
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
   const [q, setQ] = useState('');
@@ -336,12 +337,20 @@ export default function TopBar() {
 
   return (
     <>
-      <header className="h-16 bg-white border-b border-stone-200 flex items-center px-6 gap-4 shrink-0">
-        <h1 className="text-base font-semibold text-stone-800 shrink-0">Dashboard</h1>
+      <header className="h-16 bg-white border-b border-stone-200 flex items-center px-3 sm:px-6 gap-3 sm:gap-4 shrink-0">
+        <button
+          type="button"
+          onClick={onOpenNavigation}
+          aria-label="Open navigation"
+          className="md:hidden rounded-lg p-2 text-stone-500 hover:bg-stone-100 focus-visible:ring-2 focus-visible:ring-blue-500"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+        <h1 className="hidden sm:block text-base font-semibold text-stone-800 shrink-0">Shark OS</h1>
 
         <div className="flex-1" />
 
-        <form onSubmit={handleSearch} className="w-64">
+        <form onSubmit={handleSearch} className="w-full max-w-64">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400 pointer-events-none" />
             <input

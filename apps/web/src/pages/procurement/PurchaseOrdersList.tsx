@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../../lib/api';
 import { useAuthStore } from '../../store/authStore';
 import PageHeader from '../../components/ui/PageHeader';
@@ -14,6 +14,7 @@ import toast from 'react-hot-toast';
 import AssignUserModal from './AssignUserModal';
 import QueryError from '../../components/ui/QueryError';
 import EmptyState from '../../components/ui/EmptyState';
+import { currentReturnContext } from '../../lib/navigation';
 
 type Preset = { name: string; search: string; statusFilter: string; mineOnly: boolean };
 
@@ -126,14 +127,15 @@ const CAN_APPROVE = new Set(['admin', 'hq_manager']);
 
 export default function PurchaseOrdersList() {
   const navigate = useNavigate();
+  const location = useLocation();
   const qc = useQueryClient();
   const { user } = useAuthStore();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [viewTab, setViewTab] = useState<'all' | 'released'>(searchParams.get('tab') === 'released' ? 'released' : 'all');
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(searchParams.get('q') ?? '');
   const [statusFilter, setStatusFilter] = useState(searchParams.get('status') ?? '');
   const [showCreate, setShowCreate] = useState(false);
-  const [mineOnly, setMineOnly] = useState(false);
+  const [mineOnly, setMineOnly] = useState(searchParams.get('mine') === '1');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showAssign, setShowAssign] = useState(false);
   const [presets, setPresets] = useState<Preset[]>(() => loadPresets(user?.id ?? ''));
@@ -150,6 +152,18 @@ export default function PurchaseOrdersList() {
 
   const canManageAny = CAN_MANAGE.has(user?.role ?? '');
   const canApproveAny = CAN_APPROVE.has(user?.role ?? '');
+  const openPurchaseOrder = (id: string) => navigate(`/purchase-orders/${id}`, {
+    state: currentReturnContext(location.pathname, location.search, 'Purchase Orders'),
+  });
+
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams);
+    if (viewTab === 'released') next.set('tab', 'released'); else next.delete('tab');
+    if (statusFilter) next.set('status', statusFilter); else next.delete('status');
+    if (search) next.set('q', search); else next.delete('q');
+    if (mineOnly) next.set('mine', '1'); else next.delete('mine');
+    if (next.toString() !== searchParams.toString()) setSearchParams(next, { replace: true });
+  }, [mineOnly, search, searchParams, setSearchParams, statusFilter, viewTab]);
 
   useEffect(() => {
     if (!showPresetsDropdown) return;
@@ -255,7 +269,7 @@ export default function PurchaseOrdersList() {
     onSuccess: (newPo) => {
       toast.success(`Cloned as ${newPo.po_code}`);
       qc.invalidateQueries({ queryKey: ['purchase-orders'] });
-      navigate(`/purchase-orders/${newPo.id}`);
+      openPurchaseOrder(newPo.id);
     },
     onError: () => toast.error('Clone failed'),
   });
@@ -666,10 +680,10 @@ export default function PurchaseOrdersList() {
             data={allItems}
             loading={isLoading}
             tableId="purchase-orders-released"
-            onRowClick={r => navigate(`/purchase-orders/${r.id}`)}
+            onRowClick={r => openPurchaseOrder(r.id)}
             emptyMessage="No released purchase orders yet"
             contextMenuItems={r => [
-              { label: 'Open', icon: <ExternalLink className="w-3.5 h-3.5" />, onClick: () => navigate(`/purchase-orders/${r.id}`) },
+              { label: 'Open', icon: <ExternalLink className="w-3.5 h-3.5" />, onClick: () => openPurchaseOrder(r.id) },
               { label: 'Clone PO', icon: <Copy className="w-3.5 h-3.5" />, divider: true, onClick: () => cloneMutation.mutate(r.id) },
             ]}
           />
@@ -686,12 +700,12 @@ export default function PurchaseOrdersList() {
             columns={columns}
             data={allItems}
             loading={isLoading}
-            onRowClick={r => navigate(`/purchase-orders/${r.id}`)}
+            onRowClick={r => openPurchaseOrder(r.id)}
             contextMenuItems={r => [
               {
                 label: 'Open',
                 icon: <ExternalLink className="w-3.5 h-3.5" />,
-                onClick: () => navigate(`/purchase-orders/${r.id}`),
+                onClick: () => openPurchaseOrder(r.id),
               },
               {
                 label: 'Clone PO',

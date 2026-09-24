@@ -9,19 +9,20 @@ import {
   Users, LayoutGrid, GitBranch, Layers, Wrench, Keyboard,
 } from 'lucide-react';
 import ShortcutMapModal from '../components/ui/ShortcutMapModal';
+import { moduleForPath, ROUTES } from '../lib/navigation';
 
 const ALL_QUICK_LINKS = [
-  { label: 'Graph Explorer',  href: '/graph',                   icon: 'Network'      },
-  { label: 'Documents',       href: '/documents',               icon: 'FileText'     },
-  { label: 'Search',          href: '/search',                  icon: 'Search'       },
-  { label: 'Design Rules',    href: '/knowledge/design-rules',  icon: 'Ruler'        },
-  { label: 'Purchase Orders', href: '/purchase-orders',         icon: 'ShoppingCart' },
-  { label: 'Products',        href: '/products/masters',        icon: 'Package'      },
-  { label: 'Projects',        href: '/projects',                icon: 'FolderOpen'   },
-  { label: 'PIM',             href: '/pim',                     icon: 'Layers'       },
-  { label: 'Components',      href: '/products/components',     icon: 'Wrench'       },
-  { label: 'Design Books',    href: '/design-books',            icon: 'BookMarked'   },
-  { label: 'Admin',           href: '/admin',                   icon: 'Settings'     },
+  { label: 'Graph Explorer',  href: ROUTES.graph,               icon: 'Network'      },
+  { label: 'Documents',       href: ROUTES.documents,           icon: 'FileText'     },
+  { label: 'Search',          href: ROUTES.search,              icon: 'Search'       },
+  { label: 'Design Rules',    href: ROUTES.designRules,         icon: 'Ruler'        },
+  { label: 'Purchase Orders', href: ROUTES.purchaseOrders,      icon: 'ShoppingCart' },
+  { label: 'Products',        href: ROUTES.products,            icon: 'Package'      },
+  { label: 'Projects',        href: ROUTES.projects,            icon: 'FolderOpen'   },
+  { label: 'PIM',             href: ROUTES.pim,                 icon: 'Layers'       },
+  { label: 'Components',      href: ROUTES.components,          icon: 'Wrench'       },
+  { label: 'Design Books',    href: ROUTES.designBooks,         icon: 'BookMarked'   },
+  { label: 'Admin',           href: ROUTES.admin,               icon: 'Settings'     },
   { label: 'Admin Users',     href: '/admin/users',             icon: 'Users'        },
   { label: 'System Types',    href: '/admin/system-types',      icon: 'GitBranch'    },
 ];
@@ -33,18 +34,6 @@ const ICON_MAP: Record<string, any> = {
 
 const DEFAULT_HREFS = ['/graph', '/documents', '/search', '/knowledge/design-rules'];
 const LS_KEY = 'shark_quick_links';
-
-function moduleForHref(href: string): string | null {
-  if (href.startsWith('/products') || href === '/pim') return 'pim';
-  if (href.startsWith('/purchase-orders') || href === '/order-management') return 'orders';
-  if (href.startsWith('/projects') || href.startsWith('/systems') || href === '/project-management') return 'projects';
-  if (href.startsWith('/design-book') || href.startsWith('/lss-compact-units')) return 'design_books';
-  if (href.startsWith('/documents')) return 'documents';
-  if (href.startsWith('/knowledge')) return 'knowledge';
-  if (href.startsWith('/graph')) return 'graph';
-  if (href.startsWith('/admin')) return 'admin';
-  return null;
-}
 
 function loadSaved(): string[] {
   try {
@@ -66,7 +55,7 @@ export default function HomeHub() {
   const navigate = useNavigate();
   const canSeeModule = (key: string | null) => {
     if (!key) return true;
-    if (key === 'admin') return user?.role === 'admin';
+     if (key === 'admin') return user?.role === 'admin';
     return user?.moduleAccess?.[key] !== 'hidden';
   };
   const [pinnedHrefs, setPinnedHrefs] = useState<string[]>(loadSaved);
@@ -213,7 +202,7 @@ export default function HomeHub() {
   const visibleModules = modules.filter(module => canSeeModule(
     module.id === 'design-book-engine' ? 'design_books' : module.id,
   ));
-  const visibleQuickLinks = ALL_QUICK_LINKS.filter(link => canSeeModule(moduleForHref(link.href)));
+  const visibleQuickLinks = ALL_QUICK_LINKS.filter(link => canSeeModule(link.href.startsWith('/admin') ? 'admin' : moduleForPath(link.href)));
   const pinnedLinks = pinnedHrefs
     .map(href => visibleQuickLinks.find(l => l.href === href))
     .filter(Boolean) as typeof ALL_QUICK_LINKS;

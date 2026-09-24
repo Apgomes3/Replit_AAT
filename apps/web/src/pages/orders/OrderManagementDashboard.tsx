@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../../lib/api';
 import {
   Search, Plus, CheckCircle2, Square, CheckSquare,
@@ -11,6 +11,7 @@ import StatusBadge from '../../components/ui/StatusBadge';
 import CreatePOModal from '../procurement/CreatePOModal';
 import { useAuthStore } from '../../store/authStore';
 import toast from 'react-hot-toast';
+import { currentReturnContext } from '../../lib/navigation';
 
 const TRANSITIONABLE = new Set(['purchase_order', 'po_review', 'engineering_review']);
 const CAN_MANAGE_ROLES = new Set(['admin', 'engineer', 'hq_manager']);
@@ -115,13 +116,34 @@ const TABS = [
 
 export default function OrderManagementDashboard() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const qc = useQueryClient();
   const { user } = useAuthStore();
   const [showCreate, setShowCreate] = useState(false);
-  const [activeTab, setActiveTab] = useState<'needs-action' | 'in-progress' | 'released'>('needs-action');
+  const requestedTab = searchParams.get('queue');
+  const initialTab = requestedTab === 'in-progress' || requestedTab === 'released' ? requestedTab : 'needs-action';
+  const [activeTab, setActiveTab] = useState<'needs-action' | 'in-progress' | 'released'>(initialTab);
   const [selectedPOs, setSelectedPOs] = useState<Set<string>>(new Set());
   const [activePOId, setActivePOId] = useState<string | null>(null);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(searchParams.get('q') ?? '');
+  const openPurchaseOrder = (id: string) => navigate(`/purchase-orders/${id}`, {
+    state: currentReturnContext(location.pathname, location.search, 'Order queue'),
+  });
+  const selectQueue = (queue: 'needs-action' | 'in-progress' | 'released') => {
+    setActiveTab(queue);
+    setActivePOId(null);
+    setSelectedPOs(new Set());
+    const next = new URLSearchParams(searchParams);
+    if (queue === 'needs-action') next.delete('queue'); else next.set('queue', queue);
+    setSearchParams(next);
+  };
+
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams);
+    if (search) next.set('q', search); else next.delete('q');
+    if (next.toString() !== searchParams.toString()) setSearchParams(next, { replace: true });
+  }, [search, searchParams, setSearchParams]);
 
   // Persist last-seen status per PO in localStorage (per user).
   // A PO is "unread" when its current status differs from what was last seen.
@@ -359,7 +381,7 @@ export default function OrderManagementDashboard() {
             {TABS.map(tab => (
               <button
                 key={tab.key}
-                onClick={() => { setActiveTab(tab.key); setActivePOId(null); setSelectedPOs(new Set()); }}
+                onClick={() => selectQueue(tab.key)}
                 className={`pb-2.5 text-left transition-colors border-b-2 ${
                   activeTab === tab.key
                     ? 'border-blue-600'
@@ -526,7 +548,7 @@ export default function OrderManagementDashboard() {
                 <StatusBadge status={activePO.status} />
               </div>
               <button
-                onClick={() => navigate(`/purchase-orders/${activePO.id}`)}
+                onClick={() => openPurchaseOrder(activePO.id)}
                 className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-md transition-colors border border-blue-200"
               >
                 <Eye className="w-3.5 h-3.5" />
@@ -584,7 +606,7 @@ export default function OrderManagementDashboard() {
                     <div>
                       <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Line Items</div>
                       <button
-                        onClick={() => navigate(`/purchase-orders/${activePO.id}`)}
+                        onClick={() => openPurchaseOrder(activePO.id)}
                         className="text-sm font-medium text-blue-600 hover:text-blue-700 flex items-center gap-1"
                       >
                         <Package className="w-3.5 h-3.5" />
@@ -661,7 +683,7 @@ export default function OrderManagementDashboard() {
                 <div className="bg-slate-50 rounded-xl border border-slate-200 p-5 shadow-sm">
                   <div className="flex items-center justify-between">
                     <button
-                      onClick={() => navigate(`/purchase-orders/${activePO.id}`)}
+                      onClick={() => openPurchaseOrder(activePO.id)}
                       className="text-sm text-slate-500 hover:text-blue-600 font-medium flex items-center gap-1.5 transition-colors"
                     >
                       <ArrowRight className="w-4 h-4" /> View full detail & history
@@ -705,7 +727,7 @@ export default function OrderManagementDashboard() {
                       )}
                       {activePO.status === 'released' && (
                         <button
-                          onClick={() => navigate(`/purchase-orders/${activePO.id}`)}
+                          onClick={() => openPurchaseOrder(activePO.id)}
                           className="px-4 py-2 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-lg text-sm font-semibold hover:bg-emerald-100 transition-colors shadow-sm flex items-center gap-1.5"
                         >
                           <CheckCircle2 className="w-4 h-4" /> View Released PO

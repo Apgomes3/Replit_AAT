@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useLocation, useParams, useNavigate, Link } from 'react-router-dom';
 import { useState, lazy, Suspense, useRef, useEffect, Fragment } from 'react';
 import api from '../../lib/api';
 import PageHeader from '../../components/ui/PageHeader';
@@ -52,6 +52,7 @@ const PROJECT_LIFECYCLE = ['Draft', 'Concept', 'Design', 'Handover', 'Released',
 export default function ProjectDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const qc = useQueryClient();
   const { user } = useAuthStore();
   const isPrivileged = user?.role === 'admin' || user?.role === 'engineer';
@@ -2257,7 +2258,15 @@ export default function ProjectDetail() {
               ) : (
                 <div className="divide-y divide-slate-100">
                   {poItems.map((po: any) => (
-                    <div key={po.id} onClick={() => navigate(`/purchase-orders/${po.id}`)}
+                    <div key={po.id} onClick={() => navigate(`/purchase-orders/${po.id}`, {
+                      state: {
+                        returnTo: `${location.pathname}${location.search}`,
+                        returnLabel: project.project_code,
+                        projectId: project.id,
+                        projectCode: project.project_code,
+                        projectName: project.project_name,
+                      },
+                    })}
                       className="flex items-center gap-4 px-5 py-3.5 hover:bg-slate-50 cursor-pointer group transition-colors">
                       <span className="font-mono text-sm font-semibold text-slate-800 w-36 shrink-0">{po.po_code}</span>
                       <span className={`text-xs px-2.5 py-0.5 rounded-full border font-medium shrink-0 ${statusColor(po.status)}`}>
@@ -2289,6 +2298,8 @@ export default function ProjectDetail() {
         <ProjectReleasePOModal
           projectId={project.id}
           projectCode={project.project_code}
+          projectName={project.project_name}
+          returnTo={`${location.pathname}${location.search}`}
           onClose={() => setShowReleasePOModal(false)}
         />
       )}

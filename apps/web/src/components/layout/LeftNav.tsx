@@ -4,10 +4,10 @@ import { useState, useRef, useEffect } from 'react';
 import clsx from 'clsx';
 import { useCommandPalette } from '../../store/commandPaletteStore';
 import { useAuthStore } from '../../store/authStore';
+import { ModuleKey, ROUTES } from '../../lib/navigation';
 
 type NavItemDef = { id: string; to: string; icon: any; label: string; end?: boolean };
-type ModuleKey = 'pim' | 'orders' | 'projects' | 'design_books' | 'business_development' | 'documents' | 'knowledge' | 'graph';
-type NavSection = { id: string; moduleKey: ModuleKey; label: string; hub: string; icon: any; items: NavItemDef[] };
+type NavSection = { id: string; moduleKey: ModuleKey; group: string; label: string; hub: string; icon: any; items: NavItemDef[] };
 
 const PIM_ITEMS: NavItemDef[] = [
   { id: 'products', to: '/products/masters', icon: Package, label: 'Products' },
@@ -17,31 +17,43 @@ const PIM_ITEMS: NavItemDef[] = [
 ];
 
 const SECTIONS: NavSection[] = [
-  { id: 'pim', moduleKey: 'pim', label: 'PIM Management', hub: '/pim', icon: Package, items: PIM_ITEMS },
+  { id: 'orders', moduleKey: 'orders', group: 'Operational', label: 'Order Management', hub: ROUTES.orders, icon: ShoppingCart,
+    items: [{ id: 'purchase-orders', to: ROUTES.purchaseOrders, icon: ShoppingCart, label: 'Purchase Orders' }] },
   {
-    id: 'orders', moduleKey: 'orders', label: 'Order Management', hub: '/order-management', icon: ShoppingCart,
-    items: [{ id: 'purchase-orders', to: '/purchase-orders', icon: ShoppingCart, label: 'Purchase Orders' }],
+    id: 'projects', moduleKey: 'projects', group: 'Operational', label: 'Project Management', hub: ROUTES.projectManagement, icon: FolderOpen,
+    items: [{ id: 'projects', to: ROUTES.projects, icon: FolderOpen, label: 'Projects' }],
   },
   {
-    id: 'projects', moduleKey: 'projects', label: 'Project Management', hub: '/project-management', icon: FolderOpen,
+    id: 'design-book-engine', moduleKey: 'design_books', group: 'Engineering', label: 'Design Book Engine', hub: ROUTES.designBookEngine, icon: BookMarked,
     items: [
-      { id: 'projects', to: '/projects', icon: FolderOpen, label: 'Projects' },
+      { id: 'design-books', to: ROUTES.designBooks, icon: BookMarked, label: 'Design Books' },
+      { id: 'lss-catalog', to: ROUTES.lssCompactUnits, icon: Layers, label: 'LSS Unit Catalog' },
+      { id: 'species-catalog', to: ROUTES.speciesCatalog, icon: Fish, label: 'Species Catalog' },
     ],
   },
+  { id: 'pim', moduleKey: 'pim', group: 'Engineering', label: 'PIM Management', hub: ROUTES.pim, icon: Package, items: PIM_ITEMS },
   {
-    id: 'design-book-engine', moduleKey: 'design_books', label: 'Design Book Engine', hub: '/design-book-engine', icon: BookMarked,
-    items: [
-      { id: 'design-books', to: '/design-books', icon: BookMarked, label: 'Design Books' },
-      { id: 'lss-catalog', to: '/lss-compact-units', icon: Layers, label: 'LSS Unit Catalog' },
-      { id: 'species-catalog', to: '/species-catalog', icon: Fish, label: 'Species Catalog' },
-    ],
-  },
-  {
-    id: 'business-development', moduleKey: 'business_development', label: 'Business Development', hub: '/business-development', icon: BriefcaseBusiness,
+    id: 'business-development', moduleKey: 'business_development', group: 'Commercial', label: 'Business Development', hub: ROUTES.businessDevelopment, icon: BriefcaseBusiness,
     items: [
       { id: 'clients', to: '/clients', icon: Users, label: 'Clients' },
       { id: 'enquiries', to: '/enquiries', icon: ClipboardCheck, label: 'Enquiries' },
     ],
+  },
+  {
+    id: 'documents', moduleKey: 'documents', group: 'Reference', label: 'Documents', hub: ROUTES.documents, icon: FileText,
+    items: [{ id: 'document-register', to: ROUTES.documents, icon: FileText, label: 'Document Register', end: true }],
+  },
+  {
+    id: 'knowledge', moduleKey: 'knowledge', group: 'Reference', label: 'Engineering Knowledge', hub: ROUTES.materials, icon: BookOpen,
+    items: [
+      { id: 'materials', to: ROUTES.materials, icon: BookOpen, label: 'Materials' },
+      { id: 'specifications', to: ROUTES.specifications, icon: BookOpen, label: 'Specifications' },
+      { id: 'design-rules', to: ROUTES.designRules, icon: Ruler, label: 'Design Rules' },
+    ],
+  },
+  {
+    id: 'graph', moduleKey: 'graph', group: 'Reference', label: 'Relationships', hub: ROUTES.graph, icon: Network,
+    items: [{ id: 'graph-explorer', to: ROUTES.graph, icon: Network, label: 'Graph Explorer', end: true }],
   },
 ];
 
@@ -93,11 +105,12 @@ function applySectionOrder(items: NavItemDef[], savedIds: string[] | undefined):
   return ordered;
 }
 
-function DraggableSection({ section, savedOrder, onOrderChange, collapsed }: {
+function DraggableSection({ section, savedOrder, onOrderChange, collapsed, onNavigate }: {
   section: NavSection;
   savedOrder: string[] | undefined;
   onOrderChange: (sectionId: string, newOrder: string[]) => void;
   collapsed: boolean;
+  onNavigate?: () => void;
 }) {
   const navigate = useNavigate();
   const [items, setItems] = useState<NavItemDef[]>(() => applySectionOrder(section.items, savedOrder));
@@ -142,7 +155,7 @@ function DraggableSection({ section, savedOrder, onOrderChange, collapsed }: {
     <div>
       {!collapsed && (
         <button
-          onClick={() => { navigate(section.hub); setExpanded(v => !v); }}
+          onClick={() => { navigate(section.hub); setExpanded(v => !v); onNavigate?.(); }}
           className="w-full flex items-center justify-between pt-4 pb-1.5 px-3 group focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
           aria-expanded={expanded}
           aria-label={`${expanded ? 'Collapse' : 'Expand'} ${section.label}`}
@@ -232,7 +245,7 @@ const ADMIN_GROUPS = [
   { label: 'System', items: ADMIN_ITEMS.filter(i => ['categories', 'roles', 'users', 'csv-import', 'audit-log'].includes(i.id)) },
 ];
 
-function AdminPopup({ onClose }: { onClose: () => void }) {
+function AdminPopup({ onClose, onNavigate }: { onClose: () => void; onNavigate?: () => void }) {
   const navigate = useNavigate();
   const user = useAuthStore(state => state.user);
   const ref = useRef<HTMLDivElement>(null);
@@ -309,7 +322,7 @@ function AdminPopup({ onClose }: { onClose: () => void }) {
                   role="menuitem"
                   tabIndex={itemIndex === activeItemIndex ? 0 : -1}
                   onFocus={() => setActiveItemIndex(itemIndex)}
-                  onClick={() => { navigate(item.to); onClose(); }}
+                  onClick={() => { navigate(item.to); onClose(); onNavigate?.(); }}
                   className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-stone-600 hover:bg-stone-50 hover:text-blue-600 transition-all duration-150 text-left group"
                 >
                   <Icon className="w-4 h-4 shrink-0 text-stone-400 group-hover:text-blue-500 transition-colors duration-150" />
@@ -335,9 +348,10 @@ const navLinkClass = ({ isActive }: { isActive: boolean }) => clsx(
 interface LeftNavProps {
   collapsed: boolean;
   onToggleCollapsed: () => void;
+  onNavigate?: () => void;
 }
 
-export default function LeftNav({ collapsed, onToggleCollapsed }: LeftNavProps) {
+export default function LeftNav({ collapsed, onToggleCollapsed, onNavigate }: LeftNavProps) {
   const [orders, setOrders] = useState<Record<string, string[]>>(loadOrders);
   const [showAdmin, setShowAdmin] = useState(false);
   const adminTriggerRef = useRef<HTMLButtonElement>(null);
@@ -360,7 +374,9 @@ export default function LeftNav({ collapsed, onToggleCollapsed }: LeftNavProps) 
   };
 
   return (
-    <nav className={clsx(
+    <nav onClick={event => {
+      if ((event.target as HTMLElement).closest('a')) onNavigate?.();
+    }} className={clsx(
       'flex flex-col h-full shrink-0 relative border-r border-stone-200/80 shadow-[1px_0_0_0_rgba(0,0,0,0.03)] transition-[width] duration-300 ease-in-out',
       collapsed ? 'w-16' : 'w-56',
     )}
@@ -384,7 +400,6 @@ export default function LeftNav({ collapsed, onToggleCollapsed }: LeftNavProps) 
         <div className={clsx('px-1 space-y-0.5', collapsed && 'px-0.5')}>
           {([
             { to: '/', icon: Home, label: 'Home', end: true, visible: true },
-            { to: '/graph', icon: Network, label: 'Graph Explorer', visible: moduleVisible('graph') },
           ] as const).filter(item => item.visible).map(({ to, icon: Icon, label, end }: any) => (
             <NavLink
               key={to}
@@ -424,18 +439,18 @@ export default function LeftNav({ collapsed, onToggleCollapsed }: LeftNavProps) 
           </button>
         </div>
 
-        {visibleSections.map(section => (
-          <DraggableSection
-            key={section.id}
-            section={section}
-            savedOrder={orders[section.id]}
-            onOrderChange={handleOrderChange}
-            collapsed={collapsed}
-          />
+        {visibleSections.map((section, index) => (
+          <div key={section.id}>
+            {!collapsed && (index === 0 || visibleSections[index - 1].group !== section.group) && (
+              <div className="px-4 pt-4 text-[10px] font-bold uppercase tracking-[0.16em] text-stone-500">{section.group}</div>
+            )}
+            <DraggableSection section={section} savedOrder={orders[section.id]} onOrderChange={handleOrderChange} collapsed={collapsed} onNavigate={onNavigate} />
+          </div>
         ))}
       </div>
 
       {canAccessPlatformAdmin && <div className="border-t border-stone-200/80 p-2">
+        {!collapsed && <div className="px-3 pb-1 text-[10px] font-bold uppercase tracking-[0.16em] text-stone-500">Administration</div>}
         <button
           ref={adminTriggerRef}
           onClick={() => setShowAdmin(v => !v)}
@@ -461,7 +476,7 @@ export default function LeftNav({ collapsed, onToggleCollapsed }: LeftNavProps) 
         </button>
       </div>}
 
-      {canAccessPlatformAdmin && showAdmin && <AdminPopup onClose={closeAdminMenu} />}
+      {canAccessPlatformAdmin && showAdmin && <AdminPopup onClose={closeAdminMenu} onNavigate={onNavigate} />}
     </nav>
   );
 }
