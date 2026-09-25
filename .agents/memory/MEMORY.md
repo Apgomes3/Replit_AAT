@@ -58,4 +58,5 @@
 - [Cross-module SQL parameter types](cross-module-sql-parameter-types.md) — typed auth parameters must remain declared even when a filter selects no adapters that reference them.
 - [Draft conflict boundary](draft-conflict-boundary.md) — freeze the server revision at edit start; recovery copies must never silently adopt a newer revision.
 - [Notification schema compatibility](notification-schema-compatibility.md) — legacy inbox schemas differ from fresh installs; exercise event inserts against the migrated database.
+- [Browser integration boundary](browser-integration-boundary.md) — Playwright cannot directly import API TypeScript modules here; exercise live routes with isolated database fixtures.
 - [Create retry identity](create-retry-identity.md) — persist the same user-scoped key with a recovery draft before sending a create; distinguish a retry from a new record.

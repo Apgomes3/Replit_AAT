@@ -9,6 +9,7 @@
     "species:catalog:seed": "tsx apps/api/src/db/seedSpeciesCatalogCli.ts",
     "species:catalog:generate": "tsx apps/api/src/db/generateSpeciesCatalogArtifact.ts",
     "test:browser": "playwright test",
+    "test:browser:follow": "FOLLOW_RECORD_E2E=1 PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=\"$(command -v chromium)\" playwright test apps/web/e2e/record-following.spec.ts --project=mobile-chromium",
     "test:browser:mobile": "PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=\"$(command -v chromium)\" playwright test apps/web/e2e/lss-control-panel.mobile.spec.ts --project=mobile-chromium",
     "test": "vitest run",
     "test:watch": "vitest"
