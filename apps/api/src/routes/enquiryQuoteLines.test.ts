@@ -87,6 +87,9 @@ async function request(method: string, suffix: string, body?: any): Promise<{ st
   } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
 }
 const add = (more = {}) => request('POST', '/lines', { product_master_id: productId, quantity: 2, ...more });
+const addManual = (more = {}) => request('POST', '/manual-lines', {
+  description: 'Installation fee', quantity: 1, unit: 'LS', unit_price: 500, ...more,
+});
 
 describe('PIM enquiry quote lines', () => {
   beforeEach(() => {
@@ -173,5 +176,67 @@ describe('PIM enquiry quote lines', () => {
     expect((await request('PATCH', `/lines/${lineId}`, { quantity: 4 })).status).toBe(409);
     expect((await request('DELETE', `/lines/${lineId}`)).status).toBe(409);
     expect(state.lines).toHaveLength(1);
+  });
+
+  it('adds standalone installation fees without PIM access and retries without duplication', async () => {
+    state.pim = 'hidden';
+    const key = '77777777-7777-4777-8777-777777777777';
+    const first = await addManual({ idempotency_key: key, currency: 'EUR' });
+    expect(first.status).toBe(201);
+    expect(first.body).toMatchObject({
+      description: 'Installation fee', quantity: 1, unit: 'LS', unit_price: 500, currency: 'EUR',
+      source_snapshot: { source_type: 'manual', add_request_key: key },
+    });
+    expect(first.body.source_snapshot.product_master_id).toBeUndefined();
+    expect(state.calls.some(c => c.sql.includes('product_masters'))).toBe(false);
+    const retry = await addManual({ idempotency_key: key, currency: 'EUR' });
+    expect(retry.body.id).toBe(first.body.id);
+    expect(state.lines).toHaveLength(1);
+    expect(events).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    { description: undefined }, { description: '' }, { description: '   ' },
+    { quantity: 0 }, { quantity: -2 }, { unit_price: undefined },
+    { unit_price: -1 }, { unit_price: null }, { unit_price: ' ' },
+    { currency: 'usd' }, { unit: 'a'.repeat(51) },
+  ])('rejects incomplete or invalid custom lines %j', async values => {
+    expect((await addManual(values)).status).toBe(400);
+    expect(state.lines).toHaveLength(0);
+    expect(state.quote).toBeNull();
+  });
+
+  it('uses the existing quote currency, permits zero prices, and never relabels a quote', async () => {
+    await add();
+    const result = await addManual({ description: 'Freight included', unit_price: 0 });
+    expect(result.status).toBe(201);
+    expect(result.body).toMatchObject({ description: 'Freight included', unit_price: 0, currency: 'USD' });
+    expect((await addManual({ currency: 'EUR' })).status).toBe(409);
+    expect(state.quote.currency).toBe('USD');
+    expect(state.lines).toHaveLength(2);
+  });
+
+  it('supports custom-line editing and deletion through the governed draft routes', async () => {
+    await addManual();
+    const updated = await request('PATCH', `/lines/${lineId}`, {
+      description: 'Freight', quantity: 2, unit_price: 75, expected_quote_version: state.quote.updated_at,
+    });
+    expect(updated.status).toBe(200);
+    expect(updated.body).toMatchObject({
+      description: 'Freight', quantity: 2, unit_price: 75, source_snapshot: { source_type: 'manual' },
+    });
+    expect((await request('DELETE', `/lines/${lineId}`, { expected_quote_version: state.quote.updated_at })).status).toBe(204);
+    expect(state.lines).toHaveLength(0);
+  });
+
+  it('rejects custom charges for viewers and freezes them when issued', async () => {
+    state.bd = 'view';
+    expect((await addManual()).status).toBe(403);
+    state.bd = 'manage';
+    await addManual();
+    state.quote.status = 'issued';
+    expect((await addManual()).status).toBe(409);
+    expect((await request('PATCH', `/lines/${lineId}`, { quantity: 2 })).status).toBe(409);
+    expect((await request('DELETE', `/lines/${lineId}`)).status).toBe(409);
   });
 });

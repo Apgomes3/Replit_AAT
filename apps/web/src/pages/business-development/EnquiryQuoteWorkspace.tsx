@@ -120,6 +120,46 @@ function ProductPicker({ enquiryId, quoteCurrency, onClose, onAdd, busy }: { enq
   </Modal>;
 }
 
+function CustomLineForm({ quoteCurrency, busy, onClose, onAdd }: { quoteCurrency: string; busy: boolean; onClose: () => void; onAdd: (f: { description: string; quantity: number; unit: string; unit_price: number }, key: string) => Promise<boolean> }) {
+  const [idemKey] = useState(() => crypto.randomUUID());
+  const [form, setForm] = useState({ description: '', quantity: '1', unit: 'LS', unit_price: '' });
+  const [touched, setTouched] = useState(false);
+  const qty = Number(form.quantity);
+  const price = form.unit_price.trim() === '' ? NaN : Number(form.unit_price);
+  const desc = form.description.trim();
+  const unit = form.unit.trim();
+  const errors: string[] = [];
+  if (!desc) errors.push('Description is required.');
+  else if (desc.length > 10000) errors.push('Description must be 10000 characters or fewer.');
+  if (!(Number.isFinite(qty) && qty > 0)) errors.push('Quantity must be greater than zero.');
+  if (!unit) errors.push('Unit is required.');
+  else if (unit.length > 50) errors.push('Unit must be 50 characters or fewer.');
+  if (form.unit_price.trim() === '') errors.push('Unit selling price is required (zero is allowed).');
+  else if (!(Number.isFinite(price) && price >= 0)) errors.push('Unit selling price must be zero or more.');
+  const valid = errors.length === 0;
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setTouched(true);
+    if (!valid) return;
+    const ok = await onAdd({ description: desc, quantity: qty, unit, unit_price: price }, idemKey);
+    if (ok) onClose();
+  };
+  return <Modal title="Add custom line" onClose={onClose}>
+    <form onSubmit={submit} noValidate>
+      <p className="text-xs text-[#6f8082]">Commercial lines outside the PIM catalog, for example <strong>Installation and commissioning</strong>, <strong>Freight to site</strong> or <strong>Crating and export packing</strong>.</p>
+      <div className="grid sm:grid-cols-3 gap-3 mt-4">
+        <label className="sm:col-span-3 text-xs font-bold">Description<textarea rows={3} maxLength={10000} value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} placeholder="e.g. Installation and commissioning, 3 technicians x 5 days" className={inputCls} /></label>
+        <label className="text-xs font-bold">Quantity<input type="number" min="0" step="any" value={form.quantity} onChange={e => setForm({ ...form, quantity: e.target.value })} className={inputCls} /></label>
+        <label className="text-xs font-bold">Unit<input maxLength={50} value={form.unit} onChange={e => setForm({ ...form, unit: e.target.value })} className={inputCls} /></label>
+        <label className="text-xs font-bold">Unit selling price ({quoteCurrency})<input type="number" min="0" step="any" value={form.unit_price} onChange={e => setForm({ ...form, unit_price: e.target.value })} className={`${inputCls} font-mono`} /></label>
+        <label className="text-xs font-bold">Currency<input aria-label="Line currency" value={quoteCurrency} readOnly disabled className={`${inputCls} font-mono bg-[#f3f5f4]`} /></label>
+      </div>
+      {touched && !valid && <ul role="alert" className="mt-3 p-3 rounded-lg bg-[#fff5ed] border border-[#f1d7c2] text-xs text-[#8c512e] list-disc pl-6">{errors.map(m => <li key={m}>{m}</li>)}</ul>}
+      <div className="flex justify-between items-center gap-2 mt-5"><button type="button" onClick={onClose} className="text-sm font-bold text-[#6f8082] hover:text-[#087f73]">Cancel</button><div className="flex items-center gap-3"><span className="font-mono text-sm">{valid ? `${quoteCurrency} ${money(qty * price)}` : '—'}</span><button type="submit" disabled={busy} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#087f73] text-white text-sm font-bold disabled:opacity-40 hover:bg-[#075c56] transition-colors"><Plus className="w-4 h-4" />{busy ? 'Adding…' : 'Add custom line'}</button></div></div>
+    </form>
+  </Modal>;
+}
+
 export default function EnquiryQuoteWorkspace({ enquiryId, enquiry: d, canManage, canImportEquipmentAccess }: Props) {
   const qc = useQueryClient();
   const user = useAuthStore(s => s.user);
@@ -134,6 +174,7 @@ export default function EnquiryQuoteWorkspace({ enquiryId, enquiry: d, canManage
   const [busy, setBusy] = useState(false);
   const [newCurrency, setNewCurrency] = useState('USD');
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [customOpen, setCustomOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [importConfirm, setImportConfirm] = useState(false);
   const [deleteLine, setDeleteLineState] = useState<any>(null);
@@ -173,6 +214,8 @@ export default function EnquiryQuoteWorkspace({ enquiryId, enquiry: d, canManage
   const createQuote = () => run(() => api.post(`/enquiries/${enquiryId}/quote`, { currency: quoteCurrency }), `Draft quote created in ${quoteCurrency}`, 'Could not create quote');
   const addProduct = (p: PimProduct, f: { quantity: number; unit_price: number; unit: string; description: string }, key: string) =>
     run(() => api.post(`/enquiries/${enquiryId}/quote/lines`, { idempotency_key: key, product_master_id: p.id, quantity: f.quantity, unit_price: f.unit_price, description: f.description || undefined, unit: f.unit || undefined, currency: quoteCurrency }), `${p.product_code} added`, 'Could not add product');
+  const addCustom = (f: { description: string; quantity: number; unit: string; unit_price: number }, key: string) =>
+    run(() => api.post(`/enquiries/${enquiryId}/quote/manual-lines`, { description: f.description, quantity: f.quantity, unit: f.unit, unit_price: f.unit_price, currency: quoteCurrency, idempotency_key: key }), 'Custom line added', 'Could not add custom line');
   const startEdit = (l: any) => { setEditVersion(quote?.updated_at || null); setEditId(l.id); setEdit({ description: l.description || '', quantity: String(l.quantity ?? 1), unit: l.unit || '', unit_price: l.unit_price == null ? '' : String(l.unit_price) }); };
   const editQty = Number(edit.quantity);
   const editPrice = edit.unit_price.trim() === '' ? NaN : Number(edit.unit_price);
@@ -210,6 +253,7 @@ export default function EnquiryQuoteWorkspace({ enquiryId, enquiry: d, canManage
       <div className="flex flex-wrap gap-2">
         {canManage && quote && <button onClick={() => { setQuoteForm({ status: quote.status || 'draft', currency: quote.currency || 'USD', notes: quote.notes || '' }); setSettingsOpen(true); }} className={`${btn} border border-[#dce7e2] bg-white hover:border-[#087f73]`}><Settings2 className="w-4 h-4" /> Quote settings</button>}
         {canImportEquipment && <button onClick={() => setImportConfirm(true)} disabled={busy || !hasBook} className={`${btn} border border-[#087f73] text-[#087f73] bg-white hover:bg-[#e4f2ee]`}><RefreshCw className="w-4 h-4" /> Import equipment breakdown</button>}
+        {editable && quote && <button onClick={() => setCustomOpen(true)} disabled={busy} className={`${btn} border border-[#087f73] text-[#087f73] bg-white hover:bg-[#e4f2ee]`}><Plus className="w-4 h-4" /> Add custom line</button>}
         {canAddPim && quote && <button onClick={() => setPickerOpen(true)} disabled={busy} className={`${btn} bg-[#087f73] text-white hover:bg-[#075c56]`}><Package className="w-4 h-4" /> Add PIM product</button>}
       </div>
     </div>
@@ -220,13 +264,14 @@ export default function EnquiryQuoteWorkspace({ enquiryId, enquiry: d, canManage
       {!quote && lines.length === 0 ? <div className="py-12 text-center max-w-md mx-auto">
         <FilePlus2 className="w-9 h-9 text-[#b8d9d0] mx-auto mb-3" />
         <p className="font-bold">No quote yet</p>
-        <p className="text-sm text-[#6f8082] mt-1">{editable ? 'Choose the quote currency, then start an empty draft or add a PIM product directly.' : 'No quote has been started for this enquiry.'}</p>
+        <p className="text-sm text-[#6f8082] mt-1">{editable ? 'Choose the quote currency, then start an empty draft, add a custom line such as installation or freight, or add a PIM product directly.' : 'No quote has been started for this enquiry.'}</p>
         {editable && <div className="mt-5 flex flex-wrap items-end justify-center gap-2">
           <label className="text-xs font-bold text-left">Currency<input aria-label="Quote currency" value={newCurrency} maxLength={3} onChange={e => setNewCurrency(e.target.value.toUpperCase().replace(/[^A-Z]/g, ''))} className={`${inputCls} w-24 font-mono`} /></label>
           <button onClick={createQuote} disabled={busy || newCurrency.length !== 3} className={`${btn} bg-[#20333a] text-white`}><FilePlus2 className="w-4 h-4" />{busy ? 'Creating…' : 'Create empty quote'}</button>
+          <button onClick={() => setCustomOpen(true)} disabled={busy || newCurrency.length !== 3} className={`${btn} border border-[#087f73] text-[#087f73] bg-white hover:bg-[#e4f2ee]`}><Plus className="w-4 h-4" /> Add custom line</button>
           {canUsePim && <button onClick={() => setPickerOpen(true)} disabled={busy || newCurrency.length !== 3} className={`${btn} bg-[#087f73] text-white hover:bg-[#075c56]`}><Package className="w-4 h-4" /> Add PIM product</button>}
         </div>}
-      </div> : lines.length === 0 ? <div className="py-14 text-center"><FileText className="w-9 h-9 text-[#b8d9e2] mx-auto mb-3" /><p className="font-bold">No quote lines captured</p><p className="text-sm text-[#6f8082] mt-1">{editable ? 'Add PIM products or import the Design Book equipment breakdown.' : 'This quote has no lines.'}</p></div> : <>
+      </div> : lines.length === 0 ? <div className="py-14 text-center"><FileText className="w-9 h-9 text-[#b8d9e2] mx-auto mb-3" /><p className="font-bold">No quote lines captured</p><p className="text-sm text-[#6f8082] mt-1">{editable ? 'Add custom lines, PIM products or import the Design Book equipment breakdown.' : 'This quote has no lines.'}</p></div> : <>
         {conflict === 'edit' && <div role="alert" className="mb-3 p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-900 flex flex-wrap items-center gap-2"><AlertTriangle className="w-4 h-4" />The quote changed since you opened it. Your input is kept; reload to review the latest version before retrying.<button type="button" onClick={reloadLatest} className="underline font-bold">Reload current quote</button></div>}
         <div className="flex gap-3 text-[11px] text-[#6f8082] mb-3"><span>{lines.length} lines</span><span>{engineeringCount} engineering</span><span>{pimCount} PIM</span></div>
         <div className="overflow-x-auto -mx-5 px-5">
@@ -262,6 +307,7 @@ export default function EnquiryQuoteWorkspace({ enquiryId, enquiry: d, canManage
     </div>
 
     {pickerOpen && canAddPim && <ProductPicker enquiryId={enquiryId} quoteCurrency={quoteCurrency} busy={busy} onClose={() => setPickerOpen(false)} onAdd={addProduct} />}
+    {customOpen && editable && <CustomLineForm quoteCurrency={quoteCurrency} busy={busy} onClose={() => setCustomOpen(false)} onAdd={addCustom} />}
     {importConfirm && <Modal title="Import equipment breakdown" onClose={() => setImportConfirm(false)}>
       <p className="text-sm text-[#53686b] leading-6">This replaces <strong>imported Engineering lines only</strong> ({engineeringCount} currently) with the latest Design Book breakdown. PIM products ({pimCount}) and other lines are preserved. The import is rejected if breakdown currencies differ from the quote currency ({quoteCurrency}).</p>
       <div className="flex justify-end gap-2 mt-5"><button onClick={() => setImportConfirm(false)} className="px-4 py-2 text-sm">Cancel</button><button onClick={doImport} disabled={busy} className={`${btn} bg-[#087f73] text-white`}><RefreshCw className="w-4 h-4" />{busy ? 'Importing…' : 'Replace engineering lines'}</button></div>

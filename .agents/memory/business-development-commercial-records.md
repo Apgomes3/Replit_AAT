@@ -27,6 +27,12 @@ PIM product quotations do not require a Project or Design Book. Engineering re-i
 
 **How to apply:** Capture product identity and catalogue evidence at selection time. Prefill only the PIM selling price in the quote currency; missing or differently denominated prices require an explicit selling price, never a cost fallback or assumed conversion. Freeze issued quotations and do not relabel existing line prices by changing currency.
 
+Enquiry quotes also need non-PIM lines for installation fees, freight, and similar commercial charges.
+
+**Why:** The user needs these costs included in the offer without creating catalogue products for them.
+
+**How to apply:** Allow custom descriptions, quantities, units, and explicit selling prices in the quote currency. These lines need Commercial manage access, not PIM access, and must survive engineering re-imports. Apply the same draft-only editing and issued immutability rules as product lines.
+
 Draft quote mutations must refresh the authoritative quote revision before enabling another line action.
 
 **Why:** A successful edit followed immediately by removal can otherwise capture the pre-save revision and falsely conflict with the edit that just succeeded.

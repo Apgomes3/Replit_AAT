@@ -64,4 +64,42 @@ describe('EnquiryQuoteWorkspace', () => {
     expect(a.idempotency_key).toBeTruthy();
     expect(b.idempotency_key).toBe(a.idempotency_key);
   });
+
+  it('adds a custom line without PIM permission, validating and reusing idempotency key', async () => {
+    auth.user = { role: 'user', moduleAccess: { business_development: 'manage', pim: 'hidden' } };
+    const user = userEvent.setup();
+    renderWs({ id: 5, quote: draft });
+    await user.click(screen.getByRole('button', { name: /add custom line/i }));
+    const dialog = screen.getByRole('dialog', { name: /add custom line/i });
+    const submit = () => user.click(dialog.querySelector('button[type="submit"]') as HTMLButtonElement);
+    await submit();
+    expect(screen.getByRole('alert').textContent).toMatch(/Description is required/);
+    expect(screen.getByRole('alert').textContent).toMatch(/selling price is required/);
+    expect(apiMock.post).not.toHaveBeenCalled();
+    await user.type(screen.getByLabelText(/^description/i), 'Freight to site');
+    await user.type(screen.getByLabelText(/unit selling price/i), '0');
+    apiMock.post.mockRejectedValueOnce({ response: { status: 500, data: { error: { message: 'x' } } } });
+    await submit();
+    await submit();
+    await waitFor(() => expect(apiMock.post).toHaveBeenCalledTimes(2));
+    const [[url, a], [, b]] = apiMock.post.mock.calls;
+    expect(url).toBe('/enquiries/5/quote/manual-lines');
+    expect(a).toMatchObject({ description: 'Freight to site', quantity: 1, unit: 'LS', unit_price: 0, currency: 'USD' });
+    expect(a.idempotency_key).toBeTruthy();
+    expect(b.idempotency_key).toBe(a.idempotency_key);
+  });
+
+  it('offers custom line from the no-quote empty state without a Design Book', () => {
+    auth.user = { role: 'user', moduleAccess: { business_development: 'manage', pim: 'hidden' } };
+    renderWs({ id: 5, quote: null });
+    expect(screen.getByRole('button', { name: /add custom line/i })).toBeTruthy();
+  });
+
+  it('does not offer custom line on issued quotes or without manage', () => {
+    const { unmount } = renderWs({ id: 5, quote: { ...draft, status: 'issued' } });
+    expect(screen.queryByRole('button', { name: /add custom line/i })).toBeNull();
+    unmount();
+    renderWs({ id: 5, quote: draft }, false);
+    expect(screen.queryByRole('button', { name: /add custom line/i })).toBeNull();
+  });
 });

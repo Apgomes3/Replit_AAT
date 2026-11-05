@@ -60,6 +60,30 @@ test('an enquiry can quote PIM products without engineering links and freezes th
     expect(saved.design_book_id).toBeNull();
     expect(saved.quote.lines[0].source_snapshot.product_master_id).toBe(ids.product);
     const snapshot = saved.quote.lines[0].source_snapshot;
+
+    // Non-catalogue charges share the quote but do not require a product identity.
+    await page.getByRole('button', { name: 'Add custom line', exact: true }).click();
+    const custom = page.getByRole('dialog', { name: 'Add custom line', exact: true });
+    await custom.getByLabel('Description').fill('Freight to site');
+    await custom.getByLabel('Unit selling price (USD)').click();
+    await custom.getByLabel('Unit selling price (USD)').fill('250');
+    await custom.getByLabel('Unit', { exact: true }).click();
+    await custom.getByRole('button', { name: 'Add custom line', exact: true }).click();
+    await expect(custom).toBeHidden({ timeout: 30_000 });
+    await expect(page.getByRole('table')).toContainText('Freight to site');
+    await expect(page.getByRole('table')).toContainText('Manual');
+    const combined = (await getEnquiry()).quote;
+    expect(combined.lines).toHaveLength(2);
+    expect(combined.lines.find((l: any) => l.description === 'Freight to site')).toMatchObject({
+      currency: 'USD', source_snapshot: { source_type: 'manual' },
+    });
+    expect(combined.lines.reduce((sum: number, l: any) => sum + Number(l.quantity) * Number(l.unit_price), 0)).toBe(501);
+    await page.screenshot({ path: 'test-results/quote-custom-lines.png', fullPage: true });
+    await page.getByRole('button', { name: 'Remove line 2' }).click();
+    await page.getByRole('dialog', { name: /Remove/ }).getByRole('button', { name: 'Remove line', exact: true }).click();
+    await expect(page.getByText('Freight to site', { exact: true })).toHaveCount(0, { timeout: 30_000 });
+    expect((await getEnquiry()).quote.lines).toHaveLength(1);
+
     await db.query(`UPDATE product_masters SET product_name='Changed catalog name',sell_price=999 WHERE id=$1`, [ids.product]);
     await page.reload();
     await page.getByRole('button', { name: /^Quote/ }).click();
@@ -89,9 +113,13 @@ test('an enquiry can quote PIM products without engineering links and freezes th
     await page.reload();
     await page.getByRole('button', { name: /^Quote/ }).click();
     await expect(page.getByRole('button', { name: 'Add PIM product', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Add custom line', exact: true })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Edit line 1' })).toHaveCount(0);
     expect((await request.post(`${path}/quote/lines`, {
       headers, data: { product_master_id: ids.product, quantity: 1, unit_price: 150 },
+    })).status()).toBe(409);
+    expect((await request.post(`${path}/quote/manual-lines`, {
+      headers, data: { description: 'Installation', quantity: 1, unit_price: 500 },
     })).status()).toBe(409);
   } finally {
     await page.close();

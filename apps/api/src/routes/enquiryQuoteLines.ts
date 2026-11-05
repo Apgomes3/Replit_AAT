@@ -130,6 +130,42 @@ export function enquiryQuoteLines(services: {
     res.status(201).json(result);
   }));
 
+  router.post('/manual-lines', requireModuleManage('business_development'), endpoint(async (req, res) => {
+    const body = req.body || {};
+    if (body.idempotency_key !== undefined && !UUID.test(String(body.idempotency_key))) throw fail(400, 'VALIDATION', 'Invalid add-line request key.');
+    if (body.currency !== undefined && (typeof body.currency !== 'string' || !/^[A-Z]{3}$/.test(body.currency))) throw fail(400, 'VALIDATION', 'Currency must be an uppercase ISO code.');
+    const description = text(body.description, '', 'Description', 10000);
+    if (!description) throw fail(400, 'VALIDATION', 'Description is required.');
+    const quantity = number(body.quantity, 'Quantity', true);
+    const unitPrice = number(body.unit_price, 'Unit selling price');
+    const unit = text(body.unit, 'LS', 'Unit', 50);
+    const result = await withTransaction(async db => {
+      const q = await draft(db, req, true);
+      if (body.idempotency_key) {
+        const previous = (await db.query(
+          `SELECT * FROM enquiry_quote_lines WHERE quote_id=$1
+           AND source_snapshot->>'add_request_key'=$2 AND source_snapshot->>'added_by'=$3`,
+          [q.id, body.idempotency_key, req.user!.id],
+        )).rows[0];
+        if (previous) return previous;
+      }
+      if (body.currency && body.currency !== q.currency) throw fail(409, 'CURRENCY_MISMATCH', 'Quote currency changed. Reload the quote before adding a custom line.');
+      const snapshot = {
+        source_type: 'manual', captured_at: new Date().toISOString(),
+        add_request_key: body.idempotency_key || null, added_by: req.user!.id,
+      };
+      const saved = (await db.query(
+        `INSERT INTO enquiry_quote_lines(quote_id,source_snapshot,description,quantity,unit,unit_price,currency,sort_order)
+         VALUES($1,$2,$3,$4,$5,$6,$7,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM enquiry_quote_lines WHERE quote_id=$1))
+         RETURNING *`,
+        [q.id, snapshot, description, quantity, unit, Number(unitPrice.toFixed(2)), q.currency],
+      )).rows[0];
+      await changed(db, req, q, 'quote_line_added', saved);
+      return saved;
+    });
+    res.status(201).json(result);
+  }));
+
   router.patch('/lines/:lineId', requireModuleManage('business_development'), endpoint(async (req, res) => {
     if (!UUID.test(String(req.params.lineId))) throw fail(400, 'VALIDATION', 'Invalid quote line id.');
     const body = req.body || {};
