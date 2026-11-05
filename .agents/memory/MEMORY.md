@@ -6,6 +6,7 @@
 - [Design Book version restores](design-book-version-restores.md) — versions freeze book-owned records, retain project references, and restore through a recovery checkpoint.
 - [Project location wording](project-location-wording.md) — use “Country or Region” in Project Management while preserving existing storage compatibility.
 - [Vitest debounce timing](vitest-debounce-timing.md) — keep fake timers limited to debounce assertions; restore real timers before Testing Library async UI assertions.
+- [Preview process ownership](preview-process-ownership.md) — a running workflow can coexist with a broken older preview server; verify transformed JavaScript and fixed-port ownership.
 - [Project tank promotion](project-tank-promotion.md) — PIM promotion is explicit and independent; never convert or mutate the source project tank.
 - [Exhibit tank replacement](exhibit-tank-replacement.md) — hide assignment tools once a tank is in use; explicit replacement preserves the project-tank identity.
 - [Species catalog snapshots](species-catalog-snapshots.md) — allocations capture values; setup uses reviewed offline artifacts, and maintenance preserves referenced identities.
