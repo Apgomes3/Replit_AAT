@@ -21,6 +21,18 @@ Quote lines imported from a linked Design Book Equipment Breakdown are point-in-
 
 **How to apply:** Preserve source identity and snapshot data on each imported line. Allow only forward quote lifecycle transitions; never roll an issued or terminal quote back to draft to refresh it.
 
+PIM product quotations do not require a Project or Design Book. Engineering re-imports must preserve independently selected PIM lines.
+
+**Why:** The user needs to prepare an Enquiry quotation directly from the PIM catalogue before engineering work exists.
+
+**How to apply:** Capture product identity and catalogue evidence at selection time. Prefill only the PIM selling price in the quote currency; missing or differently denominated prices require an explicit selling price, never a cost fallback or assumed conversion. Freeze issued quotations and do not relabel existing line prices by changing currency.
+
+Draft quote mutations must refresh the authoritative quote revision before enabling another line action.
+
+**Why:** A successful edit followed immediately by removal can otherwise capture the pre-save revision and falsely conflict with the edit that just succeeded.
+
+**How to apply:** Keep the workspace busy through its post-save refresh. Capture edit/delete revision tokens when those interactions start, rather than replacing their baseline during background refreshes.
+
 Client, Enquiry, and Quote numbers are controlled and generated transactionally. Each quote has its own selling currency.
 
 **Why:** Commercial records need stable identities and flexibility for client-facing currencies.

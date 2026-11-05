@@ -4,6 +4,7 @@ import { query, withTransaction } from '../db';
 import { versionMatches, withVersion, versionConflict } from '../lib/concurrency';
 import { emitNotification } from '../db/notifications';
 import { createKeyError, findCreateRetry } from '../lib/createIdempotency';
+import { enquiryQuoteLines } from './enquiryQuoteLines';
 
 const router = Router();
 router.use(authenticate, requireModuleAccess('business_development'));
@@ -259,8 +260,18 @@ router.patch('/:id/quote', requireModuleManage('business_development'), async (r
     if (status !== undefined && !['draft', 'issued', 'accepted', 'rejected', 'expired'].includes(status)) return res.status(400).json({ error: { code: 'VALIDATION', message: 'Invalid quote status.', field: 'status' } });
     if (currency !== undefined && (typeof currency !== 'string' || !currencies.test(currency))) return res.status(400).json({ error: { code: 'VALIDATION', message: 'currency must be uppercase ISO code.', field: 'currency' } });
     const result = await withTransaction(async db => {
+      await db.query('SELECT id FROM enquiries WHERE id=$1 FOR UPDATE', [enquiryId]);
       const current = (await db.query('SELECT * FROM enquiry_quotes WHERE enquiry_id=$1 FOR UPDATE', [enquiryId])).rows[0];
       if (!current) throw Object.assign(new Error('Quote not found.'), { status: 404, code: 'NOT_FOUND' });
+      if (current.status !== 'draft' &&
+          ((currency !== undefined && currency !== current.currency) ||
+           (notes !== undefined && notes !== current.notes))) {
+        throw Object.assign(new Error('Issued quote currency and notes are frozen. Only its outcome can change.'), { status: 409, code: 'QUOTE_LOCKED' });
+      }
+      if (currency !== undefined && currency !== current.currency) {
+        const lines = await db.query('SELECT id FROM enquiry_quote_lines WHERE quote_id=$1 LIMIT 1', [current.id]);
+        if (lines.rows.length) throw Object.assign(new Error('Currency cannot change while quote lines exist. Create prices in the quote currency instead of relabeling them.'), { status: 409, code: 'CURRENCY_LOCKED' });
+      }
       const allowed: Record<string, string[]> = {
         draft: ['draft', 'issued'],
         issued: ['issued', 'accepted', 'rejected', 'expired'],
@@ -298,5 +309,43 @@ router.patch('/:id/quote', requireModuleManage('business_development'), async (r
     res.json(result);
   } catch (e: any) { if (e.status) return res.status(e.status).json({ error: { code: e.code, message: e.message } }); next(e); }
 });
-router.post('/:id/quote/import-equipment-breakdown',requireModuleManage('business_development'),requireModuleAccess('design_books'),async(req:AuthRequest,res,next)=>{try{const result=await withTransaction(async db=>{const e=(await db.query('SELECT * FROM enquiries WHERE id=$1 FOR UPDATE',[req.params.id])).rows[0];if(!e)throw Object.assign(new Error('Enquiry not found.'),{status:404,code:'NOT_FOUND'});if(!e.design_book_id)throw Object.assign(new Error('Enquiry has no linked Design Book.'),{status:400,code:'INVALID_REFERENCE'});const q=await quote(db,req.params.id,req.user!.id,{});if(q.status!=='draft')throw Object.assign(new Error('Equipment Breakdown can only be imported into a draft quote.'),{status:409,code:'QUOTE_LOCKED'});const lines=(await db.query(`SELECT l.*,s.system_code,s.system_name FROM design_book_equipment_breakdown_lines l JOIN design_book_equipment_breakdowns b ON b.id=l.breakdown_id LEFT JOIN systems s ON s.id=l.system_id WHERE b.design_book_id=$1 ORDER BY s.system_code,l.sort_order,l.created_at`,[e.design_book_id])).rows;await db.query('DELETE FROM enquiry_quote_lines WHERE quote_id=$1',[q.id]);for(const [i,l] of lines.entries())await db.query(`INSERT INTO enquiry_quote_lines(quote_id,source_line_id,source_design_book_id,source_snapshot,description,quantity,unit,unit_price,currency,sort_order) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,[q.id,l.id,e.design_book_id,l,l.description,l.quantity,l.unit,l.selling_price ?? l.unit_cost,l.currency||q.currency,i]);const persisted=(await db.query('SELECT * FROM enquiry_quote_lines WHERE quote_id=$1 ORDER BY sort_order,id',[q.id])).rows;await record(db,req.params.id,req.user!.id,'quote_imported',{quote_id:q.id,line_count:persisted.length,design_book_id:e.design_book_id});return{quote:q,lines:persisted};});res.json(result);}catch(e:any){if(e.status)return res.status(e.status).json({error:{code:e.code,message:e.message}});next(e);}});
+router.post('/:id/quote/import-equipment-breakdown', requireModuleManage('business_development'), requireModuleAccess('design_books'), async (req: AuthRequest, res, next) => {
+  try {
+    const result = await withTransaction(async db => {
+      const e = (await db.query('SELECT * FROM enquiries WHERE id=$1 FOR UPDATE', [req.params.id])).rows[0];
+      if (!e) throw Object.assign(new Error('Enquiry not found.'), { status: 404, code: 'NOT_FOUND' });
+      if (!e.design_book_id) throw Object.assign(new Error('Enquiry has no linked Design Book.'), { status: 400, code: 'INVALID_REFERENCE' });
+      await quote(db, req.params.id, req.user!.id, {});
+      const q = (await db.query('SELECT * FROM enquiry_quotes WHERE enquiry_id=$1 FOR UPDATE', [req.params.id])).rows[0];
+      if (q.status !== 'draft') throw Object.assign(new Error('Equipment Breakdown can only be imported into a draft quote.'), { status: 409, code: 'QUOTE_LOCKED' });
+      const lines = (await db.query(
+        `SELECT l.*,s.system_code,s.system_name FROM design_book_equipment_breakdown_lines l
+         JOIN design_book_equipment_breakdowns b ON b.id=l.breakdown_id
+         LEFT JOIN systems s ON s.id=l.system_id WHERE b.design_book_id=$1
+         ORDER BY s.system_code,l.sort_order,l.created_at`, [e.design_book_id],
+      )).rows;
+      if (lines.some((l: any) => l.currency && l.currency !== q.currency)) {
+        throw Object.assign(new Error('Equipment prices must use the quote currency before import. No currency conversion has been applied.'), { status: 409, code: 'CURRENCY_MISMATCH' });
+      }
+      // Refresh engineering snapshots without discarding independently selected PIM products.
+      await db.query(`DELETE FROM enquiry_quote_lines WHERE quote_id=$1 AND (source_design_book_id IS NOT NULL OR source_line_id IS NOT NULL)`, [q.id]);
+      for (const [i, l] of lines.entries()) {
+        await db.query(
+          `INSERT INTO enquiry_quote_lines(quote_id,source_line_id,source_design_book_id,source_snapshot,description,quantity,unit,unit_price,currency,sort_order)
+           VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+          [q.id, l.id, e.design_book_id, l, l.description, l.quantity, l.unit, l.selling_price ?? l.unit_cost, q.currency, i],
+        );
+      }
+      await db.query('UPDATE enquiry_quotes SET updated_by=$1,updated_at=clock_timestamp() WHERE id=$2', [req.user!.id, q.id]);
+      const persisted = (await db.query('SELECT * FROM enquiry_quote_lines WHERE quote_id=$1 ORDER BY sort_order,id', [q.id])).rows;
+      await record(db, req.params.id, req.user!.id, 'quote_imported', { quote_id: q.id, line_count: persisted.length, design_book_id: e.design_book_id });
+      return { quote: q, lines: persisted };
+    });
+    res.json(result);
+  } catch (e: any) {
+    if (e.status) return res.status(e.status).json({ error: { code: e.code, message: e.message } });
+    next(e);
+  }
+});
+router.use('/:id/quote', enquiryQuoteLines({ ensureQuote: quote, recordActivity: record }));
 export default router;

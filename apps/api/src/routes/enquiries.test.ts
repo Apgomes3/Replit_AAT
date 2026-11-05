@@ -20,12 +20,14 @@ vi.mock('../db', () => {
     }
     if (sql.includes('INSERT INTO enquiry_activities')) return { rows: [] };
     if (sql.includes('FROM enquiries WHERE id=$1')) return state.enquiry ? { rows: [{ id: '22222222-2222-4222-8222-222222222222', client_id: '11111111-1111-4111-8111-111111111111', design_book_id: state.designBook ? '55555555-5555-4555-8555-555555555555' : null, updated_at: new Date('2026-01-01T00:00:00.000Z'), version: '42' }] } : { rows: [] };
-    if (sql.includes('SELECT * FROM enquiry_quotes')) return state.quote ? { rows: [{ id: '66666666-6666-4666-8666-666666666666', enquiry_id: '22222222-2222-4222-8222-222222222222', quote_number: 'QUO-2026-0001', status: state.quoteStatus }] } : { rows: [] };
+    if (sql.includes('SELECT * FROM enquiry_quotes')) return state.quote ? { rows: [{ id: '66666666-6666-4666-8666-666666666666', enquiry_id: '22222222-2222-4222-8222-222222222222', quote_number: 'QUO-2026-0001', status: state.quoteStatus, currency: 'USD' }] } : { rows: [] };
+    if (sql.includes('UPDATE enquiry_quotes') && sql.includes('clock_timestamp()')) return { rows: [] };
     if (sql.includes('UPDATE enquiry_quotes')) { state.quoteStatus = params[0] || state.quoteStatus; return { rows: [{ id: '66666666-6666-4666-8666-666666666666', status: state.quoteStatus, currency: params[1] || 'USD' }] }; }
-    if (sql.includes('INSERT INTO enquiry_quotes')) { state.quote = true; state.quoteStatus = 'draft'; return { rows: [{ id: '66666666-6666-4666-8666-666666666666', quote_number: params[1], enquiry_id: params[0], status: 'draft' }] }; }
+    if (sql.includes('INSERT INTO enquiry_quotes')) { state.quote = true; state.quoteStatus = 'draft'; return { rows: [{ id: '66666666-6666-4666-8666-666666666666', quote_number: params[1], enquiry_id: params[0], status: 'draft', currency: params[2] }] }; }
     if (sql.includes('design_book_equipment_breakdown_lines')) return { rows: [{ id: '77777777-7777-4777-8777-777777777777', description: 'Pump', quantity: 2, unit: 'EA', unit_cost: 0, selling_price: 0, currency: 'USD' }] };
     if (sql.includes('INSERT INTO enquiry_quote_lines')) return { rows: [{ id: '88888888-8888-4888-8888-888888888888' }] };
     if (sql.includes('SELECT * FROM enquiry_quote_lines')) return { rows: [{ id: '88888888-8888-4888-8888-888888888888', description: 'Pump' }] };
+    if (sql.includes('SELECT id FROM enquiry_quote_lines')) return { rows: [{ id: '88888888-8888-4888-8888-888888888888' }] };
     return { rows: [] };
   });
   return {
@@ -127,7 +129,10 @@ describe('enquiry API contract', () => {
     expect(imported.status).toBe(200);
     expect(imported.json.quote).toBeDefined();
     expect(imported.json.lines[0].id).toBe('88888888-8888-4888-8888-888888888888');
-    const updated = await request('PATCH', '/api/v1/enquiries/22222222-2222-4222-8222-222222222222/quote', { status: 'issued', currency: 'EUR' });
+    const relabeled = await request('PATCH', '/api/v1/enquiries/22222222-2222-4222-8222-222222222222/quote', { currency: 'EUR' });
+    expect(relabeled.status).toBe(409);
+    expect(relabeled.json.error.code).toBe('CURRENCY_LOCKED');
+    const updated = await request('PATCH', '/api/v1/enquiries/22222222-2222-4222-8222-222222222222/quote', { status: 'issued', currency: 'USD' });
     expect(updated.status).toBe(200);
     const locked = await request('POST', '/api/v1/enquiries/22222222-2222-4222-8222-222222222222/quote/import-equipment-breakdown');
     expect(locked.status).toBe(409);
