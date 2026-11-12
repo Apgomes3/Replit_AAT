@@ -17,6 +17,7 @@
     "typecheck": "tsc -p apps/api/tsconfig.json --noEmit && tsc -p apps/web/tsconfig.json --noEmit",
     "check": "npm run typecheck && npm test",
     "build:api": "tsc -p apps/api/tsconfig.json",
+    "import:pricelist": "tsx apps/api/src/modules/pim-import/cli.ts",
     "test:watch": "vitest"
   },
   "keywords": [],

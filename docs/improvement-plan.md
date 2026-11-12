@@ -111,8 +111,15 @@ product or new, cleaned size, USD cost and RRP, warnings) → import only confir
 supplier + model so a newer price list updates prices instead of duplicating. Supplier prices go to
 vendor options; product cost / sell price on the product; kW, dimensions and sand data to the technical tables.
 
-- [ ] **P.1 Confirm scope and rules** (questions to the user — see below)
-- [ ] **P.2 Importer: LSS Equipment** · L
+- [x] **P.1 Scope and rules** · decided 2026-11-12: LSS Equipment sheet first; bag filter socks, media,
+  spare parts and skid items (break/BIO tank, plumbing, frame, plinth) become **components**, skid labour is
+  not imported; costs converted with the **app's exchange-rate table**; sell price = RRP; a match **updates**
+  the existing product's prices; **Shark OS is the master** after import (one-time migration with a reviewed
+  dry run, re-runnable without duplicates).
+- [~] **P.2 Importer: LSS Equipment** · L — importer built (`apps/api/src/modules/pim-import`,
+  `npm run import:pricelist`), tested on the test database; dry run on real data: 222 new products,
+  33 price updates, 87 new components, 22 skipped. **Waiting for:** GBP and ZAR rates in Admin › Exchange
+  Rates (44 rows), the user's review of the spreadsheet, then `--apply`.
 - [ ] **P.3 Importer: Pipe & Fittings** (category clean-up) · M
 - [ ] **P.4 Remaining sheets / tank m² rates** · S
 
