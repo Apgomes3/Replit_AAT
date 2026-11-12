@@ -24,9 +24,10 @@ Ground rules (agreed 2026-11-12):
   uploaded files (15) and Replit screenshots (23) — all still on disk.
   *Still open (decision):* purge the two 25 MB `.dwg` customer files from git **history**
   (rewrites history; everyone re-clones). Uploaded files must be copied separately to any new machine/server.
-- [ ] **0.3 Pin Node 22 LTS** · S
-  Add `.nvmrc` + `"engines"`. Node 26 (installed now) breaks ~500 web tests through its built-in
-  `localStorage`. Quick fallback: run tests with `NODE_OPTIONS=--no-experimental-webstorage`.
+- [x] **0.3 Node version** · S · done 2026-11-12
+  Node 26 is the current LTS, so the project targets it (`.nvmrc` = 26, `engines` >= 22) instead of
+  downgrading. `vitest.config.ts` disables Node's built-in Web Storage in test workers on Node 25+, which
+  had broken ~500 web tests. Result: 512 → 12 failing tests (remaining ones are real, see 0.6).
 - [ ] **0.4 Remove leftovers and duplicates** · S
   `apps/api/package.json` (lists Express 4/zod that are not installed), `apps/api/pnpm-*.yaml`,
   `apps/web/package-lock.json`, `main.py`, `pyproject.toml`, `.replit`, `scripts/post-merge.sh`;
@@ -34,8 +35,9 @@ Ground rules (agreed 2026-11-12):
 - [ ] **0.5 README + `.env.example` + one-command setup** · M
   How to install, create the database, migrate, seed or import, run, test. `npm run setup` script.
 - [ ] **0.6 Green checks** · M
-  Fix the ~11 genuinely failing tests and the 6 web type errors. Add `npm run typecheck` and
-  `npm run check` (typecheck + tests) and run it before every commit.
+  Fix the 12 failing tests and the 6 web type errors. Give the 3 database integration tests their own
+  throwaway test database (never the real-data one). Add `npm run typecheck` and `npm run check`
+  (typecheck + tests) and run it before every commit.
 - [ ] **0.7 CI on GitHub** · S
   GitHub Actions running `npm run check` on every push.
 
