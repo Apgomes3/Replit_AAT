@@ -83,7 +83,7 @@ export default function ProductMastersList() {
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['product-masters', search, showObsolete],
     queryFn: () => {
-      const p = new URLSearchParams({ page_size: '500' });
+      const p = new URLSearchParams({ page_size: '1000' });
       if (search) p.set('q', search);
       if (showObsolete) p.set('include_obsolete', 'true');
       return api.get(`/product-masters?${p}`).then(r => r.data);
@@ -328,9 +328,13 @@ export default function ProductMastersList() {
       <PageHeader
         title={selectedFamily ? selectedFamily.product_family_name : 'Products'}
         crumbs={[{ label: 'PIM', href: '/pim' }, { label: 'Products' }]}
-        subtitle={selectedFamily
+        subtitle={(selectedFamily
           ? `${selectedFamily.description ? `${selectedFamily.description} · ` : ''}${allItems.length} products`
-          : `${allItems.length} products in catalog`}
+          : `${allItems.length} products in catalog`)
+          // Never hide products silently if the catalogue outgrows one request.
+          + ((data?.pagination?.total ?? 0) > (data?.items?.length ?? 0)
+            ? ` · showing the first ${data.items.length} of ${data.pagination.total} — use search to narrow`
+            : '')}
         actions={
           <div className="flex items-center gap-2">
             <button

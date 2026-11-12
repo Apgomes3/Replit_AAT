@@ -116,10 +116,11 @@ vendor options; product cost / sell price on the product; kW, dimensions and san
   not imported; costs converted with the **app's exchange-rate table**; sell price = RRP; a match **updates**
   the existing product's prices; **Shark OS is the master** after import (one-time migration with a reviewed
   dry run, re-runnable without duplicates).
-- [~] **P.2 Importer: LSS Equipment** · L — importer built (`apps/api/src/modules/pim-import`,
-  `npm run import:pricelist`), tested on the test database; dry run on real data: 222 new products,
-  33 price updates, 87 new components, 22 skipped. **Waiting for:** GBP and ZAR rates in Admin › Exchange
-  Rates (44 rows), the user's review of the spreadsheet, then `--apply`.
+- [x] **P.2 Importer: LSS Equipment** · L · done 2026-11-12 — importer in `apps/api/src/modules/pim-import`
+  (`npm run import:pricelist`). Imported from the user-reviewed file (`ASW-pricelist-review-final.xlsx`):
+  **208 products created, 36 updated, 93 components created**, 4 new families; backup taken first
+  (`D:\Dev\db-backups\shark_os_replit-before-asw-import-20261112-1748.dump`). GBP/ZAR rates added
+  (1 ZAR = 0.060 USD, 1 GBP = 1.33 USD). Also fixed: the product list silently capped at 200 items.
 - [ ] **P.3 Importer: Pipe & Fittings** (category clean-up) · M
 - [ ] **P.4 Remaining sheets / tank m² rates** · S
 - [ ] **P.5 PIM redesign** · L — proposal in [pim-redesign-proposal.md](pim-redesign-proposal.md) (study of Plytix,

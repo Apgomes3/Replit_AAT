@@ -59,7 +59,7 @@ export default function TanksList() {
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['product-masters-tanks', search, selectedFamilyId],
     queryFn: () => {
-      let url = `/product-masters?category=Tank&page_size=200`;
+      let url = `/product-masters?category=Tank&page_size=1000`;
       if (search) url += `&q=${search}`;
       if (selectedFamilyId) url += `&tank_family_id=${selectedFamilyId}`;
       return api.get(url).then(r => r.data);

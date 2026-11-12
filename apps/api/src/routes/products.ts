@@ -458,9 +458,13 @@ router.delete('/tank-families/:id', authenticate, async (req: AuthRequest, res: 
 });
 
 // PRODUCT MASTERS
+// Catalogue screens load the whole list at once (client-side family filter and counts), so the cap must
+// stay above the catalogue size; 200 silently hid products once the ASW import took it to 300.
+const PRODUCT_LIST_MAX_PAGE_SIZE = 1000;
+
 router.get('/product-masters', authenticate, async (req: AuthRequest, res: Response) => {
   const page = parseInt(req.query.page as string) || 1;
-  const page_size = Math.min(parseInt(req.query.page_size as string) || 25, 200);
+  const page_size = Math.min(parseInt(req.query.page_size as string) || 25, PRODUCT_LIST_MAX_PAGE_SIZE);
   const offset = (page - 1) * page_size;
   const filters: string[] = [];
   const params: any[] = [];
