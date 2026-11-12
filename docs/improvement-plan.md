@@ -57,9 +57,8 @@ Ground rules (agreed 2026-11-12):
   - Re-run the 2 biological-media runs whose `media_profile_snapshot` / `tan_profile_snapshot` were removed
     by Replit's export sanitizer (marked `{"_export_note": ...}`).
   - ~~Check uploaded files exist~~ — verified: all 8 files referenced by documents and project logos are present.
-  - Remove 32 audit-log rows written by integration tests that ran against `shark_os_replit` on 2026-11-12
-    (15:43–15:54) before the test-database guard existed. They reference 4 test records that no longer exist;
-    no real data was changed.
+  - ~~Remove 32 audit-log rows written by integration tests that ran against `shark_os_replit`~~ — done
+    2026-11-12 (they referenced 4 test records that no longer existed; no real data was changed).
 - [ ] **1.3 Numbered migrations** · L
   Replace the single 3,600-line schema string with `migrations/0001_baseline.sql`, `0002_...` plus a
   `schema_migrations` table, so each change is recorded, reviewable and runs exactly once.
