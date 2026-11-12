@@ -122,6 +122,9 @@ vendor options; product cost / sell price on the product; kW, dimensions and san
   Rates (44 rows), the user's review of the spreadsheet, then `--apply`.
 - [ ] **P.3 Importer: Pipe & Fittings** (category clean-up) · M
 - [ ] **P.4 Remaining sheets / tank m² rates** · S
+- [ ] **P.5 PIM redesign** · L — proposal in [pim-redesign-proposal.md](pim-redesign-proposal.md) (study of Plytix,
+  AtroPIM, UnoPim, Pimcore): one item catalogue, family templates, attribute library with units, variants with
+  inheritance, typed relationships, dated supplier offers, completeness/lifecycle. *Waiting for decisions (§7).*
 
 ## Drafting module roadmap
 
