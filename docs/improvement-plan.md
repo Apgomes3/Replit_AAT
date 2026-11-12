@@ -93,8 +93,9 @@ Ground rules (agreed 2026-11-12):
 ## Drafting module roadmap
 
 - [x] **D.1 Teams and plans** · done 2026-11-12 — teams (manager + members), plans linked to a project and team.
-- [ ] **D.2 Task groups and tasks** · L — Planner-style rows: name, assignees, priority, start/finish,
-  duration, status, notes, attachments.
+- [x] **D.2 Task groups and tasks** · L · done 2026-11-12 — plan board (`/drafting/plans/:id`) with optional
+  groups, quick-add, multi-assignee tasks, priority, status, start/due, duration, time-used bar and late flags;
+  plan list shows progress. (Attachments not yet — later, with deliverable links in D.6.)
   Decided 2026-11-12: no "check" column; buckets become optional **categories** (later, if needed);
   progress is driven by **status** (Not started → In progress → Review → Done); a separate
   **time-based %** shows elapsed time between start and finish so late tasks stand out.

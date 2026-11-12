@@ -4,7 +4,9 @@ import { Router, Response, NextFunction } from 'express';
 import { authenticate, AuthRequest, requireModuleAccess, requireModuleManage } from '../../middleware/auth';
 import { logAudit } from '../../db/audit';
 import * as repo from './repository';
-import { isUuid, PLAN_STATUSES, validatePlanInput, validateTeamInput } from './validation';
+import {
+  isUuid, PLAN_STATUSES, validateGroupInput, validatePlanInput, validateTaskInput, validateTeamInput,
+} from './validation';
 
 const router = Router();
 router.use(authenticate, requireModuleAccess('drafting'));
@@ -15,9 +17,10 @@ const fail = (res: Response, status: number, code: string, message: string) =>
 
 /** Map Postgres constraint errors to client errors; anything else goes to the global handler. */
 function handleDbError(e: any, res: Response, next: NextFunction) {
+  if (e instanceof repo.DraftingRuleError) return fail(res, 400, 'VALIDATION', e.message);
   if (e?.code === '23505') return fail(res, 409, 'CONFLICT', 'A team with this name already exists.');
   if (e?.code === '23503') return fail(res, 400, 'VALIDATION', 'The selected project, team or user no longer exists.');
-  if (e?.code === '23514') return fail(res, 400, 'VALIDATION', 'Target date cannot be before start date.');
+  if (e?.code === '23514') return fail(res, 400, 'VALIDATION', 'The end date cannot be before the start date.');
   return next(e);
 }
 
@@ -124,6 +127,87 @@ router.patch('/plans/:id', manage, async (req: AuthRequest, res, next) => {
     await logAudit(req.user!.id, 'drafting_plan', plan.id, 'UPDATE', { fields: Object.keys(value!) });
     res.json(plan);
   } catch (e) { handleDbError(e, res, next); }
+});
+
+// ---------- board: groups and tasks (D.2) ----------
+
+router.get('/plans/:id/board', async (req, res, next) => {
+  try {
+    if (!isUuid(req.params.id)) return fail(res, 400, 'VALIDATION', 'id must be a valid id.');
+    const board = await repo.getBoard(req.params.id);
+    if (!board) return fail(res, 404, 'NOT_FOUND', 'Plan not found.');
+    res.json(board);
+  } catch (e) { next(e); }
+});
+
+router.post('/plans/:id/groups', manage, async (req: AuthRequest, res, next) => {
+  try {
+    if (!isUuid(req.params.id)) return fail(res, 400, 'VALIDATION', 'id must be a valid id.');
+    const { value, error } = validateGroupInput(req.body, { creating: true });
+    if (error) return fail(res, 400, 'VALIDATION', error);
+    if (!(await repo.getPlan(req.params.id))) return fail(res, 404, 'NOT_FOUND', 'Plan not found.');
+    const group = await repo.createGroup(req.params.id, value!, req.user!.id);
+    res.status(201).json(group);
+  } catch (e) { handleDbError(e, res, next); }
+});
+
+router.patch('/groups/:id', manage, async (req: AuthRequest, res, next) => {
+  try {
+    if (!isUuid(req.params.id)) return fail(res, 400, 'VALIDATION', 'id must be a valid id.');
+    const { value, error } = validateGroupInput(req.body, { creating: false });
+    if (error) return fail(res, 400, 'VALIDATION', error);
+    const group = await repo.updateGroup(req.params.id, value!);
+    if (!group) return fail(res, 404, 'NOT_FOUND', 'Group not found.');
+    res.json(group);
+  } catch (e) { handleDbError(e, res, next); }
+});
+
+router.delete('/groups/:id', manage, async (req: AuthRequest, res, next) => {
+  try {
+    if (!isUuid(req.params.id)) return fail(res, 400, 'VALIDATION', 'id must be a valid id.');
+    if (!(await repo.deleteGroup(req.params.id))) return fail(res, 404, 'NOT_FOUND', 'Group not found.');
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+router.post('/plans/:id/tasks', manage, async (req: AuthRequest, res, next) => {
+  try {
+    if (!isUuid(req.params.id)) return fail(res, 400, 'VALIDATION', 'id must be a valid id.');
+    const { value, error } = validateTaskInput(req.body, { creating: true });
+    if (error) return fail(res, 400, 'VALIDATION', error);
+    if (!(await repo.getPlan(req.params.id))) return fail(res, 404, 'NOT_FOUND', 'Plan not found.');
+    const peopleError = await checkPeople(null, value!.assignee_ids);
+    if (peopleError) return fail(res, 400, 'VALIDATION', peopleError);
+    const task = await repo.createTask(req.params.id, value!, req.user!.id);
+    await logAudit(req.user!.id, 'drafting_task', task.id, 'CREATE', { plan_id: task.plan_id, title: task.title });
+    res.status(201).json(task);
+  } catch (e) { handleDbError(e, res, next); }
+});
+
+router.patch('/tasks/:id', manage, async (req: AuthRequest, res, next) => {
+  try {
+    if (!isUuid(req.params.id)) return fail(res, 400, 'VALIDATION', 'id must be a valid id.');
+    const { value, error } = validateTaskInput(req.body, { creating: false });
+    if (error) return fail(res, 400, 'VALIDATION', error);
+    const peopleError = await checkPeople(null, value!.assignee_ids);
+    if (peopleError) return fail(res, 400, 'VALIDATION', peopleError);
+    const task = await repo.updateTask(req.params.id, value!, req.user!.id);
+    if (!task) return fail(res, 404, 'NOT_FOUND', 'Task not found.');
+    await logAudit(req.user!.id, 'drafting_task', task.id, 'UPDATE', {
+      fields: Object.keys(value!), ...(value!.status ? { status: value!.status } : {}),
+    });
+    res.json(task);
+  } catch (e) { handleDbError(e, res, next); }
+});
+
+router.delete('/tasks/:id', manage, async (req: AuthRequest, res, next) => {
+  try {
+    if (!isUuid(req.params.id)) return fail(res, 400, 'VALIDATION', 'id must be a valid id.');
+    const planId = await repo.getTaskPlanId(req.params.id);
+    if (!planId || !(await repo.deleteTask(req.params.id))) return fail(res, 404, 'NOT_FOUND', 'Task not found.');
+    await logAudit(req.user!.id, 'drafting_task', req.params.id, 'DELETE', { plan_id: planId });
+    res.json({ ok: true });
+  } catch (e) { next(e); }
 });
 
 export default router;

@@ -49,6 +49,48 @@ CREATE TABLE IF NOT EXISTS drafting_plans (
 CREATE INDEX IF NOT EXISTS idx_drafting_plans_project ON drafting_plans (project_id);
 CREATE INDEX IF NOT EXISTS idx_drafting_plans_team ON drafting_plans (team_id);
 
+-- D.2: optional groups inside a plan, and tasks.
+CREATE TABLE IF NOT EXISTS drafting_task_groups (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  plan_id UUID NOT NULL REFERENCES drafting_plans(id) ON DELETE CASCADE,
+  name VARCHAR(255) NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_drafting_task_groups_plan ON drafting_task_groups (plan_id, sort_order);
+
+CREATE TABLE IF NOT EXISTS drafting_tasks (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  plan_id UUID NOT NULL REFERENCES drafting_plans(id) ON DELETE CASCADE,
+  -- Deleting a group keeps its tasks (they become ungrouped).
+  group_id UUID REFERENCES drafting_task_groups(id) ON DELETE SET NULL,
+  title VARCHAR(500) NOT NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'not_started'
+    CHECK (status IN ('not_started', 'in_progress', 'review', 'done')),
+  priority VARCHAR(20) NOT NULL DEFAULT 'medium'
+    CHECK (priority IN ('urgent', 'important', 'medium', 'low')),
+  start_date DATE,
+  due_date DATE,
+  notes TEXT,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  completed_at TIMESTAMPTZ,
+  created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  updated_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (due_date IS NULL OR start_date IS NULL OR due_date >= start_date)
+);
+CREATE INDEX IF NOT EXISTS idx_drafting_tasks_plan ON drafting_tasks (plan_id, group_id, sort_order);
+
+CREATE TABLE IF NOT EXISTS drafting_task_assignees (
+  task_id UUID NOT NULL REFERENCES drafting_tasks(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  PRIMARY KEY (task_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_drafting_task_assignees_user ON drafting_task_assignees (user_id);
+
 -- Module visibility: viewers can look, every other role can manage.
 -- Admins can change this per role in Admin > Roles.
 INSERT INTO role_module_access (role_id, module_key, access_level)

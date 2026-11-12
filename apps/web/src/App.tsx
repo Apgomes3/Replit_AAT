@@ -64,6 +64,7 @@ import MaterialDetail from './pages/knowledge/MaterialDetail';
 import EnquiriesList from './pages/business-development/EnquiriesList';
 import EnquiryDetail from './pages/business-development/EnquiryDetail';
 import DraftingSetup from './pages/drafting/DraftingSetup';
+import PlanBoard from './pages/drafting/PlanBoard';
 import { LEGACY_ROUTE_REDIRECTS } from './lib/navigation';
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30000 } } });
@@ -172,6 +173,7 @@ const router = createBrowserRouter(createRoutesFromElements(
               <Route path="enquiries" element={<ModuleGuard moduleKey="business_development"><EnquiriesList /></ModuleGuard>} />
               <Route path="enquiries/:id" element={<ModuleGuard moduleKey="business_development"><EnquiryDetail /></ModuleGuard>} />
             <Route path="drafting" element={<ModuleGuard moduleKey="drafting"><DraftingSetup /></ModuleGuard>} />
+            <Route path="drafting/plans/:id" element={<ModuleGuard moduleKey="drafting"><PlanBoard /></ModuleGuard>} />
           </Route>
   </Route>
 ));

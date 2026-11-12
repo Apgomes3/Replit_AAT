@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { CalendarRange, FolderOpen, Pencil, Plus } from 'lucide-react';
 import toast from 'react-hot-toast';
 import DraftingModal, { fieldInput, fieldLabel } from './DraftingModal';
@@ -112,11 +113,16 @@ export default function PlansPanel({ onGoToTeams }: { onGoToTeams: () => void })
           <span className="ml-auto text-xs text-[#6f8082]">{group.plans.length} {group.plans.length === 1 ? 'plan' : 'plans'}</span>
         </header>
         <table className="w-full text-sm">
-          <thead><tr className="border-b border-[#edf2ef]">{['Plan', 'Team', 'Status', 'Start', 'Target', ''].map(h => <th key={h} className="text-left px-5 py-2 text-[10px] uppercase tracking-[.13em] text-[#6f8082] font-extrabold">{h}</th>)}</tr></thead>
+          <thead><tr className="border-b border-[#edf2ef]">{['Plan', 'Team', 'Status', 'Progress', 'Start', 'Target', ''].map(h => <th key={h} className="text-left px-5 py-2 text-[10px] uppercase tracking-[.13em] text-[#6f8082] font-extrabold">{h}</th>)}</tr></thead>
           <tbody>{group.plans.map(p => <tr key={p.id} className="border-b border-[#edf2ef] last:border-0 hover:bg-[#f4faf7]">
-            <td className="px-5 py-3"><div className="font-bold">{p.name}</div><div className="text-xs text-[#6f8082] font-mono mt-0.5">{p.plan_code}</div></td>
+            <td className="px-5 py-3"><Link to={`/drafting/plans/${p.id}`} className="font-bold hover:text-[#087f73] hover:underline">{p.name}</Link><div className="text-xs text-[#6f8082] font-mono mt-0.5">{p.plan_code}</div></td>
             <td className="px-5 py-3 text-[#53686b]">{p.team.name}<div className="text-xs text-[#8a9b9a]">{p.team.manager_name ? `Manager: ${p.team.manager_name}` : 'No manager'}</div></td>
             <td className="px-5 py-3"><StatusBadge status={p.status} /></td>
+            <td className="px-5 py-3 whitespace-nowrap">{p.task_count
+              ? <div className="text-xs text-[#53686b]"><b className="text-[#20333a]">{p.done_count}/{p.task_count}</b> done
+                  {p.late_count > 0 && <span className="ml-2 px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 font-bold">{p.late_count} late</span>}
+                  <div className="mt-1 h-1 w-24 rounded-full bg-[#edf2ef] overflow-hidden"><div className="h-full bg-[#087f73]" style={{ width: `${Math.round((p.done_count / p.task_count) * 100)}%` }} /></div></div>
+              : <span className="text-xs text-[#a3b1af]">No tasks</span>}</td>
             <td className="px-5 py-3 text-[#53686b] whitespace-nowrap">{formatDate(p.start_date)}</td>
             <td className="px-5 py-3 text-[#53686b] whitespace-nowrap">{formatDate(p.target_date)}</td>
             <td className="px-5 py-3 text-right">{canManage && <button onClick={() => openEdit(p)} className="p-2 text-[#80908f] hover:text-[#087f73]" aria-label={`Edit ${p.name}`}><Pencil className="w-4 h-4" /></button>}</td>

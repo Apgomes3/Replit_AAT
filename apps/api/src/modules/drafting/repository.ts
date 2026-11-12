@@ -1,7 +1,7 @@
 // All SQL for the drafting module lives here; routes never build queries.
 import type { PoolClient } from 'pg';
 import { query, withTransaction } from '../../db';
-import type { PlanInput, PlanStatus, TeamInput } from './validation';
+import type { GroupInput, PlanInput, PlanStatus, TaskInput, TaskPriority, TaskStatus, TeamInput } from './validation';
 
 type Db = Pick<PoolClient, 'query'>;
 
@@ -29,9 +29,32 @@ export type Plan = {
   description: string | null;
   project: { id: string; code: string; name: string };
   team: { id: string; name: string; manager_name: string | null };
+  task_count: number;
+  done_count: number;
+  late_count: number;
   created_at: string;
   updated_at: string;
 };
+
+export type TaskGroup = { id: string; plan_id: string; name: string; sort_order: number };
+
+export type Task = {
+  id: string;
+  plan_id: string;
+  group_id: string | null;
+  title: string;
+  status: TaskStatus;
+  priority: TaskPriority;
+  start_date: string | null;
+  due_date: string | null;
+  notes: string | null;
+  sort_order: number;
+  completed_at: string | null;
+  assignees: Array<Pick<Person, 'id' | 'name' | 'email'>>;
+  updated_at: string;
+};
+
+export type Board = { plan: Plan; groups: TaskGroup[]; tasks: Task[] };
 
 const PERSON_NAME = `COALESCE(NULLIF(TRIM(CONCAT_WS(' ', u.first_name, u.last_name)), ''), u.email)`;
 
@@ -57,7 +80,11 @@ const PLAN_SELECT = `
     to_char(p.target_date, 'YYYY-MM-DD') AS target_date,
     json_build_object('id', pr.id, 'code', pr.project_code, 'name', pr.project_name) AS project,
     json_build_object('id', t.id, 'name', t.name,
-      'manager_name', COALESCE(NULLIF(TRIM(CONCAT_WS(' ', m.first_name, m.last_name)), ''), m.email)) AS team
+      'manager_name', COALESCE(NULLIF(TRIM(CONCAT_WS(' ', m.first_name, m.last_name)), ''), m.email)) AS team,
+    (SELECT COUNT(*)::int FROM drafting_tasks dt WHERE dt.plan_id = p.id) AS task_count,
+    (SELECT COUNT(*)::int FROM drafting_tasks dt WHERE dt.plan_id = p.id AND dt.status = 'done') AS done_count,
+    (SELECT COUNT(*)::int FROM drafting_tasks dt
+      WHERE dt.plan_id = p.id AND dt.status <> 'done' AND dt.due_date < CURRENT_DATE) AS late_count
   FROM drafting_plans p
   JOIN projects pr ON pr.id = p.project_id
   JOIN drafting_teams t ON t.id = p.team_id
@@ -175,6 +202,143 @@ export async function createPlan(input: PlanInput, actorId: string): Promise<Pla
     );
     return (await getPlan(inserted.rows[0].id, db))!;
   });
+}
+
+// ---------- groups and tasks (D.2) ----------
+
+const TASK_SELECT = `
+  SELECT dt.id, dt.plan_id, dt.group_id, dt.title, dt.status, dt.priority, dt.notes, dt.sort_order,
+    to_char(dt.start_date, 'YYYY-MM-DD') AS start_date,
+    to_char(dt.due_date, 'YYYY-MM-DD') AS due_date,
+    dt.completed_at, dt.updated_at,
+    COALESCE((
+      SELECT json_agg(json_build_object('id', u.id, 'name', ${PERSON_NAME}, 'email', u.email)
+                      ORDER BY u.first_name, u.last_name, u.email)
+      FROM drafting_task_assignees a JOIN users u ON u.id = a.user_id
+      WHERE a.task_id = dt.id
+    ), '[]'::json) AS assignees
+  FROM drafting_tasks dt`;
+
+export async function getBoard(planId: string): Promise<Board | null> {
+  const plan = await getPlan(planId);
+  if (!plan) return null;
+  const groups = (await query(
+    `SELECT id, plan_id, name, sort_order FROM drafting_task_groups WHERE plan_id = $1 ORDER BY sort_order, created_at`,
+    [planId],
+  )).rows;
+  const tasks = (await query(`${TASK_SELECT} WHERE dt.plan_id = $1 ORDER BY dt.sort_order, dt.created_at`, [planId])).rows;
+  return { plan, groups, tasks };
+}
+
+async function nextSortOrder(db: Db, table: 'drafting_task_groups' | 'drafting_tasks', planId: string) {
+  const r = await db.query(`SELECT COALESCE(MAX(sort_order), 0) + 10 AS n FROM ${table} WHERE plan_id = $1`, [planId]);
+  return Number(r.rows[0].n);
+}
+
+/** Groups must belong to the same plan as the task. */
+async function groupBelongsToPlan(db: Db, groupId: string, planId: string) {
+  return (await db.query(`SELECT 1 FROM drafting_task_groups WHERE id = $1 AND plan_id = $2`, [groupId, planId])).rowCount! > 0;
+}
+
+export class DraftingRuleError extends Error {}
+
+export async function createGroup(planId: string, input: GroupInput, actorId: string): Promise<TaskGroup> {
+  return withTransaction(async db => {
+    const order = input.sort_order ?? await nextSortOrder(db, 'drafting_task_groups', planId);
+    return (await db.query(
+      `INSERT INTO drafting_task_groups (plan_id, name, sort_order, created_by) VALUES ($1, $2, $3, $4)
+       RETURNING id, plan_id, name, sort_order`,
+      [planId, input.name, order, actorId],
+    )).rows[0];
+  });
+}
+
+export async function updateGroup(id: string, input: GroupInput): Promise<TaskGroup | null> {
+  const set: string[] = [];
+  const values: unknown[] = [id];
+  for (const key of ['name', 'sort_order'] as const) {
+    if (input[key] !== undefined) { values.push(input[key]); set.push(`${key} = $${values.length}`); }
+  }
+  return (await query(
+    `UPDATE drafting_task_groups SET ${[...set, 'updated_at = NOW()'].join(', ')} WHERE id = $1
+     RETURNING id, plan_id, name, sort_order`,
+    values,
+  )).rows[0] ?? null;
+}
+
+/** Deletes the group; its tasks stay in the plan, ungrouped. Returns false if not found. */
+export async function deleteGroup(id: string): Promise<boolean> {
+  return (await query(`DELETE FROM drafting_task_groups WHERE id = $1`, [id])).rowCount! > 0;
+}
+
+async function replaceAssignees(db: Db, taskId: string, userIds: string[]) {
+  await db.query(`DELETE FROM drafting_task_assignees WHERE task_id = $1 AND NOT (user_id = ANY($2::uuid[]))`, [taskId, userIds]);
+  if (userIds.length) {
+    await db.query(
+      `INSERT INTO drafting_task_assignees (task_id, user_id) SELECT $1, unnest($2::uuid[]) ON CONFLICT DO NOTHING`,
+      [taskId, userIds],
+    );
+  }
+}
+
+async function getTask(id: string, db: Db = { query } as Db): Promise<Task | null> {
+  return (await db.query(`${TASK_SELECT} WHERE dt.id = $1`, [id])).rows[0] ?? null;
+}
+
+export async function getTaskPlanId(id: string): Promise<string | null> {
+  return (await query(`SELECT plan_id FROM drafting_tasks WHERE id = $1`, [id])).rows[0]?.plan_id ?? null;
+}
+
+export async function createTask(planId: string, input: TaskInput, actorId: string): Promise<Task> {
+  return withTransaction(async db => {
+    if (input.group_id && !(await groupBelongsToPlan(db, input.group_id, planId))) {
+      throw new DraftingRuleError('The selected group belongs to a different plan.');
+    }
+    const order = input.sort_order ?? await nextSortOrder(db, 'drafting_tasks', planId);
+    const status = input.status ?? 'not_started';
+    const inserted = await db.query(
+      `INSERT INTO drafting_tasks
+         (plan_id, group_id, title, status, priority, start_date, due_date, notes, sort_order,
+          completed_at, created_by, updated_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, ${status === 'done' ? 'NOW()' : 'NULL'}, $10, $10)
+       RETURNING id`,
+      [planId, input.group_id ?? null, input.title, status, input.priority ?? 'medium',
+        input.start_date ?? null, input.due_date ?? null, input.notes ?? null, order, actorId],
+    );
+    const id = inserted.rows[0].id;
+    await replaceAssignees(db, id, input.assignee_ids ?? []);
+    return (await getTask(id, db))!;
+  });
+}
+
+export async function updateTask(id: string, input: TaskInput, actorId: string): Promise<Task | null> {
+  return withTransaction(async db => {
+    const current = (await db.query(`SELECT plan_id FROM drafting_tasks WHERE id = $1 FOR UPDATE`, [id])).rows[0];
+    if (!current) return null;
+    if (input.group_id && !(await groupBelongsToPlan(db, input.group_id, current.plan_id))) {
+      throw new DraftingRuleError('The selected group belongs to a different plan.');
+    }
+    const set: string[] = [];
+    const values: unknown[] = [id];
+    for (const key of ['group_id', 'title', 'status', 'priority', 'start_date', 'due_date', 'notes', 'sort_order'] as const) {
+      if (input[key] !== undefined) { values.push(input[key]); set.push(`${key} = $${values.length}`); }
+    }
+    if (input.status !== undefined) {
+      // Record when a task is finished (keeping the first completion time); reopening clears it.
+      set.push(input.status === 'done' ? 'completed_at = COALESCE(completed_at, NOW())' : 'completed_at = NULL');
+    }
+    values.push(actorId);
+    await db.query(
+      `UPDATE drafting_tasks SET ${[...set, `updated_by = $${values.length}`, 'updated_at = NOW()'].join(', ')} WHERE id = $1`,
+      values,
+    );
+    if (input.assignee_ids) await replaceAssignees(db, id, input.assignee_ids);
+    return getTask(id, db);
+  });
+}
+
+export async function deleteTask(id: string): Promise<boolean> {
+  return (await query(`DELETE FROM drafting_tasks WHERE id = $1`, [id])).rowCount! > 0;
 }
 
 export async function updatePlan(id: string, input: PlanInput, actorId: string): Promise<Plan | null> {

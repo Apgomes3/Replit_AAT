@@ -37,7 +37,58 @@ export type Plan = {
   description: string | null;
   project: ProjectOption;
   team: { id: string; name: string; manager_name: string | null };
+  task_count: number;
+  done_count: number;
+  late_count: number;
 };
+
+export const TASK_STATUSES = ['not_started', 'in_progress', 'review', 'done'] as const;
+export type TaskStatus = typeof TASK_STATUSES[number];
+export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
+  not_started: 'Not started',
+  in_progress: 'In progress',
+  review: 'Review',
+  done: 'Done',
+};
+
+export const TASK_PRIORITIES = ['urgent', 'important', 'medium', 'low'] as const;
+export type TaskPriority = typeof TASK_PRIORITIES[number];
+export const TASK_PRIORITY_LABELS: Record<TaskPriority, string> = {
+  urgent: 'Urgent',
+  important: 'Important',
+  medium: 'Medium',
+  low: 'Low',
+};
+
+export type TaskGroup = { id: string; plan_id: string; name: string; sort_order: number };
+
+export type Task = {
+  id: string;
+  plan_id: string;
+  group_id: string | null;
+  title: string;
+  status: TaskStatus;
+  priority: TaskPriority;
+  start_date: string | null;
+  due_date: string | null;
+  notes: string | null;
+  sort_order: number;
+  completed_at: string | null;
+  assignees: Array<{ id: string; name: string; email: string }>;
+};
+
+export type Board = { plan: Plan; groups: TaskGroup[]; tasks: Task[] };
+
+export type TaskPayload = Partial<{
+  title: string;
+  group_id: string | null;
+  status: TaskStatus;
+  priority: TaskPriority;
+  start_date: string | null;
+  due_date: string | null;
+  notes: string | null;
+  assignee_ids: string[];
+}>;
 
 export type TeamPayload = {
   name: string;
@@ -91,6 +142,36 @@ export function useSavePlan() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: keys.plans }); qc.invalidateQueries({ queryKey: keys.teams }); },
   });
 }
+
+const boardKey = (planId: string) => ['drafting', 'board', planId] as const;
+
+export const useBoard = (planId: string) => useQuery({
+  queryKey: boardKey(planId),
+  queryFn: () => api.get(`/drafting/plans/${planId}/board`).then(r => r.data as Board),
+  enabled: !!planId,
+});
+
+/** Mutations on one plan's board refresh the board and the plan list counts. */
+function useBoardMutation<TVars>(planId: string, fn: (vars: TVars) => Promise<unknown>) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: fn,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: boardKey(planId) });
+      qc.invalidateQueries({ queryKey: keys.plans });
+    },
+  });
+}
+
+export const useSaveTask = (planId: string) => useBoardMutation(planId, ({ id, body }: { id?: string; body: TaskPayload }) =>
+  (id ? api.patch(`/drafting/tasks/${id}`, body) : api.post(`/drafting/plans/${planId}/tasks`, body)).then(r => r.data as Task));
+
+export const useDeleteTask = (planId: string) => useBoardMutation(planId, (id: string) => api.delete(`/drafting/tasks/${id}`));
+
+export const useSaveGroup = (planId: string) => useBoardMutation(planId, ({ id, name }: { id?: string; name: string }) =>
+  (id ? api.patch(`/drafting/groups/${id}`, { name }) : api.post(`/drafting/plans/${planId}/groups`, { name })).then(r => r.data as TaskGroup));
+
+export const useDeleteGroup = (planId: string) => useBoardMutation(planId, (id: string) => api.delete(`/drafting/groups/${id}`));
 
 export function useCanManageDrafting() {
   const user = useAuthStore(s => s.user);

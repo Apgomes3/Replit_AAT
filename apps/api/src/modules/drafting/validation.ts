@@ -4,6 +4,12 @@
 export const PLAN_STATUSES = ['planning', 'active', 'on_hold', 'completed', 'archived'] as const;
 export type PlanStatus = typeof PLAN_STATUSES[number];
 
+export const TASK_STATUSES = ['not_started', 'in_progress', 'review', 'done'] as const;
+export type TaskStatus = typeof TASK_STATUSES[number];
+
+export const TASK_PRIORITIES = ['urgent', 'important', 'medium', 'low'] as const;
+export type TaskPriority = typeof TASK_PRIORITIES[number];
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -82,6 +88,73 @@ export function validateTeamInput(body: any, { creating }: { creating: boolean }
   if (has(body, 'active')) {
     if (typeof body.active !== 'boolean') return { error: 'active must be true or false.' };
     out.active = body.active;
+  }
+  if (!creating && Object.keys(out).length === 0) return { error: 'Nothing to update.' };
+  return { value: out };
+}
+
+export type GroupInput = { name?: string; sort_order?: number };
+
+export type TaskInput = {
+  title?: string;
+  group_id?: string | null;
+  status?: TaskStatus;
+  priority?: TaskPriority;
+  start_date?: string | null;
+  due_date?: string | null;
+  notes?: string | null;
+  sort_order?: number;
+  assignee_ids?: string[];
+};
+
+function optionalSortOrder(body: any, out: Record<string, unknown>): string | null {
+  if (!has(body, 'sort_order')) return null;
+  if (!Number.isInteger(body.sort_order) || body.sort_order < 0) return 'sort_order must be a whole number of 0 or more.';
+  out.sort_order = body.sort_order;
+  return null;
+}
+
+export function validateGroupInput(body: any, { creating }: { creating: boolean }): Result<GroupInput> {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return { error: 'Request body must be an object.' };
+  const out: GroupInput & Record<string, unknown> = {};
+  const error = requiredName(body, creating, 255, out) || optionalSortOrder(body, out);
+  if (error) return { error };
+  if (!creating && Object.keys(out).length === 0) return { error: 'Nothing to update.' };
+  return { value: out };
+}
+
+export function validateTaskInput(body: any, { creating }: { creating: boolean }): Result<TaskInput> {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return { error: 'Request body must be an object.' };
+  const out: TaskInput & Record<string, unknown> = {};
+
+  if (has(body, 'title') || creating) {
+    if (typeof body.title !== 'string' || !body.title.trim()) return { error: 'title is required.' };
+    if (body.title.trim().length > 500) return { error: 'title must be at most 500 characters.' };
+    out.title = body.title.trim();
+  }
+  let error = optionalText(body, 'notes', 10000, out) || optionalSortOrder(body, out);
+  if (error) return { error };
+
+  if (has(body, 'group_id')) {
+    if (body.group_id !== null && body.group_id !== '' && !isUuid(body.group_id)) return { error: 'group_id must be a valid id.' };
+    out.group_id = body.group_id || null;
+  }
+  if (has(body, 'status')) {
+    if (!TASK_STATUSES.includes(body.status)) return { error: `status must be one of: ${TASK_STATUSES.join(', ')}.` };
+    out.status = body.status;
+  }
+  if (has(body, 'priority')) {
+    if (!TASK_PRIORITIES.includes(body.priority)) return { error: `priority must be one of: ${TASK_PRIORITIES.join(', ')}.` };
+    out.priority = body.priority;
+  }
+  error = optionalDate(body, 'start_date', out) || optionalDate(body, 'due_date', out);
+  if (error) return { error };
+  if (out.start_date && out.due_date && out.due_date < out.start_date) {
+    return { error: 'due_date cannot be before start_date.' };
+  }
+  if (has(body, 'assignee_ids')) {
+    if (!Array.isArray(body.assignee_ids) || !body.assignee_ids.every(isUuid)) return { error: 'assignee_ids must be a list of user ids.' };
+    out.assignee_ids = [...new Set<string>(body.assignee_ids)];
   }
   if (!creating && Object.keys(out).length === 0) return { error: 'Nothing to update.' };
   return { value: out };

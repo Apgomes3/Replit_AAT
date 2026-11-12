@@ -12,9 +12,12 @@ vi.mock('../../middleware/auth', () => ({
 }));
 vi.mock('../../db/audit', () => ({ logAudit: vi.fn(async () => {}) }));
 vi.mock('./repository', () => ({
+  DraftingRuleError: class DraftingRuleError extends Error {},
   listPeople: vi.fn(), listProjectOptions: vi.fn(), findUnknownUsers: vi.fn(),
   listTeams: vi.fn(), getTeam: vi.fn(), createTeam: vi.fn(), updateTeam: vi.fn(),
   listPlans: vi.fn(), getPlan: vi.fn(), createPlan: vi.fn(), updatePlan: vi.fn(),
+  getBoard: vi.fn(), createGroup: vi.fn(), updateGroup: vi.fn(), deleteGroup: vi.fn(),
+  createTask: vi.fn(), updateTask: vi.fn(), deleteTask: vi.fn(), getTaskPlanId: vi.fn(),
 }));
 
 import * as repo from './repository';
@@ -93,6 +96,49 @@ describe('drafting routes', () => {
     expect((await call('POST', '/plans', { name: 'P', team_id: TEAM })).status).toBe(400);
     mocked.updatePlan.mockResolvedValue(null);
     expect((await call('PATCH', `/plans/${PROJECT}`, { status: 'on_hold' })).status).toBe(404);
+  });
+
+  it('creates a task with assignees in an existing plan and audits it', async () => {
+    mocked.getPlan.mockResolvedValue({ id: PROJECT });
+    mocked.createTask.mockResolvedValue({ id: 'task-1', plan_id: PROJECT, title: 'LSS-02 drawing' });
+    const r = await call('POST', `/plans/${PROJECT}/tasks`, {
+      title: ' LSS-02 drawing ', priority: 'important', assignee_ids: [USER], start_date: '2026-02-13', due_date: '2026-03-07',
+    });
+    expect(r.status).toBe(201);
+    expect(mocked.createTask).toHaveBeenCalledWith(PROJECT, {
+      title: 'LSS-02 drawing', priority: 'important', assignee_ids: [USER], start_date: '2026-02-13', due_date: '2026-03-07',
+    }, 'actor-1');
+    expect(logAudit).toHaveBeenCalledWith('actor-1', 'drafting_task', 'task-1', 'CREATE', { plan_id: PROJECT, title: 'LSS-02 drawing' });
+  });
+
+  it('returns 404 when adding a task to a missing plan', async () => {
+    mocked.getPlan.mockResolvedValue(null);
+    expect((await call('POST', `/plans/${PROJECT}/tasks`, { title: 'x' })).status).toBe(404);
+    expect(mocked.createTask).not.toHaveBeenCalled();
+  });
+
+  it('turns a cross-plan group into a 400 instead of a server error', async () => {
+    const { DraftingRuleError } = await import('./repository');
+    mocked.updateTask.mockRejectedValue(new (DraftingRuleError as any)('The selected group belongs to a different plan.'));
+    const r = await call('PATCH', `/tasks/${TEAM}`, { group_id: PROJECT });
+    expect(r.status).toBe(400);
+    expect(r.json.error.message).toMatch(/different plan/);
+  });
+
+  it('changes only the status and reports it in the audit entry', async () => {
+    mocked.updateTask.mockResolvedValue({ id: TEAM, status: 'review' });
+    const r = await call('PATCH', `/tasks/${TEAM}`, { status: 'review' });
+    expect(r.status).toBe(200);
+    expect(mocked.updateTask).toHaveBeenCalledWith(TEAM, { status: 'review' }, 'actor-1');
+    expect(logAudit).toHaveBeenCalledWith('actor-1', 'drafting_task', TEAM, 'UPDATE', { fields: ['status'], status: 'review' });
+  });
+
+  it('deletes a task and returns 404 for an unknown one', async () => {
+    mocked.getTaskPlanId.mockResolvedValueOnce(PROJECT);
+    mocked.deleteTask.mockResolvedValueOnce(true);
+    expect((await call('DELETE', `/tasks/${TEAM}`)).status).toBe(200);
+    mocked.getTaskPlanId.mockResolvedValueOnce(null);
+    expect((await call('DELETE', `/tasks/${TEAM}`)).status).toBe(404);
   });
 
   it('validates plan list filters before querying', async () => {
