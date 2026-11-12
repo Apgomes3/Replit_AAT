@@ -16,14 +16,14 @@ Ground rules (agreed 2026-11-12):
 
 ## Phase 0 — Foundation (make the project safe to work on)
 
-- [ ] **0.1 Commit the local-setup work** · S
+- [x] **0.1 Commit the local-setup work** · S · done 2026-11-12
   Lockfile registry fix, migration ordering fixes, rebuilt purchase-order tables, Replit drift columns,
   `dotenv` load fix, Drafting module v1. Nothing is committed yet.
-- [ ] **0.2 Git hygiene** · S
-  Real `.gitignore` (`node_modules/`, `.env`, `dist/`, `apps/api/uploads/`, `apps/api/private-uploads/`,
-  `screenshots/`, `test-results/`). Stop tracking build output (146 files) and uploaded files.
-  *Decision needed:* also purge the two 25 MB `.dwg` customer files from git **history** (rewrites history;
-  everyone re-clones).
+- [x] **0.2 Git hygiene** · S · done 2026-11-12
+  Real `.gitignore`; `.gitattributes` forcing LF line endings; stopped tracking build output (189 files),
+  uploaded files (15) and Replit screenshots (23) — all still on disk.
+  *Still open (decision):* purge the two 25 MB `.dwg` customer files from git **history**
+  (rewrites history; everyone re-clones). Uploaded files must be copied separately to any new machine/server.
 - [ ] **0.3 Pin Node 22 LTS** · S
   Add `.nvmrc` + `"engines"`. Node 26 (installed now) breaks ~500 web tests through its built-in
   `localStorage`. Quick fallback: run tests with `NODE_OPTIONS=--no-experimental-webstorage`.

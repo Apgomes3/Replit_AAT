@@ -1,0 +1,18 @@
+# Store text files with LF line endings on every OS (Windows checkouts included).
+* text=auto eol=lf
+
+# Binary formats: never touch line endings or diff them as text.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.dwg binary
+*.dxf binary
+*.docx binary
+*.xlsx binary
+*.zip binary
+*.woff binary
+*.woff2 binary
+*.ttf binary

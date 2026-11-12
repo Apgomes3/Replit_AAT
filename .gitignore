@@ -1,2 +1,26 @@
+# Dependencies
+node_modules/
+
+# Local configuration and secrets (copy .env.example to .env)
+.env
+.env.*
+!.env.example
+
+# Build output (always regenerated from source)
+dist/
+*.tsbuildinfo
+
+# Uploaded files: these belong in file storage, not in git
+apps/api/uploads/
+apps/api/private-uploads/
+
+# Test and tool output
 playwright-report/
 test-results/
+coverage/
+screenshots/
+
+# Editor / OS noise
+.DS_Store
+Thumbs.db
+*.log
