@@ -17,6 +17,8 @@ const controlled = {
 
 function Harness() {
   const [form, setForm] = useState<any>({
+    // Maximum TAN belongs to the mass-balance engine; the AAT Core engine hides it.
+    calculation_engine: 'MASS_BALANCE',
     biomass_method: '',
     species_rows: [],
     tan_generation_profile_revision_id: '',

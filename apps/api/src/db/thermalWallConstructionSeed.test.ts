@@ -29,10 +29,12 @@ describe('Thermal wall construction starter library', () => {
     for (const [sql, params] of query.mock.calls) {
       expect(sql).toContain('ON CONFLICT (construction_code, version) DO NOTHING');
       expect(sql).not.toContain('DO UPDATE');
-      expect(params[7]).toBe(THERMAL_WALL_CONSTRUCTION_VERSION);
-      expect(params[8]).toBe(THERMAL_WALL_CONSTRUCTION_SOURCE_BASIS);
-      expect(params[9]).toBe(THERMAL_WALL_CONSTRUCTION_SOURCE_REFERENCE);
-      expect(params[11]).toBe('engineer-1');
+      // Params: code, label, material, conductivity, units, version, basis, reference, notes, approver
+      // (wall thickness is owned by the exhibit tank, so it is not part of the library row).
+      expect(params[5]).toBe(THERMAL_WALL_CONSTRUCTION_VERSION);
+      expect(params[6]).toBe(THERMAL_WALL_CONSTRUCTION_SOURCE_BASIS);
+      expect(params[7]).toBe(THERMAL_WALL_CONSTRUCTION_SOURCE_REFERENCE);
+      expect(params[9]).toBe('engineer-1');
     }
 
     query.mockResolvedValue({ rowCount: 0, rows: [] });

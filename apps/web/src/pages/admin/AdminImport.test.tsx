@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import api from '../../lib/api';
+import { MemoryRouter } from 'react-router-dom';
 import AdminImport from './AdminImport';
 
 vi.mock('../../lib/api', () => ({
@@ -17,7 +18,7 @@ describe('AdminImport component flow', () => {
   });
 
   it('locks required fields and lets optional fields be reset and selected', () => {
-    render(<AdminImport />);
+    render(<MemoryRouter><AdminImport /></MemoryRouter>);
     fireEvent.click(screen.getByRole('button', { name: 'components' }));
 
     const code = screen.getByRole('checkbox', { name: 'component_code' });
@@ -61,7 +62,7 @@ describe('AdminImport component flow', () => {
       },
     });
 
-    render(<AdminImport />);
+    render(<MemoryRouter><AdminImport /></MemoryRouter>);
     fireEvent.click(screen.getByRole('button', { name: 'components' }));
     fireEvent.click(screen.getByRole('checkbox', { name: 'cost' }));
     fireEvent.click(screen.getByRole('button', { name: 'Download Template' }));

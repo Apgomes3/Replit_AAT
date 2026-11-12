@@ -125,7 +125,7 @@ describe('ProductMasterDetail family breadcrumb', () => {
     renderDetail();
 
     await screen.findByText('P-ASSIGNED');
-    await user.click(screen.getAllByRole('button', { name: 'Edit', exact: true })[0]);
+    await user.click(screen.getAllByRole('button', { name: 'Edit' })[0]);
 
     expect(screen.queryByText('Design Flow (m³/h)')).not.toBeInTheDocument();
     expect(screen.queryByText('Design Head (m)')).not.toBeInTheDocument();
@@ -154,7 +154,7 @@ describe('ProductMasterDetail family breadcrumb', () => {
     await user.clear(signalType);
     await user.type(signalType, '0–10 V');
     await user.click(screen.getByRole('checkbox', { name: 'Optional control arrangement' }));
-    await user.click(screen.getAllByRole('button', { name: 'Save', exact: true })[0]);
+    await user.click(screen.getAllByRole('button', { name: 'Save' })[0]);
 
     expect(mocks.put).toHaveBeenCalledWith(
       `/product-masters/${assignedProduct.id}`,

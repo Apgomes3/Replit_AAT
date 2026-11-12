@@ -47,8 +47,14 @@ vi.mock('../db', () => {
           id: projectId,
           project_name: 'Updated Aquarium',
           project_status: 'Active',
+          // Routes use updated_at as the optimistic-concurrency version.
+          updated_at: new Date('2026-11-01T00:00:00.000Z'),
         }],
       };
+    }
+    if (sql.startsWith('insert into po_lifecycle_history')) {
+      // Transitions read back the history row id to link follow-up notifications.
+      return { rows: [{ id: 'history-1' }] };
     }
     if (sql.startsWith('select is_active, role from users')) {
       return { rows: [{ is_active: true, role: 'viewer' }] };
@@ -77,14 +83,19 @@ vi.mock('../db', () => {
     return { rows: [] };
   });
 
+  // Routes run some writes inside transactions; the fake client shares the same query handler.
+  const withTransaction = vi.fn(async (work: (db: { query: typeof query }) => unknown) => work({ query }));
+
   return {
     query,
+    withTransaction,
     default: { query },
   };
 });
 
 vi.mock('../db/notifications', () => ({
   createNotification: vi.fn(),
+  emitNotification: vi.fn(),
   notifyAdminsAndManagers: vi.fn(),
 }));
 
@@ -129,8 +140,10 @@ function request(
             }
             try {
               resolve({ status: res.statusCode ?? 0, body: JSON.parse(response) });
-            } catch (error) {
-              reject(error);
+            } catch {
+              // Surface the server's error page instead of an opaque JSON parse failure.
+              const text = response.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+              reject(new Error(`Non-JSON ${res.statusCode} response: ${text.slice(0, 600)}`));
             }
           });
         });

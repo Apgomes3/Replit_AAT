@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { execFile } from 'node:child_process';
+import { execFile, spawnSync } from 'node:child_process';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import http from 'node:http';
 import os from 'node:os';
@@ -12,6 +12,9 @@ import { projectLssIoSchedule, renderLssIoSchedulePdf } from '../lib/lssIoSchedu
 
 const secret = 'lss-io-schedule-test';
 const execFileAsync = promisify(execFile);
+// PDF text checks need poppler's `pdftotext` (apt: poppler-utils; Windows: install poppler and add to PATH).
+// Without it those checks are reported as skipped instead of failing.
+const pdftotextAvailable = !spawnSync('pdftotext', ['-v']).error;
 const frozenTag = 'LSS-01-PS-HISTORIC-01';
 const frozenInstrument = 'Retired pressure switch';
 const frozenProduct = 'P-OLD — Frozen assigned product';
@@ -37,7 +40,8 @@ const query = vi.fn(async (statement: string | { text: string }) => {
   throw new Error(`Unexpected mutable query: ${sql}`);
 });
 
-vi.mock('../db', () => ({ default: { connect: vi.fn() }, query }));
+// The control route queries through pool.query({ text, values, query_timeout }).
+vi.mock('../db', () => ({ default: { connect: vi.fn(), query }, query }));
 vi.mock('./designBooks', () => ({ loadReleaseContext: vi.fn() }));
 
 function get(app: express.Express, path = '/api/v1/systems/system-1/control/io-schedule.pdf?design_book_id=book-1') {
@@ -124,13 +128,21 @@ describe('LSS I/O schedule', () => {
     expect(response.headers['content-disposition']).toContain('attachment; filename="BOOK-01-lss-io-schedule.pdf"');
     expect(response.body.subarray(0, 5).toString()).toBe('%PDF-');
     expect(response.body.length).toBeGreaterThan(1000);
+    expect(query.mock.calls.map(([sql]) => sql)).not.toContain(expect.stringContaining('product_masters'));
+    expect(query.mock.calls.map(([sql]) => sql)).not.toContain(expect.stringContaining('FROM systems'));
+  });
+
+  it.skipIf(!pdftotextAvailable)('prints the frozen tag, instrument, product and logic in the exported PDF', async () => {
+    process.env.JWT_SECRET = secret;
+    const { default: routes } = await import('./lssControls');
+    const app = express();
+    app.use('/api/v1', routes);
+    const response = await get(app);
     const pdfText = await extractPdfText(response.body);
     expect(pdfText).toContain(frozenTag);
     expect(pdfText).toContain(frozenInstrument);
     expect(pdfText).toContain(frozenProduct);
     expect(pdfText).toContain(frozenLogic);
-    expect(query.mock.calls.map(([sql]) => sql)).not.toContain(expect.stringContaining('product_masters'));
-    expect(query.mock.calls.map(([sql]) => sql)).not.toContain(expect.stringContaining('FROM systems'));
   });
 
   it('serves frozen control evidence without resolving the live system', async () => {

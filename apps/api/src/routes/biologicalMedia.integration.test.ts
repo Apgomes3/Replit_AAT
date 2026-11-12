@@ -173,7 +173,8 @@ afterAll(async () => {
   await database.end();
 });
 
-describe('Biological Media review run PostgreSQL integration', () => {
+// Runs only against a dedicated test database (TEST_DATABASE_URL, see vitest.config.ts).
+describe.skipIf(!process.env.DATABASE_URL)('Biological Media review run PostgreSQL integration', () => {
   it('persists and reads array snapshots without shape changes', async () => {
     const draft = {
       design_book_id: ids.book,

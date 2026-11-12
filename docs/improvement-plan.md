@@ -39,10 +39,11 @@ Ground rules (agreed 2026-11-12):
 - [x] **0.5 README + `.env.example` + one-command setup** · M · done 2026-11-12
   `README.md`, `.env.example`, `npm run setup` (creates DB, migrates, seeds only an empty DB).
   `replit.md` moved to `docs/platform-reference.md` with the Replit-only setup parts replaced.
-- [ ] **0.6 Green checks** · M
-  Fix the 12 failing tests and the 6 web type errors. Give the 3 database integration tests their own
-  throwaway test database (never the real-data one). Add `npm run typecheck` and `npm run check`
-  (typecheck + tests) and run it before every commit.
+- [x] **0.6 Green checks** · M · done 2026-11-12
+  0 type errors, 1,190 tests passing (1 skipped: needs `pdftotext`). Fixed 6 type errors (3 were real UI
+  bugs: missing "+" icon, PO bulk-assign count, CSV error tooltip), 9 stale tests, and 1 real regression
+  (LSS control screen read the live system for issued books). Integration tests now use only
+  `TEST_DATABASE_URL` (`npm run setup -- --test`); added `npm run typecheck` / `npm run check` / `npm run build:api`.
 - [ ] **0.7 CI on GitHub** · S
   GitHub Actions running `npm run check` on every push.
 
@@ -56,6 +57,9 @@ Ground rules (agreed 2026-11-12):
   - Re-run the 2 biological-media runs whose `media_profile_snapshot` / `tan_profile_snapshot` were removed
     by Replit's export sanitizer (marked `{"_export_note": ...}`).
   - ~~Check uploaded files exist~~ — verified: all 8 files referenced by documents and project logos are present.
+  - Remove 32 audit-log rows written by integration tests that ran against `shark_os_replit` on 2026-11-12
+    (15:43–15:54) before the test-database guard existed. They reference 4 test records that no longer exist;
+    no real data was changed.
 - [ ] **1.3 Numbered migrations** · L
   Replace the single 3,600-line schema string with `migrations/0001_baseline.sql`, `0002_...` plus a
   `schema_migrations` table, so each change is recorded, reviewable and runs exactly once.

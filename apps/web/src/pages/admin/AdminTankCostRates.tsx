@@ -169,7 +169,7 @@ export default function AdminTankCostRates() {
       <PageHeader
         title="Tank Cost Rates"
         subtitle="Define material cost rates (per m² of shell surface area) used to estimate tank fabrication costs."
-        actions={<Button onClick={() => setShowNew(true)} icon={Plus}>Add Rate</Button>}
+        actions={<Button onClick={() => setShowNew(true)}><Plus className="w-4 h-4" /> Add Rate</Button>}
       />
 
       <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 flex gap-3 text-sm text-blue-700">

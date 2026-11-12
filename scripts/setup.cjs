@@ -13,6 +13,8 @@ const { spawnSync } = require('child_process');
 const root = path.resolve(__dirname, '..');
 const envPath = path.join(root, '.env');
 const forceSeed = process.argv.includes('--seed');
+// --test prepares the throwaway database named by TEST_DATABASE_URL (used only by `npm test`).
+const testMode = process.argv.includes('--test');
 
 function fail(message) {
   console.error(`\n✖ ${message}`);
@@ -33,6 +35,11 @@ async function main() {
     fail('Created .env from .env.example. Edit DATABASE_URL and JWT_SECRET in .env, then run `npm run setup` again.');
   }
   require('dotenv').config({ path: envPath, quiet: true });
+  if (testMode) {
+    if (!process.env.TEST_DATABASE_URL) fail('Set TEST_DATABASE_URL in .env (a separate database, e.g. .../shark_os_test).');
+    if (process.env.TEST_DATABASE_URL === process.env.DATABASE_URL) fail('TEST_DATABASE_URL must differ from DATABASE_URL — tests create and delete data.');
+    process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
+  }
   const { DATABASE_URL, JWT_SECRET } = process.env;
   if (!DATABASE_URL || DATABASE_URL.includes('CHANGE_ME')) fail('Set DATABASE_URL in .env first.');
   if (!JWT_SECRET || JWT_SECRET.includes('CHANGE_ME')) fail('Set JWT_SECRET in .env to a long random string first.');
@@ -61,6 +68,7 @@ async function main() {
   await adminClient.end();
 
   console.log('→ Running migrations…');
+  // Child processes inherit DATABASE_URL (already switched to the test DB in --test mode).
   runTsx('apps/api/src/db/migrate.ts');
 
   const db = new Client({ connectionString: DATABASE_URL });

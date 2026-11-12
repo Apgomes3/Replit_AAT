@@ -217,7 +217,8 @@ afterAll(async () => {
   await database.end();
 });
 
-describe('POST /design-books/:id/uv/:systemId PostgreSQL integration', () => {
+// Runs only against a dedicated test database (TEST_DATABASE_URL, see vitest.config.ts).
+describe.skipIf(!process.env.DATABASE_URL)('POST /design-books/:id/uv/:systemId PostgreSQL integration', () => {
   it('resolves linked-exhibit Flow Route flow and persists the result snapshot without legacy columns', async () => {
     const legacyColumns = await client.query(
       `SELECT column_name

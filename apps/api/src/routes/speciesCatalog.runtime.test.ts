@@ -1,7 +1,12 @@
 import { ChildProcess, spawn } from 'child_process';
+import { existsSync } from 'fs';
 import jwt from 'jsonwebtoken';
 import { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+
+// Needs a dedicated test database (TEST_DATABASE_URL, seeded with the demo users) and a
+// compiled API (`npx tsc -p apps/api/tsconfig.json`), because it boots apps/api/dist.
+const runtimeReady = Boolean(process.env.DATABASE_URL) && existsSync(`${process.cwd()}/apps/api/dist/index.js`);
 
 const port = 31_000 + Math.floor(Math.random() * 1_000);
 const baseUrl = `http://127.0.0.1:${port}/api/v1`;
@@ -42,7 +47,7 @@ afterAll(async () => {
   await db.end();
 });
 
-describe('compiled species catalog runtime', () => {
+describe.skipIf(!runtimeReady)('compiled species catalog runtime', () => {
   it('preserves every legacy field while inserting missing reviewed identities on reseed', async () => {
     const compiledSeed = require(`${process.cwd()}/apps/api/dist/db/speciesCatalogSeed.js`) as {
       seedSpeciesCatalog: (client: any, userId: string | null) => Promise<number>;

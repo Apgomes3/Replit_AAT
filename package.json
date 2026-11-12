@@ -14,6 +14,9 @@
     "test:browser:quotes": "QUOTE_PRODUCT_E2E=1 PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=\"$(command -v chromium)\" playwright test apps/web/e2e/enquiry-quote-products.spec.ts --project=mobile-chromium",
     "test:browser:mobile": "PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=\"$(command -v chromium)\" playwright test apps/web/e2e/lss-control-panel.mobile.spec.ts --project=mobile-chromium",
     "test": "vitest run",
+    "typecheck": "tsc -p apps/api/tsconfig.json --noEmit && tsc -p apps/web/tsconfig.json --noEmit",
+    "check": "npm run typecheck && npm test",
+    "build:api": "tsc -p apps/api/tsconfig.json",
     "test:watch": "vitest"
   },
   "keywords": [],

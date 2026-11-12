@@ -184,7 +184,7 @@ export default function PipingCsvImport({ onClose, onImported }: Props) {
                         <td className="px-3 py-1.5">
                           {row._valid
                             ? <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />
-                            : <AlertCircle className="w-3.5 h-3.5 text-red-400" title={row._error} />}
+                            : <span title={row._error} aria-label={row._error}><AlertCircle className="w-3.5 h-3.5 text-red-400" /></span>}
                         </td>
                         <td className="px-3 py-1.5 font-mono text-slate-700">{row.product_code || <span className="text-red-400 italic">missing</span>}</td>
                         <td className="px-3 py-1.5 text-slate-700">{row.product_name || <span className="text-red-400 italic">missing</span>}</td>

@@ -213,7 +213,7 @@ describe('ProductMastersList obsolete visibility', () => {
     await user.click(screen.getByRole('button', { name: 'Edit Mode' }));
     await user.click(screen.getByRole('button', { name: 'Delete P-ACTIVE' }));
     expect(screen.getByRole('heading', { name: 'Delete product?' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Delete', exact: true }));
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
 
     await waitFor(() => {
       expect(mocks.delete).toHaveBeenCalledWith('/product-masters/active-1');

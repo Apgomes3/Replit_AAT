@@ -139,6 +139,11 @@ async function bookAndSystem(bookId: string, systemId: string, runner: DbRunner 
     [bookId],
   )).rows[0] || null;
   if (!book) return { book: null, system: null };
+  // Issued books (review/approved/released) are served only from their frozen
+  // snapshot, so the live system must not be consulted for them.
+  if (book.status === 'Released' || ['For Review', 'Approved'].includes(book.status)) {
+    return { book, system: null };
+  }
   const system = (await runner(
     'SELECT * FROM systems WHERE id=$1 AND project_id=$2',
     [systemId, book.project_id],

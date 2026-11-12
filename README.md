@@ -61,7 +61,10 @@ Copy `.env.example` (done for you by `npm run setup`). `.env` is git-ignored.
 | `npm run setup` | Create DB if needed, migrate, seed an empty DB |
 | `npm run migrate` | Apply the schema (idempotent) |
 | `npm run seed` | Load the demo dataset |
+| `npm run check` | Type-check everything, then run all tests |
+| `npm run typecheck` | Type-check API and web |
 | `npm test` | Unit/component tests (Vitest) |
+| `npm run build:api` | Compile the API to `apps/api/dist` |
 | `npm run test:browser` | Browser tests (Playwright) |
 | `npm run species:catalog:seed` | Load the aquarium species catalogue |
 
@@ -99,11 +102,18 @@ Schema changes always go through the migration — never edit a database by hand
 ## Testing
 
 ```bash
-npm test                                   # everything
+npm run check                              # type-check API + web, then all tests — run before every commit
+npm test                                   # tests only
 npx vitest run apps/api/src/modules/drafting   # one folder
 ```
 
-Database integration tests are being moved to a dedicated test database (see the improvement plan, item 0.6).
+**Database integration tests** run only against a separate throwaway database set in
+`TEST_DATABASE_URL` (in `.env`). Prepare it once with `npm run setup -- --test`. Tests never see
+your normal `DATABASE_URL`; without `TEST_DATABASE_URL` they are skipped. The species-catalog
+runtime test also needs a compiled API (`npm run build:api`).
+
+The PDF text check in `lssIoSchedule.test.ts` needs poppler's `pdftotext` on the PATH; it is
+reported as skipped when missing.
 
 ## Troubleshooting
 

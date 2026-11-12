@@ -83,12 +83,12 @@ describe('Thermal wall construction administration', () => {
     const user = userEvent.setup();
     renderPage();
 
-    expect(await screen.findByRole('heading', { name: 'Thermal Wall Constructions' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Thermal Wall Materials' })).toBeVisible();
     expect(await screen.findByText('WALL-V2')).toBeVisible();
 
-    await user.click(screen.getByRole('button', { name: 'Manage wall defaults' }));
+    await user.click(screen.getByRole('button', { name: 'Manage conductivity' }));
 
-    expect(await screen.findByText('Approved and superseded history')).toBeVisible();
+    expect(await screen.findByText('Approved and superseded conductivity history')).toBeVisible();
     expect(screen.getByText(/Acrylic · WALL-V1/)).toBeVisible();
     expect(screen.getAllByText(/Superseded/).length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: 'Preview and approve' })).toBeDisabled();

@@ -795,10 +795,9 @@ export default function PurchaseOrdersList() {
 
       {showAssign && (
         <AssignUserModal
-          poIds={[...selectedIds]}
+          selectedCount={selectedIds.size}
           onClose={() => setShowAssign(false)}
           onAssign={(userId) => bulkAssignMutation.mutate({ ids: [...selectedIds], userId })}
-          isPending={bulkAssignMutation.isPending}
         />
       )}
       {showCreate && <CreatePOModal onClose={() => setShowCreate(false)} />}
