@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel an in-progress run when a newer commit is pushed to the same branch/PR.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Type-check and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install pdftotext (PDF text assertions)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq poppler-utils
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Write CI .env
+        # Throwaway CI-only values. DATABASE_URL is never used by tests; it only has to differ
+        # from TEST_DATABASE_URL so the setup script's safety check passes.
+        run: |
+          cat > .env <<'EOF'
+          DATABASE_URL=postgresql://postgres:postgres@localhost:5432/shark_os
+          TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/shark_os_test
+          JWT_SECRET=ci-only-jwt-secret-not-used-for-real-logins
+          APP_URL=http://localhost:5000
+          NODE_ENV=development
+          EOF
+
+      - name: Prepare test database (create, migrate, seed)
+        run: npm run setup -- --test
+
+      - name: Build API (needed by the species-catalog runtime test)
+        run: npm run build:api
+
+      - name: Type-check and run tests
+        run: npm run check
