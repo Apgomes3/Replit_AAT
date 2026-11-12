@@ -22,8 +22,9 @@ Ground rules (agreed 2026-11-12):
 - [x] **0.2 Git hygiene** · S · done 2026-11-12
   Real `.gitignore`; `.gitattributes` forcing LF line endings; stopped tracking build output (189 files),
   uploaded files (15) and Replit screenshots (23) — all still on disk.
-  *Still open (decision):* purge the two 25 MB `.dwg` customer files from git **history**
-  (rewrites history; everyone re-clones). Uploaded files must be copied separately to any new machine/server.
+  The two 25 MB `.dwg` files are **in use** (documents DESIGN-001/002, Alibaug Koi Pond) so they stay on
+  disk; history is not rewritten (decided 2026-11-12). Uploaded files must be copied separately to any
+  new machine/server.
 - [x] **0.3 Node version** · S · done 2026-11-12
   Node 26 is the current LTS, so the project targets it (`.nvmrc` = 26, `engines` >= 22) instead of
   downgrading. `vitest.config.ts` disables Node's built-in Web Storage in test workers on Node 25+, which
@@ -32,10 +33,10 @@ Ground rules (agreed 2026-11-12):
   Deleted `apps/api/package.json` + pnpm files, `apps/web/package-lock.json`, `main.py`, `pyproject.toml`,
   `.replit`, `scripts/post-merge.sh`. `apps/web/package.json` slimmed to its `"type": "module"` marker.
   (`replit.md` is folded into the README in 0.5.)
-- [ ] **0.4b Decide on Replit-era folders** · S — *decision needed*
-  `artifacts/` (Replit mock-up sandbox + bio-degas 3D prototype, plus the `/__mockup` Vite proxy),
-  `.agents/` (Replit agent notes — contain useful domain knowledge, could move to `docs/knowledge/`),
-  `attached_assets/` (original specs + pasted prompts — specs could move to `docs/specs/`).
+- [x] **0.4b Replit-era folders** · S · done 2026-11-12
+  Deleted `artifacts/` (mock-up sandbox, 3D prototype) and the `/__mockup` Vite proxy, the Replit agent
+  scripts/outputs and 179 pasted screenshots. Kept the knowledge: 64 engineering rule notes →
+  `docs/knowledge/`; 12 original specs, 5 calculation-spec .docx and 11 pasted notes → `docs/specs/`.
 - [x] **0.5 README + `.env.example` + one-command setup** · M · done 2026-11-12
   `README.md`, `.env.example`, `npm run setup` (creates DB, migrates, seeds only an empty DB).
   `replit.md` moved to `docs/platform-reference.md` with the Replit-only setup parts replaced.
@@ -44,8 +45,9 @@ Ground rules (agreed 2026-11-12):
   bugs: missing "+" icon, PO bulk-assign count, CSV error tooltip), 9 stale tests, and 1 real regression
   (LSS control screen read the live system for issued books). Integration tests now use only
   `TEST_DATABASE_URL` (`npm run setup -- --test`); added `npm run typecheck` / `npm run check` / `npm run build:api`.
-- [ ] **0.7 CI on GitHub** · S
-  GitHub Actions running `npm run check` on every push.
+- [x] **0.7 CI on GitHub** · S · done 2026-11-12
+  `.github/workflows/ci.yml`: Postgres 16 service, `npm ci`, test DB setup, API build, `npm run check`
+  (pdftotext installed, so nothing is skipped). First run green in ~2.5 minutes.
 
 ## Phase 1 — Data and schema
 

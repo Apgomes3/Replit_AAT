@@ -1,5 +1,7 @@
 # Shark OS
 
+[![CI](https://github.com/Apgomes3/Replit_AAT/actions/workflows/ci.yml/badge.svg)](https://github.com/Apgomes3/Replit_AAT/actions/workflows/ci.yml)
+
 Engineering operations platform for Advanced Aquarium Technologies: product catalogue (PIM),
 projects and systems, design books with LSS engineering calculations, purchase orders,
 business development and drafting.
@@ -84,6 +86,8 @@ apps/
     components/         layout and shared UI
     lib/, store/, hooks/, types/
 docs/                   improvement plan, platform reference, operations
+  knowledge/            engineering rules and design decisions (one note per topic)
+  specs/                original platform specs and calculation specifications
 scripts/                setup script
 ```
 
@@ -114,6 +118,10 @@ runtime test also needs a compiled API (`npm run build:api`).
 
 The PDF text check in `lssIoSchedule.test.ts` needs poppler's `pdftotext` on the PATH; it is
 reported as skipped when missing.
+
+**CI** (`.github/workflows/ci.yml`) runs on every push to `main` and every pull request: it starts
+PostgreSQL 16, prepares the test database, builds the API and runs `npm run check`, including the
+database integration tests and the PDF text check.
 
 ## Troubleshooting
 
