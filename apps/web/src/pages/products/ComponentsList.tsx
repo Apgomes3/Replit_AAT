@@ -12,6 +12,7 @@ import { Plus, X, Copy, Pencil, Download, Boxes, Trash2 } from 'lucide-react';
 import { exportCsv } from '../../lib/exportCsv';
 import InlineStatusSelect from '../../components/ui/InlineStatusSelect';
 import toast from 'react-hot-toast';
+import { SUPPORTED_CURRENCIES } from '../../lib/currencies';
 
 const COMPONENT_TYPES = ['Vessel', 'Pump', 'Blower', 'Motor', 'Valve', 'Instrument', 'Pipe', 'Fitting', 'Sensor', 'Controller', 'Frame', 'Filter', 'Heat Exchanger', 'Other'];
 const CATEGORIES = ['Mechanical', 'Electrical', 'Instrumentation', 'Civil', 'Piping', 'Structural'];
@@ -432,7 +433,7 @@ export default function ComponentsList() {
                 <label className="block text-xs font-medium text-slate-600 mb-1">Currency</label>
                 <select value={form.currency} onChange={e => setForm(f => ({ ...f, currency: e.target.value }))}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
-                  {['USD','CNY','AUD','NZD','EUR'].map(currency => <option key={currency}>{currency}</option>)}
+                  {SUPPORTED_CURRENCIES.map(currency => <option key={currency}>{currency}</option>)}
                 </select>
               </div>
             </div>
@@ -543,7 +544,7 @@ export default function ComponentsList() {
                 <label className="block text-xs font-medium text-slate-600 mb-1">Currency</label>
                 <select value={editForm.currency} onChange={e => setEditForm((f: any) => ({ ...f, currency: e.target.value }))}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
-                  {['USD','CNY','AUD','NZD','EUR'].map(currency => <option key={currency}>{currency}</option>)}
+                  {SUPPORTED_CURRENCIES.map(currency => <option key={currency}>{currency}</option>)}
                 </select>
               </div>
               <div className="col-span-2">

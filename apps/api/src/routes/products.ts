@@ -7,6 +7,7 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import { calculateWaterSurfaceAreaM2 } from '../lib/tankCalculations';
+import { isSupportedCurrency, SUPPORTED_CURRENCY_TEXT } from '../lib/currencies';
 
 const uploadsDir = path.join(__dirname, '../../uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
@@ -1283,8 +1284,8 @@ router.post('/vendor-options', authenticate, requireModuleManage('pim'), async (
   if (unitPrice !== null && (!Number.isFinite(unitPrice) || unitPrice < 0)) {
     return res.status(400).json({ error: { code: 'INVALID_PRICE', message: 'Vendor price must be a non-negative number.' } });
   }
-  if (!['USD','CNY','AUD','NZD','EUR'].includes(currency)) {
-    return res.status(400).json({ error: { code: 'INVALID_CURRENCY', message: 'Currency must be USD, RMB, AUD, NZD, or EUR.' } });
+  if (!isSupportedCurrency(currency)) {
+    return res.status(400).json({ error: { code: 'INVALID_CURRENCY', message: `Currency must be ${SUPPORTED_CURRENCY_TEXT}.` } });
   }
   try {
     const created = await withProductTransaction(async client => {
@@ -1316,7 +1317,7 @@ router.put('/vendor-options/:id', authenticate, requireModuleManage('pim'), asyn
   const currency = String(req.body.currency || 'USD').trim().toUpperCase();
   if (!String(req.body.vendor_name || '').trim()) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'Vendor is required.' } });
   if (unitPrice !== null && (!Number.isFinite(unitPrice) || unitPrice < 0)) return res.status(400).json({ error: { code: 'INVALID_PRICE', message: 'Vendor price must be a non-negative number.' } });
-  if (!['USD','CNY','AUD','NZD','EUR'].includes(currency)) return res.status(400).json({ error: { code: 'INVALID_CURRENCY', message: 'Currency must be USD, RMB, AUD, NZD, or EUR.' } });
+  if (!isSupportedCurrency(currency)) return res.status(400).json({ error: { code: 'INVALID_CURRENCY', message: `Currency must be ${SUPPORTED_CURRENCY_TEXT}.` } });
   const result = await query(
     `UPDATE vendor_options SET vendor_name=$1,manufacturer_name=$2,vendor_item_code=$3,approved_status=$4,
        lead_time_days=$5,region_scope=$6,unit_price=$7,currency=$8,updated_at=NOW()
@@ -1401,7 +1402,7 @@ router.post('/components', authenticate, requireModuleManage('pim'), async (req:
     if ((costVal !== null && (!Number.isFinite(costVal) || costVal < 0)) || (sellVal !== null && (!Number.isFinite(sellVal) || sellVal < 0))) {
       return res.status(400).json({ error: { code: 'INVALID_PRICE', message: 'Cost and sell price must be non-negative numbers.' } });
     }
-    if (!['USD','CNY','AUD','NZD','EUR'].includes(currency)) return res.status(400).json({ error: { code: 'INVALID_CURRENCY', message: 'Unsupported component currency.' } });
+    if (!isSupportedCurrency(currency)) return res.status(400).json({ error: { code: 'INVALID_CURRENCY', message: 'Unsupported component currency.' } });
     const result = await query(
       'INSERT INTO components (component_code, component_name, component_type, component_category, description, primary_material_code, standard_size, weight_kg, unit, status, notes, created_by, cost, sell_price, currency, manufacturer, model) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *',
       [component_code, component_name, component_type || 'Vessel', component_category || 'Mechanical', description || null, pmCode, standard_size || null, wkg, unit || 'EA', status || 'Active', notes || null, req.user!.id, costVal, sellVal, currency, manufacturer || null, model || null]);
@@ -1433,7 +1434,7 @@ router.put('/components/:id', authenticate, requireModuleManage('pim'), async (r
     const sellVal = (sell_price === null || sell_price === undefined || sell_price === '') ? null : parseFloat(String(sell_price));
     const currency = String(req.body.currency || 'USD').toUpperCase();
     if ((costVal !== null && (!Number.isFinite(costVal) || costVal < 0)) || (sellVal !== null && (!Number.isFinite(sellVal) || sellVal < 0))) return res.status(400).json({ error: { code: 'INVALID_PRICE', message: 'Cost and sell price must be non-negative numbers.' } });
-    if (!['USD','CNY','AUD','NZD','EUR'].includes(currency)) return res.status(400).json({ error: { code: 'INVALID_CURRENCY', message: 'Unsupported component currency.' } });
+    if (!isSupportedCurrency(currency)) return res.status(400).json({ error: { code: 'INVALID_CURRENCY', message: 'Unsupported component currency.' } });
     const result = await query(
       'UPDATE components SET component_code=COALESCE($1, component_code), component_name=$2, component_type=$3, component_category=$4, description=$5, primary_material_code=$6, standard_size=$7, weight_kg=$8, unit=$9, status=$10, notes=$11, synonyms=$12, cost=$13, sell_price=$14, currency=$15, manufacturer=$16, model=$17, updated_at=NOW() WHERE id=$18 RETURNING *',
       [componentCode, component_name, component_type, component_category, description, primary_material_code || null, standard_size, weight_kg, unit, status, notes, synonymsArr, costVal, sellVal, currency, manufacturer || null, model || null, req.params.id]);

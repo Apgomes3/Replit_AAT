@@ -14,6 +14,7 @@ import toast from 'react-hot-toast';
 import { Pencil, Copy, X, Check, FileText, FileCheck, FileSearch, Wrench, Award, Ruler, Box, Zap, Network, Upload, Plus, Tag, Link2, Unlink } from 'lucide-react';
 import ActivityLog from '../../components/ui/ActivityLog';
 import { Document } from '../../types';
+import { SUPPORTED_CURRENCIES } from '../../lib/currencies';
 
 type Tab = 'specs' | 'drawings' | 'documents' | 'variants' | 'activity';
 
@@ -436,7 +437,7 @@ export default function ComponentDetail() {
                        <label className="block text-xs font-medium text-slate-600 mb-1">Currency</label>
                        <select value={form.currency} onChange={e => setForm((f: any) => ({ ...f, currency: e.target.value }))}
                          className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600">
-                         {['USD','CNY','AUD','NZD','EUR'].map(currency => <option key={currency}>{currency}</option>)}
+                         {SUPPORTED_CURRENCIES.map(currency => <option key={currency}>{currency}</option>)}
                        </select>
                      </div>
                     <div className="col-span-2">

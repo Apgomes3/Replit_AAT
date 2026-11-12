@@ -5,6 +5,7 @@ import pool, { query } from '../db';
 import { authenticate, AuthRequest, requireModuleAccess, requireModuleManage } from '../middleware/auth';
 import { isLifeSupportSystem } from '../lib/lssSystems';
 import { isControlValveCode } from '../lib/lssControls';
+import { SUPPORTED_CURRENCIES } from '../lib/currencies';
 
 const router = Router();
 router.use(authenticate, requireModuleAccess('design_books'));
@@ -27,7 +28,7 @@ export const equipmentCurrencyNumberFormat = (value: any) => ({
   NZD: '"NZ$"#,##0.00',
   EUR: '€#,##0.00',
 }[normalizeEquipmentCurrency(value)] || '"$"#,##0.00');
-const supportedCurrencies = new Set(['USD', 'CNY', 'AUD', 'NZD', 'EUR']);
+const supportedCurrencies = new Set<string>(SUPPORTED_CURRENCIES);
 const roundMoney = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
 export const calculateEquipmentPricing = (row: any) => {
   const unitCost = numberOrNull(row?.unit_cost);

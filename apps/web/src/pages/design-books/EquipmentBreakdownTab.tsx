@@ -4,6 +4,7 @@ import { Columns3, Download, GripVertical, RefreshCw, Plus, Trash2, PackageCheck
 import toast from 'react-hot-toast';
 import api from '../../lib/api';
 import { getLssSystems } from './ControlFieldInstrumentsTab';
+import { CURRENCY_OPTIONS } from '../../lib/currencies';
 
 type Props = { book: any; readOnly: boolean };
 const editable = ['description','quantity','unit','supplier','manufacturer','model','unit_cost','markup','currency','lead_time','exclusions','notes'];
@@ -24,10 +25,7 @@ const columns = [
   { key: 'exclusions', label: 'Exclusions' },
   { key: 'notes', label: 'Notes' },
 ];
-const currencies = [
-  { value: 'USD', label: 'USD' }, { value: 'CNY', label: 'RMB' }, { value: 'AUD', label: 'AUD' },
-  { value: 'NZD', label: 'NZD' }, { value: 'EUR', label: 'EUR' },
-];
+const currencies = CURRENCY_OPTIONS;
 
 export function reorderEquipmentRows(rows: any[], draggedId: string, boundaryIndex: number) {
   const fromIndex = rows.findIndex(row => row.id === draggedId);

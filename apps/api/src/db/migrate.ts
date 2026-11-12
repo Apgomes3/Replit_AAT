@@ -1105,13 +1105,18 @@ WHERE NOT EXISTS (SELECT 1 FROM tank_cost_rates WHERE material_code = 'MAT-FRP-V
 
 -- PLATFORM EXCHANGE RATES (currency units per 1 USD)
 CREATE TABLE IF NOT EXISTS platform_exchange_rates (
-  currency_code VARCHAR(3) PRIMARY KEY CHECK (currency_code IN ('USD','CNY','AUD','NZD','EUR')),
+  currency_code VARCHAR(3) PRIMARY KEY,
   rate_per_usd NUMERIC(18,8) CHECK (rate_per_usd IS NULL OR rate_per_usd > 0),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_by UUID REFERENCES users(id) ON DELETE SET NULL
 );
+-- Supported currencies (keep in sync with apps/api/src/lib/currencies.ts). GBP and ZAR added 2026-11-12
+-- for the ASW price list; recreating the CHECK also upgrades existing databases.
+ALTER TABLE platform_exchange_rates DROP CONSTRAINT IF EXISTS platform_exchange_rates_currency_code_check;
+ALTER TABLE platform_exchange_rates ADD CONSTRAINT platform_exchange_rates_currency_code_check
+  CHECK (currency_code IN ('USD','CNY','AUD','NZD','EUR','GBP','ZAR'));
 INSERT INTO platform_exchange_rates (currency_code, rate_per_usd)
-VALUES ('USD',1),('CNY',NULL),('AUD',NULL),('NZD',NULL),('EUR',NULL)
+VALUES ('USD',1),('CNY',NULL),('AUD',NULL),('NZD',NULL),('EUR',NULL),('GBP',NULL),('ZAR',NULL)
 ON CONFLICT (currency_code) DO NOTHING;
 
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS project_scopes TEXT[] DEFAULT ARRAY['LSS','Tanks','Waterproofing','Theming','Acrylic'];

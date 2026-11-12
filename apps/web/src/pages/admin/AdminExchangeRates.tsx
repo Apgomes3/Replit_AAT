@@ -5,9 +5,10 @@ import { DollarSign, Info } from 'lucide-react';
 import api from '../../lib/api';
 import PageHeader from '../../components/ui/PageHeader';
 import Button from '../../components/ui/Button';
+import { CURRENCY_LABELS } from '../../lib/currencies';
 
 type Rate = { currency_code: string; rate_per_usd: number | null; updated_at: string };
-const labels: Record<string, string> = { USD: 'USD', CNY: 'RMB', AUD: 'AUD', NZD: 'NZD', EUR: 'EUR' };
+const labels = CURRENCY_LABELS;
 
 export default function AdminExchangeRates() {
   const qc = useQueryClient();

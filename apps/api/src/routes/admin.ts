@@ -10,6 +10,7 @@ import { sendPasswordResetEmail, sendInviteEmail, isSmtpConfigured } from '../li
 import multer from 'multer';
 import csv from 'csv-parser';
 import { Readable } from 'stream';
+import { SUPPORTED_CURRENCIES } from '../lib/currencies';
 
 const router = Router();
 const uploadUserCsv = multer({
@@ -1277,7 +1278,7 @@ router.delete('/tank-cost-rates/:id', authenticate, requireRole('admin'), async 
   res.status(204).end();
 });
 
-const exchangeCurrencies = new Set(['USD', 'CNY', 'AUD', 'NZD', 'EUR']);
+const exchangeCurrencies = new Set<string>(SUPPORTED_CURRENCIES);
 router.get('/exchange-rates', authenticate, async (_req, res: Response) => {
   const result = await query(`SELECT currency_code,rate_per_usd,updated_at
     FROM platform_exchange_rates ORDER BY CASE currency_code WHEN 'USD' THEN 0 WHEN 'CNY' THEN 1 WHEN 'AUD' THEN 2 WHEN 'NZD' THEN 3 ELSE 4 END`);
