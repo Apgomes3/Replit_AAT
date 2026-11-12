@@ -1451,7 +1451,7 @@ export default function ProductMasterDetail() {
                   <label className="block text-xs font-medium text-slate-600 mb-1">Currency</label>
                   <select value={editForm.currency} onChange={e => setEditForm((f: any) => ({ ...f, currency: e.target.value }))}
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 bg-white">
-                    {['USD','EUR','GBP','AED','SAR','SGD','AUD','CAD','JPY','CNY'].map(c => <option key={c}>{c}</option>)}
+                    {SUPPORTED_CURRENCIES.map(c => <option key={c}>{c}</option>)}
                   </select>
                 </div>
                 <div>
@@ -1612,7 +1612,7 @@ export default function ProductMasterDetail() {
                   <label className="block text-xs font-medium text-slate-600 mb-1">Currency</label>
                   <select value={editForm.currency} onChange={e => setEditForm((f: any) => ({ ...f, currency: e.target.value }))}
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 bg-white">
-                    {['USD','EUR','GBP','AED','SAR','SGD','AUD','CAD','JPY','CNY'].map(c => <option key={c}>{c}</option>)}
+                    {SUPPORTED_CURRENCIES.map(c => <option key={c}>{c}</option>)}
                   </select>
                 </div>
                 <div>

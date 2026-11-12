@@ -1,3 +1,4 @@
+import { SUPPORTED_CURRENCIES } from '../../lib/currencies';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
@@ -6,7 +7,7 @@ import toast from 'react-hot-toast';
 import EntityCode from '../../components/ui/EntityCode';
 import { X, ShoppingCart, Lock } from 'lucide-react';
 
-const CURRENCIES = ['USD', 'EUR', 'GBP', 'AED', 'SAR', 'SGD', 'AUD', 'CAD', 'JPY', 'CNY'];
+const CURRENCIES = SUPPORTED_CURRENCIES;
 
 type Item = {
   id: string;

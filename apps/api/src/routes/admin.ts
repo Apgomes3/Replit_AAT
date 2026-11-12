@@ -1281,7 +1281,7 @@ router.delete('/tank-cost-rates/:id', authenticate, requireRole('admin'), async 
 const exchangeCurrencies = new Set<string>(SUPPORTED_CURRENCIES);
 router.get('/exchange-rates', authenticate, async (_req, res: Response) => {
   const result = await query(`SELECT currency_code,rate_per_usd,updated_at
-    FROM platform_exchange_rates ORDER BY CASE currency_code WHEN 'USD' THEN 0 WHEN 'CNY' THEN 1 WHEN 'AUD' THEN 2 WHEN 'NZD' THEN 3 ELSE 4 END`);
+    FROM platform_exchange_rates ORDER BY array_position($1::text[], currency_code::text)`, [SUPPORTED_CURRENCIES]);
   res.json({ items: result.rows });
 });
 

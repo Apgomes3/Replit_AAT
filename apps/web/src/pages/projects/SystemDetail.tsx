@@ -1,3 +1,4 @@
+import { SUPPORTED_CURRENCIES } from '../../lib/currencies';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useParams, useNavigate, Link } from 'react-router-dom';
 import { useState, useEffect, useRef } from 'react';
@@ -1273,7 +1274,7 @@ export default function SystemDetail() {
                         onChange={e => setQuickPOCurrency(e.target.value)}
                         className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-blue-600"
                       >
-                        {['USD', 'EUR', 'GBP', 'TWD', 'JPY', 'CNY', 'SGD'].map(c => <option key={c}>{c}</option>)}
+                        {SUPPORTED_CURRENCIES.map(c => <option key={c}>{c}</option>)}
                       </select>
                     </div>
                   </div>

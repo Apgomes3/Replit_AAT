@@ -135,16 +135,16 @@ router.get('/purchase-orders/users', authenticate, async (_req: AuthRequest, res
   res.json({ items: r.rows });
 });
 
-// EXCHANGE RATES PROXY — fetches live rates from Frankfurter server-side (no browser CORS issues)
+// EXCHANGE RATES — the app's own rates (Admin › Exchange Rates, units per 1 USD), the same source every
+// other module uses. Replaces the former live Frankfurter feed (decided 2026-11-12). Currencies without
+// a rate are omitted so the screen shows "—" instead of a guessed conversion.
 router.get('/purchase-orders/exchange-rates', authenticate, async (_req: AuthRequest, res: Response) => {
-  try {
-    const response = await fetch('https://api.frankfurter.app/latest?from=USD');
-    if (!response.ok) throw new Error(`Frankfurter returned ${response.status}`);
-    const data = await response.json() as { rates: Record<string, number>; date: string };
-    res.json({ rates: data.rates, date: data.date });
-  } catch (err: any) {
-    res.status(502).json({ error: 'Failed to fetch exchange rates', detail: err?.message });
-  }
+  const result = await query(
+    `SELECT currency_code, rate_per_usd::float AS rate, updated_at FROM platform_exchange_rates WHERE rate_per_usd IS NOT NULL`,
+  );
+  const rates = Object.fromEntries(result.rows.map((r: any) => [r.currency_code, r.rate]));
+  const latest = result.rows.reduce((max: Date | null, r: any) => (!max || r.updated_at > max ? r.updated_at : max), null);
+  res.json({ rates, date: latest ? new Date(latest).toISOString().slice(0, 10) : null, source: 'app' });
 });
 
 // VENDOR SEARCH (known vendors from visible purchase orders)

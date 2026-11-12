@@ -1110,13 +1110,15 @@ CREATE TABLE IF NOT EXISTS platform_exchange_rates (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_by UUID REFERENCES users(id) ON DELETE SET NULL
 );
--- Supported currencies (keep in sync with apps/api/src/lib/currencies.ts). GBP and ZAR added 2026-11-12
--- for the ASW price list; recreating the CHECK also upgrades existing databases.
+-- The one list of supported currencies (keep in sync with apps/api/src/lib/currencies.ts); recreating the
+-- CHECK also upgrades existing databases. AED and SAR start at their official USD pegs; the others start
+-- empty until set in Admin › Exchange Rates.
 ALTER TABLE platform_exchange_rates DROP CONSTRAINT IF EXISTS platform_exchange_rates_currency_code_check;
 ALTER TABLE platform_exchange_rates ADD CONSTRAINT platform_exchange_rates_currency_code_check
-  CHECK (currency_code IN ('USD','CNY','AUD','NZD','EUR','GBP','ZAR'));
+  CHECK (currency_code IN ('USD','CNY','AUD','NZD','EUR','GBP','ZAR','AED','SAR','SGD','CAD','JPY','TWD'));
 INSERT INTO platform_exchange_rates (currency_code, rate_per_usd)
-VALUES ('USD',1),('CNY',NULL),('AUD',NULL),('NZD',NULL),('EUR',NULL),('GBP',NULL),('ZAR',NULL)
+VALUES ('USD',1),('CNY',NULL),('AUD',NULL),('NZD',NULL),('EUR',NULL),('GBP',NULL),('ZAR',NULL),
+       ('AED',3.6725),('SAR',3.75),('SGD',NULL),('CAD',NULL),('JPY',NULL),('TWD',NULL)
 ON CONFLICT (currency_code) DO NOTHING;
 
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS project_scopes TEXT[] DEFAULT ARRAY['LSS','Tanks','Waterproofing','Theming','Acrylic'];

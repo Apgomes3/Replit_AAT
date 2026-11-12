@@ -33,7 +33,7 @@ export default function AdminExchangeRates() {
     } finally { setSaving(null); }
   };
   return <div className="mx-auto max-w-3xl space-y-6 p-6">
-    <PageHeader title="Exchange Rates" subtitle="Set the fixed currency rates used by Equipment Breakdown pricing." />
+    <PageHeader title="Exchange Rates" subtitle="The one set of currency rates used across Shark OS: product and component pricing, purchase orders, equipment breakdowns and price-list imports." />
     <div className="flex gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
       <Info className="mt-0.5 h-4 w-4 shrink-0" />
       <span>Enter how many units of each currency equal <strong>1 USD</strong>. USD is fixed at 1. Changing a line currency converts its Unit Cost and recalculates Selling Price and Total Price.</span>

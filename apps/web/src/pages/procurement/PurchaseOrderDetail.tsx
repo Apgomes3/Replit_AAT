@@ -1,3 +1,4 @@
+import { convertCurrency, SUPPORTED_CURRENCIES } from '../../lib/currencies';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, Link, useLocation } from 'react-router-dom';
 import { useRecordTitle } from '../../hooks/usePageTitle';
@@ -30,7 +31,7 @@ const STATUS_META: Record<string, { label: string; color: string; dot: string }>
   released:           { label: 'Released',           color: 'bg-green-100 text-green-700',   dot: 'bg-green-500' },
 };
 
-const CURRENCIES = ['USD', 'EUR', 'GBP', 'AED', 'SAR', 'SGD', 'AUD', 'CAD', 'JPY', 'CNY'];
+const CURRENCIES = SUPPORTED_CURRENCIES;
 
 function POStatusBadge({ status }: { status: string }) {
   const meta = STATUS_META[status] || { label: status, color: 'bg-slate-100 text-slate-600', dot: 'bg-slate-400' };
@@ -101,19 +102,15 @@ function LifecycleBar({ status }: { status: string }) {
   );
 }
 
-const PEGGED_RATES_FROM_USD: Record<string, number> = {
-  AED: 3.6725,
-  SAR: 3.75,
-};
-
+/** The app's exchange rates (Admin › Exchange Rates), the same source as the rest of Shark OS. */
 function useExchangeRates() {
-  const [rates, setRates] = useState<Record<string, number>>({ USD: 1, ...PEGGED_RATES_FROM_USD });
+  const [rates, setRates] = useState<Record<string, number>>({ USD: 1 });
   const [rateDate, setRateDate] = useState<string | null>(null);
   useEffect(() => {
     api.get('/purchase-orders/exchange-rates')
       .then(r => r.data)
-      .then((d: { rates: Record<string, number>; date: string }) => {
-        setRates({ ...PEGGED_RATES_FROM_USD, ...d.rates, USD: 1 });
+      .then((d: { rates: Record<string, number>; date: string | null }) => {
+        setRates({ ...d.rates, USD: 1 });
         setRateDate(d.date || null);
       })
       .catch(() => {});
@@ -121,12 +118,9 @@ function useExchangeRates() {
   return { rates, rateDate };
 }
 
+/** Converts with the app rates; null (shown as "—") when a rate is missing instead of assuming 1:1. */
 function convertAmount(amount: number | null, fromCurrency: string, toCurrency: string, rates: Record<string, number>): number | null {
-  if (amount == null) return null;
-  if (fromCurrency === toCurrency) return amount;
-  const toUSD = fromCurrency === 'USD' ? amount : (amount / (rates[fromCurrency] ?? 1));
-  if (toCurrency === 'USD') return toUSD;
-  return toUSD * (rates[toCurrency] ?? 1);
+  return convertCurrency(amount, fromCurrency, toCurrency, rates);
 }
 
 type Item = {
@@ -670,6 +664,11 @@ export default function PurchaseOrderDetail() {
     return sum + (c || 0) * parseFloat(item.quantity);
   }, 0);
 
+  // Items whose currency cannot be converted (no app rate) are left out of totals — say so on screen.
+  const missingRateCurrencies = [...new Set((po?.items || [])
+    .map((item: Item) => item.currency)
+    .filter((cur: string) => cur && convertAmount(1, cur, displayCurrency, rates) == null))] as string[];
+
   const totalMargin = totalSell - totalCost;
   const marginPct = totalCost > 0 ? (totalMargin / totalCost) * 100 : 0;
 
@@ -1162,6 +1161,11 @@ export default function PurchaseOrderDetail() {
                         <span className="flex items-center gap-1 text-xs text-emerald-600" title={`Exchange rates as of ${rateDate}`}>
                           <RefreshCw className="w-3 h-3" />
                           Rate {rateDate}
+                        </span>
+                      )}
+                      {missingRateCurrencies.length > 0 && (
+                        <span className="text-xs font-medium text-amber-700" title="Set these rates in Admin › Exchange Rates">
+                          No exchange rate for {missingRateCurrencies.join(', ')} — totals exclude those items
                         </span>
                       )}
                       <span className="text-xs text-slate-400">Totals in <span className="font-medium text-slate-600">{displayCurrency}</span></span>

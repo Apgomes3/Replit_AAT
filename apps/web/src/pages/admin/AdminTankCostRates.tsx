@@ -1,3 +1,4 @@
+import { SUPPORTED_CURRENCIES } from '../../lib/currencies';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import api from '../../lib/api';
@@ -34,7 +35,7 @@ const KNOWN_MATERIALS = [
   { code: 'MAT-CONC', label: 'Concrete' },
 ];
 
-const CURRENCIES = ['USD', 'EUR', 'TWD', 'GBP', 'JPY', 'SGD', 'AUD'];
+const CURRENCIES = SUPPORTED_CURRENCIES;
 
 const inputCls = 'border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 w-full';
 

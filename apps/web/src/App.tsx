@@ -73,7 +73,9 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   const { user, token, loadUser, isLoading } = useAuthStore();
   useEffect(() => { if (token && !user) loadUser(); }, []);
   if (!token) return <Navigate to="/login" replace />;
-  if (isLoading) return <div className="flex items-center justify-center h-screen"><div className="text-stone-500">Loading...</div></div>;
+  // Wait for the profile before rendering: role/module guards below would otherwise see "no user" on a direct
+  // link or refresh and redirect home. If loading fails, loadUser clears the token and we go to /login.
+  if (isLoading || !user) return <div className="flex items-center justify-center h-screen"><div className="text-stone-500">Loading...</div></div>;
   return <>{children}</>;
 }
 

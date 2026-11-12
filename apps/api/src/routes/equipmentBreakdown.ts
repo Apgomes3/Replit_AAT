@@ -5,7 +5,7 @@ import pool, { query } from '../db';
 import { authenticate, AuthRequest, requireModuleAccess, requireModuleManage } from '../middleware/auth';
 import { isLifeSupportSystem } from '../lib/lssSystems';
 import { isControlValveCode } from '../lib/lssControls';
-import { SUPPORTED_CURRENCIES } from '../lib/currencies';
+import { excelCurrencyFormat, SUPPORTED_CURRENCIES, SUPPORTED_CURRENCY_TEXT } from '../lib/currencies';
 
 const router = Router();
 router.use(authenticate, requireModuleAccess('design_books'));
@@ -21,13 +21,7 @@ const transaction = async <T>(fn: (db: Db) => Promise<T>) => {
 const numberOrNull = (value: any) => value == null || value === '' ? null : Number(value);
 const safeText = (value: any) => value == null ? null : String(value);
 export const normalizeEquipmentCurrency = (value: any) => String(value || 'USD').toUpperCase() === 'RMB' ? 'CNY' : String(value || 'USD').toUpperCase();
-export const equipmentCurrencyNumberFormat = (value: any) => ({
-  USD: '$#,##0.00',
-  CNY: '¥#,##0.00',
-  AUD: '"A$"#,##0.00',
-  NZD: '"NZ$"#,##0.00',
-  EUR: '€#,##0.00',
-}[normalizeEquipmentCurrency(value)] || '"$"#,##0.00');
+export const equipmentCurrencyNumberFormat = (value: any) => excelCurrencyFormat(normalizeEquipmentCurrency(value));
 const supportedCurrencies = new Set<string>(SUPPORTED_CURRENCIES);
 const roundMoney = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
 export const calculateEquipmentPricing = (row: any) => {
@@ -522,7 +516,7 @@ router.put('/design-books/:id/equipment-breakdown/lines/:lineId', requireModuleM
     if (!current) throw Object.assign(new Error('Breakdown line not found'), { status: 404, code: 'NOT_FOUND' });
     if (fields.includes('currency')) {
       const nextCurrency = normalizeEquipmentCurrency(req.body.currency);
-      if (!supportedCurrencies.has(nextCurrency)) throw Object.assign(new Error('Currency must be USD, RMB, AUD, NZD, or EUR'), { status: 400, code: 'INVALID_CURRENCY' });
+      if (!supportedCurrencies.has(nextCurrency)) throw Object.assign(new Error(`Currency must be ${SUPPORTED_CURRENCY_TEXT}`), { status: 400, code: 'INVALID_CURRENCY' });
       const currencyIndex = fields.indexOf('currency');
       values[currencyIndex] = nextCurrency;
       const oldCurrency = normalizeEquipmentCurrency(current.currency);
@@ -558,7 +552,7 @@ router.post('/design-books/:id/equipment-breakdown/lines', requireModuleManage('
   const body = req.body || {};
   if (!String(body.description || '').trim()) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'Description is required' } });
   const currency = normalizeEquipmentCurrency(body.currency);
-  if (!supportedCurrencies.has(currency)) return res.status(400).json({ error: { code: 'INVALID_CURRENCY', message: 'Currency must be USD, RMB, AUD, NZD, or EUR' } });
+  if (!supportedCurrencies.has(currency)) return res.status(400).json({ error: { code: 'INVALID_CURRENCY', message: `Currency must be ${SUPPORTED_CURRENCY_TEXT}` } });
   for (const field of ['quantity', 'unit_cost', 'markup']) {
     if (body[field] != null && body[field] !== '' && (!Number.isFinite(Number(body[field])) || Number(body[field]) < 0)) {
       return res.status(400).json({ error: { code: 'INVALID_VALUE', message: `${field} must be non-negative` } });
@@ -614,7 +608,7 @@ router.post('/design-books/:id/equipment-breakdown/allowances', requireModuleMan
   if (!Number.isFinite(percentage) || percentage < 0) return res.status(400).json({ error: { code: 'INVALID_VALUE', message: 'Percentage must be non-negative' } });
   const systemId = String(req.body?.system_id || '');
   const currency = normalizeEquipmentCurrency(req.body?.currency);
-  if (!supportedCurrencies.has(currency)) return res.status(400).json({ error: { code: 'INVALID_CURRENCY', message: 'Currency must be USD, RMB, AUD, NZD, or EUR' } });
+  if (!supportedCurrencies.has(currency)) return res.status(400).json({ error: { code: 'INVALID_CURRENCY', message: `Currency must be ${SUPPORTED_CURRENCY_TEXT}` } });
   const created = await transaction(async db => {
     const book = (await db.query('SELECT project_id FROM design_books WHERE id=$1', [req.params.id])).rows[0];
     if (!book) throw Object.assign(new Error('Design Book not found'), { status: 404, code: 'NOT_FOUND' });

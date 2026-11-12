@@ -1,3 +1,4 @@
+import { SUPPORTED_CURRENCIES } from '../../lib/currencies';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -11,7 +12,7 @@ import { X, Trash2, Search, Plus, Minus, Network, Paperclip, ChevronDown, Chevro
 import { currentReturnContext } from '../../lib/navigation';
 import { useAuthStore } from '../../store/authStore';
 
-const CURRENCIES = ['USD', 'EUR', 'GBP', 'AED', 'SAR', 'SGD', 'AUD', 'CAD', 'JPY', 'CNY'];
+const CURRENCIES = SUPPORTED_CURRENCIES;
 
 const PAYMENT_TERMS_OPTIONS = ['Net 15', 'Net 30', 'Net 45', 'Net 60', 'Net 90', 'Advance Payment', 'Letter of Credit', 'COD', 'Other'];
 const SHIPPING_TERMS_OPTIONS = ['EXW', 'FCA', 'CPT', 'CIP', 'DAP', 'DPU', 'DDP', 'FAS', 'FOB', 'CFR', 'CIF', 'Other'];
