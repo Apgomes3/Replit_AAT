@@ -4,6 +4,7 @@
   "main": "index.js",
   "scripts": {
     "dev": "concurrently --names \"API,WEB\" --prefix-colors \"cyan,green\" \"tsx apps/api/src/index.ts\" \"vite --config apps/web/vite.config.ts\"",
+    "setup": "node scripts/setup.cjs",
     "migrate": "tsx apps/api/src/db/migrate.ts",
     "seed": "tsx apps/api/src/db/seed.ts",
     "species:catalog:seed": "tsx apps/api/src/db/seedSpeciesCatalogCli.ts",

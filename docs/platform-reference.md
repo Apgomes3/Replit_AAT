@@ -1,4 +1,7 @@
-# Engineering Data Platform (EDP)
+# Shark OS platform reference
+
+> Originally `replit.md`, written while the app was built on Replit. Moved here in November 2026;
+> some details may be out of date — the code is the source of truth.
 
 ## Overview
 **Shark OS** — A full-stack engineering operations platform for aquarium/engineering projects. Features a hub-based navigation with three modules: PIM Management (product catalog), Order Management (PO lifecycle), and Project Management.
@@ -8,7 +11,7 @@
 ### Stack
 - **Frontend**: React 19 + TypeScript + Vite 7 (port 5000)
 - **Backend**: Node.js + Express 5 + TypeScript (port 3000)
-- **Database**: PostgreSQL (Replit built-in) with recursive CTE graph traversal
+- **Database**: PostgreSQL 16 with recursive CTE graph traversal
 - **Auth**: JWT + bcrypt (self-contained, no OAuth)
 - **File Storage**: Local disk at `apps/api/uploads/` (S3-swap-ready)
 - **CSS**: Tailwind CSS v4 with `@import "tailwindcss"` syntax; **design system**: Warm Enterprise theme — amber-600 primary accent, stone neutral palette, warm off-white (`#fafaf9`) background
@@ -110,35 +113,10 @@ workspace/
 - Route file: `apps/api/src/routes/designBooks.ts`
 - Frontend: `apps/web/src/pages/design-books/DesignBooksList.tsx`, `DesignBookDetail.tsx`, `DesignBookEngineDashboard.tsx`
 
-## Running the App
+## Running the App, configuration and demo logins
 
-```bash
-npm run dev        # Start both API (port 3000) + Web (port 5000) concurrently
-npm run migrate    # Run database migrations
-npm run seed       # Seed Taoyuan Aquarium demo data
-```
-
-## Environment Secrets
-
-The following secrets must be configured in Replit Secrets (or as environment variables) for full functionality:
-
-| Secret | Required | Description |
-|--------|----------|-------------|
-| `SMTP_HOST` | Yes (email) | SMTP server hostname, e.g. `smtp.sendgrid.net` |
-| `SMTP_PORT` | Yes (email) | SMTP port — `587` (STARTTLS) or `465` (SSL) |
-| `SMTP_USER` | Yes (email) | SMTP login username or API key |
-| `SMTP_PASS` | Yes (email) | SMTP password or API key secret |
-| `SMTP_FROM` | Yes (email) | Sender address, e.g. `noreply@yourcompany.com` |
-| `APP_URL` | Recommended | Public base URL of the app (e.g. `https://your-repl.repl.co`). Used to build password reset links. Falls back to `REPLIT_DEV_DOMAIN`. |
-
-If `SMTP_*` secrets are absent in development, reset URLs are logged to the server console instead of emailed. In production (`NODE_ENV=production`) the API returns an error if SMTP is unconfigured.
-
-## Demo Credentials
-- **Admin**: admin@edp.com / admin123
-- **HQ Manager**: hqmanager@edp.com / hqmanager123
-- **PMO**: pmo@edp.com / pmo123
-- **Engineer**: engineer@edp.com / engineer123
-- **Viewer**: viewer@edp.com / viewer123
+See the [README](../README.md) for setup, scripts, environment variables (including SMTP) and the
+demo logins. This document describes the platform's domain behaviour.
 
 ## PO Pipeline Stage Roles
 Stage-specific actors enforced in API (`canAdvanceStage`):

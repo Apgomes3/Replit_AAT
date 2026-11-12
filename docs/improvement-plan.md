@@ -36,8 +36,9 @@ Ground rules (agreed 2026-11-12):
   `artifacts/` (Replit mock-up sandbox + bio-degas 3D prototype, plus the `/__mockup` Vite proxy),
   `.agents/` (Replit agent notes — contain useful domain knowledge, could move to `docs/knowledge/`),
   `attached_assets/` (original specs + pasted prompts — specs could move to `docs/specs/`).
-- [ ] **0.5 README + `.env.example` + one-command setup** · M
-  How to install, create the database, migrate, seed or import, run, test. `npm run setup` script.
+- [x] **0.5 README + `.env.example` + one-command setup** · M · done 2026-11-12
+  `README.md`, `.env.example`, `npm run setup` (creates DB, migrates, seeds only an empty DB).
+  `replit.md` moved to `docs/platform-reference.md` with the Replit-only setup parts replaced.
 - [ ] **0.6 Green checks** · M
   Fix the 12 failing tests and the 6 web type errors. Give the 3 database integration tests their own
   throwaway test database (never the real-data one). Add `npm run typecheck` and `npm run check`
