@@ -38,7 +38,7 @@ async function call(method: string, path: string, body?: unknown) {
     const r = await fetch(`http://127.0.0.1:${port}/api/v1/drafting${path}`, {
       method, headers: { 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body),
     });
-    return { status: r.status, json: await r.json() };
+    return { status: r.status, json: (await r.json()) as any };
   } finally {
     server.close();
   }

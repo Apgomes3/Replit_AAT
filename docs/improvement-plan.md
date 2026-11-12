@@ -28,10 +28,14 @@ Ground rules (agreed 2026-11-12):
   Node 26 is the current LTS, so the project targets it (`.nvmrc` = 26, `engines` >= 22) instead of
   downgrading. `vitest.config.ts` disables Node's built-in Web Storage in test workers on Node 25+, which
   had broken ~500 web tests. Result: 512 → 12 failing tests (remaining ones are real, see 0.6).
-- [ ] **0.4 Remove leftovers and duplicates** · S
-  `apps/api/package.json` (lists Express 4/zod that are not installed), `apps/api/pnpm-*.yaml`,
-  `apps/web/package-lock.json`, `main.py`, `pyproject.toml`, `.replit`, `scripts/post-merge.sh`;
-  move `replit.md` content into the README.
+- [x] **0.4 Remove leftovers and duplicates** · S · done 2026-11-12
+  Deleted `apps/api/package.json` + pnpm files, `apps/web/package-lock.json`, `main.py`, `pyproject.toml`,
+  `.replit`, `scripts/post-merge.sh`. `apps/web/package.json` slimmed to its `"type": "module"` marker.
+  (`replit.md` is folded into the README in 0.5.)
+- [ ] **0.4b Decide on Replit-era folders** · S — *decision needed*
+  `artifacts/` (Replit mock-up sandbox + bio-degas 3D prototype, plus the `/__mockup` Vite proxy),
+  `.agents/` (Replit agent notes — contain useful domain knowledge, could move to `docs/knowledge/`),
+  `attached_assets/` (original specs + pasted prompts — specs could move to `docs/specs/`).
 - [ ] **0.5 README + `.env.example` + one-command setup** · M
   How to install, create the database, migrate, seed or import, run, test. `npm run setup` script.
 - [ ] **0.6 Green checks** · M
