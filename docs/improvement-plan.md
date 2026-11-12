@@ -90,6 +90,32 @@ Ground rules (agreed 2026-11-12):
 
 ---
 
+## PIM: ASW price list import
+
+Source: `ASW Equipment Price List 20240624.xlsx` (OneDrive › Engineering Management › ASW Pricelist).
+Analysed 2026-11-12 (read-only):
+
+| Sheet | Rows | Notes |
+|---|---|---|
+| LSS Equipment | 364 | 28 categories; supplier cost in RMB/USD/GBP → USD, markup, RRP; extra tech columns (kW, sand, L×W×H) |
+| Pipe & Fittings | 649 | category column is mostly item names (335 distinct); ~half lack USD cost |
+| Tanks - FRP | 33 | some priced per m² (rates, not products) |
+| LSS Spare Parts / Lights / Platforms / Consumables | 18 / 19 / 6 / 1 | |
+
+Data issues: 49 sizes stored as dates (e.g. "2 µm" → 1900-01-02), exchange rate formulas point to an external
+workbook, 9 duplicate model codes, 9 rows without cost. Only 15 of 364 equipment rows match the existing
+92 PIM products exactly — matching needs suggestions the user confirms.
+
+Proposed approach: upload the .xlsx → preview/validation screen (per row: target family, match to existing
+product or new, cleaned size, USD cost and RRP, warnings) → import only confirmed rows. Keyed on
+supplier + model so a newer price list updates prices instead of duplicating. Supplier prices go to
+vendor options; product cost / sell price on the product; kW, dimensions and sand data to the technical tables.
+
+- [ ] **P.1 Confirm scope and rules** (questions to the user — see below)
+- [ ] **P.2 Importer: LSS Equipment** · L
+- [ ] **P.3 Importer: Pipe & Fittings** (category clean-up) · M
+- [ ] **P.4 Remaining sheets / tank m² rates** · S
+
 ## Drafting module roadmap
 
 - [x] **D.1 Teams and plans** · done 2026-11-12 — teams (manager + members), plans linked to a project and team.
