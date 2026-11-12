@@ -38,6 +38,7 @@ const ROUTE_TITLES: { path: string; title: string }[] = [
   { path: '/admin/evaporation-correlations', title: 'Evaporation Correlations' },
   { path: '/purchase-orders/:id', title: 'Purchase Order' },
   { path: '/purchase-orders', title: 'Purchase Orders' },
+  { path: '/drafting', title: 'Drafting' },
 ];
 
 const APP_NAME = 'Shark OS';

@@ -1,3 +1,6 @@
+// Load .env before the pool reads DATABASE_URL (entry points import this module
+// before calling dotenv.config(); on Replit the vars come from secrets instead).
+import 'dotenv/config';
 import { Pool, PoolClient } from 'pg';
 import { databaseEvent, isDatabaseError } from '../lib/telemetry';
 

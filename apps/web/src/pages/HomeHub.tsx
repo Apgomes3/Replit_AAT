@@ -6,7 +6,7 @@ import api from '../lib/api';
 import {
   Package, ShoppingCart, FolderOpen, ArrowRight, ChevronRight,
   Network, FileText, Search, Ruler, BookOpen, BookMarked, Plus, X, Settings,
-  Users, LayoutGrid, GitBranch, Layers, Wrench, Keyboard, ClipboardCheck,
+  Users, LayoutGrid, GitBranch, Layers, Wrench, Keyboard, ClipboardCheck, PencilRuler,
 } from 'lucide-react';
 import ShortcutMapModal from '../components/ui/ShortcutMapModal';
 import { moduleForPath, ROUTES } from '../lib/navigation';
@@ -111,6 +111,18 @@ export default function HomeHub() {
     enabled: canSeeModule('design_books'),
   });
 
+  const { data: draftingPlans } = useQuery({
+    queryKey: ['drafting', 'plans'],
+    queryFn: () => api.get('/drafting/plans').then(r => r.data.data as Array<{ status: string }>),
+    enabled: canSeeModule('drafting'),
+  });
+  const { data: draftingTeams } = useQuery({
+    queryKey: ['drafting', 'teams'],
+    queryFn: () => api.get('/drafting/teams').then(r => r.data.data as Array<{ active: boolean }>),
+    enabled: canSeeModule('drafting'),
+  });
+  const openDraftingPlans = draftingPlans?.filter(p => p.status !== 'archived' && p.status !== 'completed').length;
+
   const poTotal = posData?.pagination?.total ?? 0;
   const activePOs = workData?.total ?? 0;
 
@@ -201,6 +213,28 @@ export default function HomeHub() {
       },
       stats: [
         { label: 'Design Books', value: (booksData?.items?.length ?? '—') },
+      ],
+    },
+    {
+      id: 'drafting',
+      href: '/drafting',
+      icon: PencilRuler,
+      title: 'Drafting',
+      description: 'Drafting teams and the plans they deliver for each project.',
+      comingSoon: false,
+      accent: {
+        glow: 'hover:shadow-teal-100/80',
+        border: 'hover:border-teal-300/60',
+        iconGradient: 'from-teal-500 to-teal-700',
+        iconShadow: 'shadow-teal-600/30',
+        badge: 'bg-teal-50 text-teal-700 border border-teal-200/80',
+        badgeDot: 'bg-teal-500',
+        btn: 'from-teal-500 to-teal-700 hover:from-teal-600 hover:to-teal-800 shadow-teal-600/25',
+        topBar: 'from-teal-400/20 to-transparent',
+      },
+      stats: [
+        { label: 'Open Plans', value: openDraftingPlans ?? '—' },
+        { label: 'Teams', value: draftingTeams?.filter(t => t.active).length ?? '—' },
       ],
     },
   ];

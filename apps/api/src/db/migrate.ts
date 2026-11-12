@@ -5,7 +5,14 @@ import { seedBiologicalMediaEvidence, seedBiologicalMediaProfiles, seedTanGenera
 import { seedThermalCorrelations } from './thermalCorrelationSeed';
 import { seedThermalWallConstructions } from './thermalWallConstructionSeed';
 import { migrateLegacyDocumentFiles } from './documentFileMigration';
+import { DRAFTING_SCHEMA } from '../modules/drafting/schema';
 dotenv.config();
+
+// Self-contained module schemas, applied in order after the core schema.
+// New modules add their tables here instead of growing the core schema string.
+const MODULE_SCHEMAS: Array<[name: string, sql: string]> = [
+  ['drafting', DRAFTING_SCHEMA],
+];
 
 const schema = `
 -- USERS & AUTH
@@ -113,6 +120,28 @@ CREATE TABLE IF NOT EXISTS exhibits (
   UNIQUE(project_id, exhibit_code)
 );
 
+-- systems must exist before tanks (tanks.system_id references it)
+CREATE TABLE IF NOT EXISTS systems (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  system_code VARCHAR(50) NOT NULL,
+  project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
+  area_id UUID REFERENCES areas(id),
+  exhibit_id UUID REFERENCES exhibits(id),
+  system_name VARCHAR(255) NOT NULL,
+  system_type VARCHAR(100),
+  design_flow_m3h NUMERIC,
+  turnover_rate_hr NUMERIC,
+  water_type VARCHAR(50),
+  status VARCHAR(50) DEFAULT 'Draft',
+  primary_control_panel_code VARCHAR(50),
+  duty_description TEXT,
+  redundancy_strategy TEXT,
+  design_basis_reference VARCHAR(100),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(project_id, system_code)
+);
+
 CREATE TABLE IF NOT EXISTS tanks (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tank_code VARCHAR(50) NOT NULL,
@@ -150,27 +179,6 @@ CREATE TABLE IF NOT EXISTS tank_instances (
   notes TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE(tank_id, instance_index)
-);
-
-CREATE TABLE IF NOT EXISTS systems (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  system_code VARCHAR(50) NOT NULL,
-  project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
-  area_id UUID REFERENCES areas(id),
-  exhibit_id UUID REFERENCES exhibits(id),
-  system_name VARCHAR(255) NOT NULL,
-  system_type VARCHAR(100),
-  design_flow_m3h NUMERIC,
-  turnover_rate_hr NUMERIC,
-  water_type VARCHAR(50),
-  status VARCHAR(50) DEFAULT 'Draft',
-  primary_control_panel_code VARCHAR(50),
-  duty_description TEXT,
-  redundancy_strategy TEXT,
-  design_basis_reference VARCHAR(100),
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(project_id, system_code)
 );
 
 CREATE TABLE IF NOT EXISTS equipment_instances (
@@ -269,6 +277,21 @@ CREATE TABLE IF NOT EXISTS standard_boms (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- materials must exist before components (components.primary_material_code references it)
+CREATE TABLE IF NOT EXISTS materials (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  material_code VARCHAR(50) UNIQUE NOT NULL,
+  material_name VARCHAR(255) NOT NULL,
+  material_category VARCHAR(100),
+  density NUMERIC,
+  chemical_resistance TEXT,
+  temperature_limit NUMERIC,
+  status VARCHAR(50) DEFAULT 'Active',
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS components (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   component_code VARCHAR(50) UNIQUE NOT NULL,
@@ -319,21 +342,7 @@ CREATE TABLE IF NOT EXISTS vendor_options (
 ALTER TABLE vendor_options ADD COLUMN IF NOT EXISTS unit_price NUMERIC;
 ALTER TABLE vendor_options ADD COLUMN IF NOT EXISTS currency VARCHAR(3) NOT NULL DEFAULT 'USD';
 
--- KNOWLEDGE DOMAIN
-CREATE TABLE IF NOT EXISTS materials (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  material_code VARCHAR(50) UNIQUE NOT NULL,
-  material_name VARCHAR(255) NOT NULL,
-  material_category VARCHAR(100),
-  density NUMERIC,
-  chemical_resistance TEXT,
-  temperature_limit NUMERIC,
-  status VARCHAR(50) DEFAULT 'Active',
-  notes TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
+-- KNOWLEDGE DOMAIN (materials is created above, before components)
 CREATE TABLE IF NOT EXISTS specifications (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   spec_code VARCHAR(50) UNIQUE NOT NULL,
@@ -945,6 +954,69 @@ INSERT INTO system_types (name, sort_order) VALUES
   ('Marine Mammals', 9),
   ('Reptiles', 10)
 ON CONFLICT (name) DO NOTHING;
+
+-- PURCHASE ORDERS (base tables)
+-- These were originally created directly in the Replit database and never added
+-- to this migration, so a fresh database could not be built. Reconstructed from
+-- the queries in routes/purchaseOrders.ts; IF NOT EXISTS keeps existing DBs untouched.
+CREATE SEQUENCE IF NOT EXISTS po_code_seq START 1;
+
+CREATE TABLE IF NOT EXISTS purchase_orders (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  po_code VARCHAR(50) UNIQUE NOT NULL,
+  project_id UUID REFERENCES projects(id) ON DELETE SET NULL,
+  status VARCHAR(50) NOT NULL DEFAULT 'draft',
+  notes TEXT,
+  created_by UUID REFERENCES users(id),
+  approved_by UUID REFERENCES users(id),
+  approved_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_purchase_orders_project ON purchase_orders(project_id);
+CREATE INDEX IF NOT EXISTS idx_purchase_orders_status ON purchase_orders(status);
+
+CREATE TABLE IF NOT EXISTS po_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  po_id UUID NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
+  product_master_id UUID REFERENCES product_masters(id),
+  system_id UUID REFERENCES systems(id) ON DELETE SET NULL,
+  project_equipment_item_id UUID REFERENCES project_equipment_items(id) ON DELETE SET NULL,
+  tank_id UUID REFERENCES tanks(id) ON DELETE SET NULL,
+  quantity NUMERIC NOT NULL DEFAULT 1,
+  uom VARCHAR(20) DEFAULT 'EA',
+  cost_price NUMERIC,
+  sell_price NUMERIC,
+  currency VARCHAR(3) DEFAULT 'USD',
+  notes TEXT,
+  sort_order INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_po_items_po ON po_items(po_id);
+
+CREATE TABLE IF NOT EXISTS po_systems (
+  po_id UUID NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
+  system_id UUID NOT NULL REFERENCES systems(id) ON DELETE CASCADE,
+  PRIMARY KEY (po_id, system_id)
+);
+
+CREATE TABLE IF NOT EXISTS po_lifecycle_history (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  po_id UUID NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
+  from_status VARCHAR(50),
+  to_status VARCHAR(50) NOT NULL,
+  changed_by UUID REFERENCES users(id),
+  comment TEXT,
+  changed_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_po_lifecycle_history_po ON po_lifecycle_history(po_id);
+
+CREATE TABLE IF NOT EXISTS po_designated_users (
+  po_id UUID NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (po_id, user_id)
+);
 
 ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS document_url VARCHAR(500);
 ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS document_name VARCHAR(500);
@@ -1836,6 +1908,8 @@ ALTER TABLE systems ADD COLUMN IF NOT EXISTS lifecycle_changed_at TIMESTAMPTZ;
 ALTER TABLE systems ADD COLUMN IF NOT EXISTS lifecycle_changed_by UUID REFERENCES users(id);
 ALTER TABLE systems ADD COLUMN IF NOT EXISTS superseded_by_system_id UUID REFERENCES systems(id) ON DELETE RESTRICT;
 ALTER TABLE systems ADD COLUMN IF NOT EXISTS supersedes_system_id UUID REFERENCES systems(id) ON DELETE RESTRICT;
+-- sort_order was added by hand on the original DB; declare it so fresh DBs build.
+ALTER TABLE systems ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0;
 CREATE INDEX IF NOT EXISTS idx_systems_active_project
   ON systems(project_id, sort_order, system_code)
   WHERE status NOT IN ('Archived', 'Decommissioned', 'Superseded');
@@ -3452,6 +3526,16 @@ CREATE TABLE IF NOT EXISTS platform_migration_markers (
   migration_key VARCHAR(150) PRIMARY KEY,
   completed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- REPLIT SCHEMA DRIFT (columns that existed on the Replit database but were never
+-- declared here). Found by comparing the 2026-11-12 Replit CSV export with this schema.
+ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS cost_price NUMERIC;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS logo_url VARCHAR(500);
+ALTER TABLE tank_instances ADD COLUMN IF NOT EXISTS display_name VARCHAR(255);
+ALTER TABLE tank_instances ADD COLUMN IF NOT EXISTS exhibit_id UUID REFERENCES exhibits(id) ON DELETE SET NULL;
+ALTER TABLE tanks ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS dashboard_prefs JSONB DEFAULT '{}'::jsonb;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS preferred_currency VARCHAR(3) DEFAULT 'USD';
 `;
 
 /**
@@ -3588,6 +3672,10 @@ async function migrate() {
   try {
     console.log('Running migrations...');
     await client.query(schema);
+    for (const [name, sql] of MODULE_SCHEMAS) {
+      await client.query(sql);
+      console.log(`Module schema ready: ${name}`);
+    }
     await backfillLegacyBusinessDevelopment(client);
     await backfillClientContacts(client);
     const movedDocumentFiles = await migrateLegacyDocumentFiles(client);
