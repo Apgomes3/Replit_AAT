@@ -2,7 +2,7 @@
 import type { PoolClient } from 'pg';
 import { withTransaction } from '../../db';
 import { DECISIONS, PlanRow } from './workbook';
-import { MAX_CODE_LENGTH, NEW_FAMILIES } from './rules';
+import { MAX_CODE_LENGTH, NEW_FAMILIES, normalizeCurrency, toUsd } from './rules';
 import type { ExistingComponent, ExistingProduct } from './plan';
 
 type Db = Pick<PoolClient, 'query'>;
@@ -16,10 +16,27 @@ export type ApplyResult = {
   skipped: number;
 };
 
+/**
+ * Reviewers may type a supplier cost (e.g. for a price marked "not available"); convert it to USD with
+ * the app rates when Cost USD was left empty. Returns the rows it filled.
+ */
+export function fillMissingUsdCosts(rows: PlanRow[], ratesPerUsd: Record<string, number>): number[] {
+  const filled: number[] = [];
+  for (const r of rows) {
+    if (r.decision === 'SKIP' || r.costUsd != null || r.supplierCost == null) continue;
+    const usd = toUsd(r.supplierCost, normalizeCurrency(r.supplierCurrency), ratesPerUsd);
+    if (usd != null) { r.costUsd = usd; filled.push(r.sheetRow); }
+  }
+  return filled;
+}
+
+export type ExistingCodes = { products: Set<string>; components: Set<string> };
+
 /** Checks a reviewed plan before anything is written; returns human-readable problems. */
-export function validatePlan(rows: PlanRow[], existingFamilyCodes: Set<string>): string[] {
+export function validatePlan(rows: PlanRow[], existingFamilyCodes: Set<string>, existing?: ExistingCodes): string[] {
   const problems: string[] = [];
   const codes = new Map<string, number>();
+  const updateTargets = new Map<string, number>();
   for (const r of rows) {
     const at = `Row ${r.sheetRow}`;
     if (!DECISIONS.includes(r.decision)) { problems.push(`${at}: unknown decision "${r.decision}".`); continue; }
@@ -37,6 +54,21 @@ export function validatePlan(rows: PlanRow[], existingFamilyCodes: Set<string>):
       const key = r.code.toUpperCase();
       if (codes.has(key)) problems.push(`${at}: code ${r.code} is also used by row ${codes.get(key)}.`);
       codes.set(key, r.sheetRow);
+      if (existing && (existing.products.has(key) || existing.components.has(key))) {
+        problems.push(`${at}: code ${r.code} already exists — use UPDATE_* or choose another code.`);
+      }
+    }
+    if (r.decision === 'CREATE_PRODUCT' && r.componentType && !r.familyCode) {
+      problems.push(`${at}: this row is a component (${r.componentType}) — use CREATE_COMPONENT, or set a Product family.`);
+    }
+    if (r.decision.startsWith('UPDATE') && r.code) {
+      const key = r.code.toUpperCase();
+      const pool = r.decision === 'UPDATE_PRODUCT' ? existing?.products : existing?.components;
+      if (pool && !pool.has(key)) {
+        problems.push(`${at}: UPDATE needs the existing ${r.decision === 'UPDATE_PRODUCT' ? 'product' : 'component'} code in the Code column — "${r.code}" does not exist.`);
+      }
+      if (updateTargets.has(key)) problems.push(`${at}: ${r.code} is also updated by row ${updateTargets.get(key)} — only one row can update an item.`);
+      updateTargets.set(key, r.sheetRow);
     }
   }
   return problems;

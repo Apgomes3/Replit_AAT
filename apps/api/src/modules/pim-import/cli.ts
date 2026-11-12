@@ -9,7 +9,7 @@
 import path from 'path';
 import pool from '../../db';
 import { logAudit } from '../../db/audit';
-import { applyPlan, loadExisting, validatePlan } from './apply';
+import { applyPlan, fillMissingUsdCosts, loadExisting, validatePlan } from './apply';
 import { buildPlan } from './plan';
 import { readLssEquipment, readReview, writeReview, PlanRow } from './workbook';
 
@@ -62,8 +62,18 @@ async function apply() {
   const file = arg('--apply');
   if (!file) throw new Error('--apply <review.xlsx> is required');
   const rows = await readReview(file);
-  const { familyCodes } = await loadExisting({ query: (text: string, params?: any[]) => pool.query(text, params) } as any);
-  const problems = validatePlan(rows, familyCodes);
+  const existing = await loadExisting({ query: (text: string, params?: any[]) => pool.query(text, params) } as any);
+  const filled = fillMissingUsdCosts(rows, existing.ratesPerUsd);
+  if (filled.length) console.log(`Converted typed supplier costs to USD for rows: ${filled.join(', ')}`);
+  const problems = validatePlan(rows, existing.familyCodes, {
+    products: new Set(existing.products.map(p => p.code.toUpperCase())),
+    components: new Set(existing.components.map(c => c.code.toUpperCase())),
+  });
+  if (process.argv.includes('--check')) {
+    console.log(problems.length ? `${problems.length} problem(s):` : 'No problems — the file can be applied.');
+    problems.forEach(p => console.log(`  - ${p}`));
+    return;
+  }
   if (problems.length) {
     console.error(`Nothing was imported — ${problems.length} problem(s) in the review file:`);
     problems.slice(0, 50).forEach(p => console.error(`  - ${p}`));
