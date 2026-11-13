@@ -18,6 +18,7 @@ vi.mock('./repository', () => ({
   listPlans: vi.fn(), getPlan: vi.fn(), createPlan: vi.fn(), updatePlan: vi.fn(),
   getBoard: vi.fn(), createGroup: vi.fn(), updateGroup: vi.fn(), deleteGroup: vi.fn(),
   createTask: vi.fn(), updateTask: vi.fn(), deleteTask: vi.fn(), getTaskPlanId: vi.fn(),
+  createLink: vi.fn(), updateLink: vi.fn(), deleteLink: vi.fn(), getLinkPlanIds: vi.fn(), reschedulePlan: vi.fn(),
 }));
 
 import * as repo from './repository';
@@ -147,5 +148,40 @@ describe('drafting routes', () => {
     const ok = await call('GET', `/plans?team_id=${TEAM}&status=active`);
     expect(ok.status).toBe(200);
     expect(mocked.listPlans).toHaveBeenCalledWith({ team_id: TEAM, project_id: undefined, status: 'active' });
+  });
+
+  it('links two tasks, validating the type and lag, and turns a loop into a 400', async () => {
+    expect((await call('POST', `/tasks/${TEAM}/links`, { predecessor_id: 'nope' })).status).toBe(400);
+    expect((await call('POST', `/tasks/${TEAM}/links`, { predecessor_id: USER, link_type: 'XX' })).status).toBe(400);
+    expect((await call('POST', `/tasks/${TEAM}/links`, { predecessor_id: USER, lag_days: 1.5 })).status).toBe(400);
+
+    mocked.createLink.mockResolvedValueOnce({ id: 'l1', predecessor_id: USER, successor_id: TEAM, link_type: 'SS', lag_days: 2 });
+    const ok = await call('POST', `/tasks/${TEAM}/links`, { predecessor_id: USER, link_type: 'SS', lag_days: 2 });
+    expect(ok.status).toBe(201);
+    expect(mocked.createLink).toHaveBeenCalledWith(TEAM, { predecessor_id: USER, link_type: 'SS', lag_days: 2 }, 'actor-1');
+
+    const { DraftingRuleError } = await import('./repository');
+    mocked.createLink.mockRejectedValueOnce(new (DraftingRuleError as any)('This link would make a loop.'));
+    const loop = await call('POST', `/tasks/${TEAM}/links`, { predecessor_id: USER });
+    expect(loop.status).toBe(400);
+    expect(loop.json.error.message).toMatch(/loop/);
+  });
+
+  it('previews a reschedule by default and applies it only when asked', async () => {
+    mocked.getPlan.mockResolvedValue({ id: PROJECT });
+    mocked.reschedulePlan.mockResolvedValue([{ id: TEAM, start_date: '2026-05-09', due_date: '2026-05-10', old_start_date: '2026-05-06' }]);
+    const preview = await call('POST', `/plans/${PROJECT}/reschedule`, {});
+    expect(preview.json).toMatchObject({ applied: false, data: [{ id: TEAM }] });
+    expect(mocked.reschedulePlan).toHaveBeenLastCalledWith(PROJECT, false, 'actor-1');
+    expect(logAudit).not.toHaveBeenCalled();
+    await call('POST', `/plans/${PROJECT}/reschedule`, { apply: true });
+    expect(mocked.reschedulePlan).toHaveBeenLastCalledWith(PROJECT, true, 'actor-1');
+    expect(logAudit).toHaveBeenCalledWith('actor-1', 'drafting_plan', PROJECT, 'RESCHEDULE', expect.anything());
+  });
+
+  it('refuses link changes without manage access', async () => {
+    access.manage = false;
+    expect((await call('DELETE', `/links/${TEAM}`)).status).toBe(403);
+    expect(mocked.deleteLink).not.toHaveBeenCalled();
   });
 });

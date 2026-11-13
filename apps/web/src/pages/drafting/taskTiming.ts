@@ -34,6 +34,33 @@ export function timeElapsedPercent(start: string | null, due: string | null, tod
   return Math.round(((t - s) / (e - s)) * 100);
 }
 
+export function addDays(iso: string, days: number): string {
+  return new Date((toDay(iso) + days) * DAY_MS).toISOString().slice(0, 10);
+}
+
+/** Whole days from `from` to `to` (negative when `to` is earlier). */
+export function daysBetween(from: string, to: string): number {
+  return toDay(to) - toDay(from);
+}
+
+type Dated = { start_date: string | null; due_date: string | null };
+
+/**
+ * Days a successor is too early for its link (0 when respected or not checkable).
+ * Same rules as the API (modules/drafting/schedule.ts): FS start ≥ pred due + 1 + lag,
+ * SS start ≥ pred start + lag, FF due ≥ pred due + lag, SF due ≥ pred start − 1 + lag.
+ */
+export function linkShortfall(link: { link_type: string; lag_days: number }, pred: Dated, succ: Dated): number {
+  const lag = link.lag_days;
+  const [base, offset, field] =
+    link.link_type === 'FS' ? [pred.due_date, 1 + lag, 'start_date'] as const
+    : link.link_type === 'SS' ? [pred.start_date, lag, 'start_date'] as const
+    : link.link_type === 'FF' ? [pred.due_date, lag, 'due_date'] as const
+    : [pred.start_date, lag - 1, 'due_date'] as const;
+  const have = succ[field];
+  return base && have ? Math.max(0, daysBetween(have, addDays(base, offset))) : 0;
+}
+
 /** A task is late when it is not done and its due date has passed. */
 export function isLate(task: { status: string; due_date: string | null }, today: string): boolean {
   return task.status !== 'done' && !!task.due_date && task.due_date < today;

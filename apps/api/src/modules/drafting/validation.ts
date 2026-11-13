@@ -160,6 +160,28 @@ export function validateTaskInput(body: any, { creating }: { creating: boolean }
   return { value: out };
 }
 
+export const LINK_TYPES = ['FS', 'SS', 'FF', 'SF'] as const;
+export type LinkInput = { predecessor_id?: string; link_type?: typeof LINK_TYPES[number]; lag_days?: number };
+
+export function validateLinkInput(body: any, { creating }: { creating: boolean }): Result<LinkInput> {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return { error: 'Request body must be an object.' };
+  const out: LinkInput = {};
+  if (creating) {
+    if (!isUuid(body.predecessor_id)) return { error: 'predecessor_id must be a valid task id.' };
+    out.predecessor_id = body.predecessor_id;
+  }
+  if (has(body, 'link_type')) {
+    if (!LINK_TYPES.includes(body.link_type)) return { error: `link_type must be one of: ${LINK_TYPES.join(', ')}.` };
+    out.link_type = body.link_type;
+  }
+  if (has(body, 'lag_days')) {
+    if (!Number.isInteger(body.lag_days) || Math.abs(body.lag_days) > 365) return { error: 'lag_days must be a whole number between -365 and 365.' };
+    out.lag_days = body.lag_days;
+  }
+  if (!creating && Object.keys(out).length === 0) return { error: 'Nothing to update.' };
+  return { value: out };
+}
+
 export function validatePlanInput(body: any, { creating }: { creating: boolean }): Result<PlanInput> {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return { error: 'Request body must be an object.' };
   const out: PlanInput & Record<string, unknown> = {};

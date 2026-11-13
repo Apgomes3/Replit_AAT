@@ -1,13 +1,64 @@
 import { useMemo, useState } from 'react';
-import { Trash2 } from 'lucide-react';
+import { AlertTriangle, Trash2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import DraftingModal, { fieldInput, fieldLabel } from './DraftingModal';
 import { Avatar } from './TeamsPanel';
 import {
-  apiErrorMessage, Task, TaskGroup, TaskPayload, TASK_PRIORITIES, TASK_PRIORITY_LABELS, TASK_STATUSES,
-  TASK_STATUS_LABELS, useDeleteTask, usePeople, useSaveTask,
+  apiErrorMessage, Board, LinkType, LINK_TYPES, LINK_TYPE_LABELS, Task, TaskGroup, TaskPayload, TASK_PRIORITIES,
+  TASK_PRIORITY_LABELS, TASK_STATUSES, TASK_STATUS_LABELS, useCreateLink, useDeleteLink, useDeleteTask, usePeople, useSaveTask,
+  useUpdateLink,
 } from './draftingApi';
+import { linkShortfall } from './taskTiming';
 import { useConfirm } from '../../hooks/useConfirm';
+
+/** "Waits for" (editable) and "Waited on by" (read-only) links of one task. Changes save immediately. */
+function TaskLinks({ planId, task, board }: { planId: string; task: Task; board: Board }) {
+  const create = useCreateLink(planId);
+  const update = useUpdateLink(planId);
+  const remove = useDeleteLink(planId);
+  const [adding, setAdding] = useState('');
+  const all = new Map<string, { title: string; start_date: string | null; due_date: string | null; plan_code?: string }>(
+    [...board.tasks, ...board.external_tasks.map(t => ({ ...t, plan_code: t.plan_code }))].map(t => [t.id, t]));
+  const waitsFor = board.links.filter(l => l.successor_id === task.id);
+  const waitedOnBy = board.links.filter(l => l.predecessor_id === task.id);
+  const linked = new Set([...waitsFor.map(l => l.predecessor_id), ...waitedOnBy.map(l => l.successor_id), task.id]);
+  const options = board.tasks.filter(t => !linked.has(t.id));
+  const fail = (fallback: string) => (err: unknown) => toast.error(apiErrorMessage(err, fallback));
+  const label = (id: string) => { const t = all.get(id); return t ? `${t.plan_code ? `${t.plan_code} · ` : ''}${t.title}` : 'Unknown task'; };
+
+  return <fieldset className="sm:col-span-2">
+    <legend className={fieldLabel}>Waits for</legend>
+    <div className="mt-1.5 rounded-lg border border-[#dce7e2] divide-y divide-[#edf2ef]">
+      {waitsFor.map(l => {
+        const pred = all.get(l.predecessor_id);
+        const early = pred && task.status !== 'done' ? linkShortfall(l, pred, task) : 0;
+        return <div key={l.id} className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm">
+          <span className="flex-1 min-w-[160px] font-semibold truncate" title={label(l.predecessor_id)}>{label(l.predecessor_id)}</span>
+          {early > 0 && <span className="inline-flex items-center gap-1 text-xs font-bold text-amber-700" title="This task starts before the link allows"><AlertTriangle className="w-3.5 h-3.5" /> {early}d early</span>}
+          <select aria-label="Link type" value={l.link_type} onChange={e => update.mutateAsync({ id: l.id, link_type: e.target.value as LinkType }).catch(fail('Could not change link'))}
+            className="border border-[#dce7e2] rounded-md px-1.5 py-1 text-xs">
+            {LINK_TYPES.map(t => <option key={t} value={t}>{LINK_TYPE_LABELS[t]}</option>)}
+          </select>
+          <label className="flex items-center gap-1 text-xs text-[#6f8082]">+<input aria-label="Lag in days" type="number" min={-365} max={365} defaultValue={l.lag_days}
+            onBlur={e => { const v = Number(e.target.value); if (Number.isInteger(v) && v !== l.lag_days) update.mutateAsync({ id: l.id, lag_days: v }).catch(fail('Could not change lag')); }}
+            className="w-14 border border-[#dce7e2] rounded-md px-1.5 py-1 text-xs" />days</label>
+          <button type="button" aria-label={`Remove link to ${label(l.predecessor_id)}`} onClick={() => remove.mutateAsync(l.id).catch(fail('Could not remove link'))}
+            className="p-1 text-[#80908f] hover:text-rose-700"><X className="w-3.5 h-3.5" /></button>
+        </div>;
+      })}
+      <div className="flex items-center gap-2 px-3 py-2">
+        <select aria-label="Add a task this one waits for" value={adding} onChange={e => setAdding(e.target.value)} className="flex-1 border border-[#dce7e2] rounded-md px-2 py-1 text-sm">
+          <option value="">{waitsFor.length ? 'Add another task it waits for…' : 'Choose a task it waits for…'}</option>
+          {options.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}
+        </select>
+        <button type="button" disabled={!adding || create.isPending}
+          onClick={() => create.mutateAsync({ successorId: task.id, predecessorId: adding }).then(() => setAdding('')).catch(fail('Could not add link'))}
+          className="px-3 py-1 rounded-md bg-[#087f73] text-white text-xs font-bold disabled:opacity-40">Add</button>
+      </div>
+    </div>
+    {waitedOnBy.length > 0 && <p className="mt-1.5 text-xs text-[#6f8082]">Waited on by: {waitedOnBy.map(l => label(l.successor_id)).join(' · ')}</p>}
+  </fieldset>;
+}
 
 type Props = {
   planId: string;
@@ -15,7 +66,10 @@ type Props = {
   /** People in the plan's team (manager + members); listed first. */
   teamPeopleIds: string[];
   task?: Task;
-  defaultGroupId?: string | null;
+  /** Starting values for a new task (e.g. the group or person of the section it was added from). */
+  defaults?: TaskPayload;
+  /** The plan's board, for the task's links. */
+  board: Board;
   onClose: () => void;
 };
 
@@ -27,7 +81,7 @@ type FormState = Required<Pick<TaskPayload, 'title' | 'status' | 'priority'>> & 
   assignee_ids: string[];
 };
 
-export default function TaskModal({ planId, groups, teamPeopleIds, task, defaultGroupId = null, onClose }: Props) {
+export default function TaskModal({ planId, groups, teamPeopleIds, task, defaults = {}, board, onClose }: Props) {
   const people = usePeople();
   const save = useSaveTask(planId);
   const remove = useDeleteTask(planId);
@@ -35,13 +89,13 @@ export default function TaskModal({ planId, groups, teamPeopleIds, task, default
   const [showEveryone, setShowEveryone] = useState(false);
   const [form, setForm] = useState<FormState>(() => ({
     title: task?.title ?? '',
-    status: task?.status ?? 'not_started',
-    priority: task?.priority ?? 'medium',
-    group_id: task ? task.group_id : defaultGroupId,
+    status: task?.status ?? defaults.status ?? 'not_started',
+    priority: task?.priority ?? defaults.priority ?? 'medium',
+    group_id: task ? task.group_id : defaults.group_id ?? null,
     start_date: task?.start_date ?? null,
     due_date: task?.due_date ?? null,
     notes: task?.notes ?? '',
-    assignee_ids: task?.assignees.map(a => a.id) ?? [],
+    assignee_ids: task?.assignees.map(a => a.id) ?? defaults.assignee_ids ?? [],
   }));
 
   const candidates = useMemo(() => {
@@ -117,6 +171,8 @@ export default function TaskModal({ planId, groups, teamPeopleIds, task, default
             </label>)}
         </div>
       </fieldset>
+
+      {task && <TaskLinks planId={planId} task={task} board={board} />}
 
       <label className={`sm:col-span-2 ${fieldLabel}`}>Notes<textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={3} className={fieldInput} /></label>
       {task && <div className="sm:col-span-2">

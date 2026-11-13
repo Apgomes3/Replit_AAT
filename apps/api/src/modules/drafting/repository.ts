@@ -1,7 +1,8 @@
 // All SQL for the drafting module lives here; routes never build queries.
 import type { PoolClient } from 'pg';
 import { query, withTransaction } from '../../db';
-import type { GroupInput, PlanInput, PlanStatus, TaskInput, TaskPriority, TaskStatus, TeamInput } from './validation';
+import type { GroupInput, LinkInput, PlanInput, PlanStatus, TaskInput, TaskPriority, TaskStatus, TeamInput } from './validation';
+import { DateChange, LinkType, pushSchedule } from './schedule';
 
 type Db = Pick<PoolClient, 'query'>;
 
@@ -54,7 +55,21 @@ export type Task = {
   updated_at: string;
 };
 
-export type Board = { plan: Plan; groups: TaskGroup[]; tasks: Task[] };
+export type TaskLink = {
+  id: string;
+  predecessor_id: string;
+  successor_id: string;
+  link_type: LinkType;
+  lag_days: number;
+};
+
+/** A task from another plan that one of this plan's tasks is linked to. */
+export type ExternalTask = {
+  id: string; title: string; status: TaskStatus; start_date: string | null; due_date: string | null;
+  plan_id: string; plan_code: string;
+};
+
+export type Board = { plan: Plan; groups: TaskGroup[]; tasks: Task[]; links: TaskLink[]; external_tasks: ExternalTask[] };
 
 const PERSON_NAME = `COALESCE(NULLIF(TRIM(CONCAT_WS(' ', u.first_name, u.last_name)), ''), u.email)`;
 
@@ -227,7 +242,123 @@ export async function getBoard(planId: string): Promise<Board | null> {
     [planId],
   )).rows;
   const tasks = (await query(`${TASK_SELECT} WHERE dt.plan_id = $1 ORDER BY dt.sort_order, dt.created_at`, [planId])).rows;
-  return { plan, groups, tasks };
+  const links = await linksTouchingPlan({ query } as Db, planId);
+  const external_tasks = (await query(
+    `SELECT dt.id, dt.title, dt.status, to_char(dt.start_date, 'YYYY-MM-DD') AS start_date,
+       to_char(dt.due_date, 'YYYY-MM-DD') AS due_date, dt.plan_id, p.plan_code
+     FROM drafting_tasks dt JOIN drafting_plans p ON p.id = dt.plan_id
+     WHERE dt.plan_id <> $1 AND dt.id = ANY($2::uuid[])`,
+    [planId, links.flatMap(l => [l.predecessor_id, l.successor_id])],
+  )).rows;
+  return { plan, groups, tasks, links, external_tasks };
+}
+
+// ---------- task links (D.3) ----------
+
+const LINK_COLUMNS = 'l.id, l.predecessor_id, l.successor_id, l.link_type, l.lag_days';
+
+async function linksTouchingPlan(db: Db, planId: string): Promise<TaskLink[]> {
+  return (await db.query(
+    `SELECT ${LINK_COLUMNS} FROM drafting_task_links l
+     JOIN drafting_tasks p ON p.id = l.predecessor_id
+     JOIN drafting_tasks s ON s.id = l.successor_id
+     WHERE p.plan_id = $1 OR s.plan_id = $1
+     ORDER BY l.created_at`,
+    [planId],
+  )).rows;
+}
+
+/** True when `from` already leads (through links) to `to`, so a link to → from would close a loop. */
+async function leadsTo(db: Db, from: string, to: string): Promise<boolean> {
+  const r = await db.query(
+    `WITH RECURSIVE reach(id) AS (
+       SELECT successor_id FROM drafting_task_links WHERE predecessor_id = $1
+       UNION
+       SELECT l.successor_id FROM drafting_task_links l JOIN reach ON l.predecessor_id = reach.id
+     ) SELECT 1 FROM reach WHERE id = $2 LIMIT 1`,
+    [from, to],
+  );
+  return r.rowCount! > 0;
+}
+
+/** Plans the link's two tasks belong to (for audit and cache refresh), or null if the link does not exist. */
+export async function getLinkPlanIds(id: string): Promise<string[] | null> {
+  const r = await query(
+    `SELECT p.plan_id AS a, s.plan_id AS b FROM drafting_task_links l
+     JOIN drafting_tasks p ON p.id = l.predecessor_id JOIN drafting_tasks s ON s.id = l.successor_id WHERE l.id = $1`,
+    [id],
+  );
+  return r.rows[0] ? [...new Set<string>([r.rows[0].a, r.rows[0].b])] : null;
+}
+
+/** Makes `successorId` wait for input.predecessor_id. Refuses missing tasks, duplicates and loops. */
+export async function createLink(successorId: string, input: LinkInput, actorId: string | null, db?: Db): Promise<TaskLink> {
+  const run = async (tx: Db) => {
+    const pred = input.predecessor_id!;
+    if (pred === successorId) throw new DraftingRuleError('A task cannot wait for itself.');
+    const found = await tx.query(`SELECT id FROM drafting_tasks WHERE id = ANY($1::uuid[])`, [[pred, successorId]]);
+    if (found.rowCount !== 2) throw new DraftingRuleError('One of the linked tasks no longer exists.');
+    const existing = await tx.query(
+      `SELECT 1 FROM drafting_task_links WHERE (predecessor_id = $1 AND successor_id = $2) OR (predecessor_id = $2 AND successor_id = $1)`,
+      [pred, successorId],
+    );
+    if (existing.rowCount) throw new DraftingRuleError('These two tasks are already linked.');
+    if (await leadsTo(tx, successorId, pred)) {
+      throw new DraftingRuleError('This link would make a loop: the other task already waits (directly or indirectly) for this one.');
+    }
+    return (await tx.query(
+      `INSERT INTO drafting_task_links (predecessor_id, successor_id, link_type, lag_days, created_by)
+       VALUES ($1, $2, $3, $4, $5) RETURNING id, predecessor_id, successor_id, link_type, lag_days`,
+      [pred, successorId, input.link_type ?? 'FS', input.lag_days ?? 0, actorId],
+    )).rows[0];
+  };
+  return db ? run(db) : withTransaction(run);
+}
+
+export async function updateLink(id: string, input: LinkInput): Promise<TaskLink | null> {
+  const set: string[] = [];
+  const values: unknown[] = [id];
+  for (const key of ['link_type', 'lag_days'] as const) {
+    if (input[key] !== undefined) { values.push(input[key]); set.push(`${key} = $${values.length}`); }
+  }
+  return (await query(
+    `UPDATE drafting_task_links l SET ${set.join(', ')} WHERE l.id = $1 RETURNING ${LINK_COLUMNS}`, values,
+  )).rows[0] ?? null;
+}
+
+export async function deleteLink(id: string): Promise<boolean> {
+  return (await query(`DELETE FROM drafting_task_links WHERE id = $1`, [id])).rowCount! > 0;
+}
+
+export type RescheduleChange = DateChange & { title: string; old_start_date: string | null; old_due_date: string | null };
+
+/**
+ * Moves this plan's unfinished tasks later until every link is respected (tasks in other plans
+ * are read but never moved). With apply=false it only reports what would change.
+ */
+export async function reschedulePlan(planId: string, apply: boolean, actorId: string): Promise<RescheduleChange[]> {
+  return withTransaction(async db => {
+    const links = await linksTouchingPlan(db, planId);
+    const ids = [...new Set(links.flatMap(l => [l.predecessor_id, l.successor_id]))];
+    const tasks = (await db.query(
+      `SELECT id, plan_id, title, status, to_char(start_date, 'YYYY-MM-DD') AS start_date, to_char(due_date, 'YYYY-MM-DD') AS due_date
+       FROM drafting_tasks WHERE id = ANY($1::uuid[]) ${apply ? 'FOR UPDATE' : ''}`,
+      [ids],
+    )).rows;
+    const movable = new Set<string>(tasks.filter(t => t.plan_id === planId).map(t => t.id));
+    const changes = pushSchedule(tasks, links, movable);
+    const byId = new Map(tasks.map(t => [t.id, t]));
+    if (apply) {
+      for (const c of changes) {
+        await db.query(`UPDATE drafting_tasks SET start_date = $2, due_date = $3, updated_by = $4, updated_at = NOW() WHERE id = $1`,
+          [c.id, c.start_date, c.due_date, actorId]);
+      }
+    }
+    return changes.map(c => {
+      const t = byId.get(c.id)!;
+      return { ...c, title: t.title, old_start_date: t.start_date, old_due_date: t.due_date };
+    });
+  });
 }
 
 async function nextSortOrder(db: Db, table: 'drafting_task_groups' | 'drafting_tasks', planId: string) {

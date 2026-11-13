@@ -29,6 +29,18 @@ export type ImportPlan = {
 /** Marker stored in task notes so a re-import never duplicates a task. */
 export const plannerMarker = (n: string) => `[Planner #${n}]`;
 
+export type PlannerDependency = { plannerNumber: string; type: 'FS' | 'SS' | 'FF' | 'SF'; lagDays: number };
+
+/** "2FS; 5SS+3 days, 7" → predecessors by Planner number (the type defaults to FS, the lag to 0). */
+export function parsePlannerDependencies(text: string): PlannerDependency[] {
+  return text.split(/[;,]/).map(s => s.trim()).filter(Boolean).flatMap(part => {
+    const m = /^(\d+)\s*(FS|SS|FF|SF)?\s*(?:([+-])\s*(\d+)\s*(?:d|days?|edays?)?)?$/i.exec(part);
+    if (!m) return [];
+    const lag = m[4] ? Number(m[4]) * (m[3] === '-' ? -1 : 1) : 0;
+    return [{ plannerNumber: m[1]!, type: (m[2]?.toUpperCase() ?? 'FS') as PlannerDependency['type'], lagDays: lag }];
+  });
+}
+
 /** "001-042-Merlin Orlando" → 001-042 / Merlin Orlando; non-project headers become internal projects. */
 export function parseProjectHeader(header: string, internal: Record<string, ProjectRef> = {}): ProjectRef {
   const text = header.replace(/\s+/g, ' ').trim();

@@ -77,7 +77,29 @@ export type Task = {
   assignees: Array<{ id: string; name: string; email: string }>;
 };
 
-export type Board = { plan: Plan; groups: TaskGroup[]; tasks: Task[] };
+export const LINK_TYPES = ['FS', 'SS', 'FF', 'SF'] as const;
+export type LinkType = typeof LINK_TYPES[number];
+export const LINK_TYPE_LABELS: Record<LinkType, string> = {
+  FS: 'Starts after it finishes',
+  SS: 'Starts when it starts',
+  FF: 'Finishes when it finishes',
+  SF: 'Finishes when it starts',
+};
+
+/** successor waits for predecessor. */
+export type TaskLink = { id: string; predecessor_id: string; successor_id: string; link_type: LinkType; lag_days: number };
+
+/** A task in another plan that a task of this plan is linked to. */
+export type ExternalTask = {
+  id: string; title: string; status: TaskStatus; start_date: string | null; due_date: string | null; plan_id: string; plan_code: string;
+};
+
+export type Board = { plan: Plan; groups: TaskGroup[]; tasks: Task[]; links: TaskLink[]; external_tasks: ExternalTask[] };
+
+export type RescheduleChange = {
+  id: string; title: string; start_date: string | null; due_date: string | null;
+  old_start_date: string | null; old_due_date: string | null;
+};
 
 export type TaskPayload = Partial<{
   title: string;
@@ -152,7 +174,7 @@ export const useBoard = (planId: string) => useQuery({
 });
 
 /** Mutations on one plan's board refresh the board and the plan list counts. */
-function useBoardMutation<TVars>(planId: string, fn: (vars: TVars) => Promise<unknown>) {
+function useBoardMutation<TVars, TResult = unknown>(planId: string, fn: (vars: TVars) => Promise<TResult>) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: fn,
@@ -172,6 +194,19 @@ export const useSaveGroup = (planId: string) => useBoardMutation(planId, ({ id, 
   (id ? api.patch(`/drafting/groups/${id}`, { name }) : api.post(`/drafting/plans/${planId}/groups`, { name })).then(r => r.data as TaskGroup));
 
 export const useDeleteGroup = (planId: string) => useBoardMutation(planId, (id: string) => api.delete(`/drafting/groups/${id}`));
+
+export const useCreateLink = (planId: string) => useBoardMutation(planId,
+  ({ successorId, predecessorId, link_type = 'FS', lag_days = 0 }: { successorId: string; predecessorId: string; link_type?: LinkType; lag_days?: number }) =>
+    api.post(`/drafting/tasks/${successorId}/links`, { predecessor_id: predecessorId, link_type, lag_days }).then(r => r.data as TaskLink));
+
+export const useUpdateLink = (planId: string) => useBoardMutation(planId,
+  ({ id, ...body }: { id: string; link_type?: LinkType; lag_days?: number }) => api.patch(`/drafting/links/${id}`, body).then(r => r.data as TaskLink));
+
+export const useDeleteLink = (planId: string) => useBoardMutation(planId, (id: string) => api.delete(`/drafting/links/${id}`));
+
+/** apply=false previews which tasks would move; apply=true moves them. */
+export const useReschedule = (planId: string) => useBoardMutation(planId, (apply: boolean) =>
+  api.post(`/drafting/plans/${planId}/reschedule`, { apply }).then(r => r.data.data as RescheduleChange[]));
 
 export function useCanManageDrafting() {
   const user = useAuthStore(s => s.user);

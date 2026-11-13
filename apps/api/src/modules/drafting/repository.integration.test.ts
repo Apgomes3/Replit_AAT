@@ -68,6 +68,37 @@ describe.skipIf(!process.env.DATABASE_URL)('drafting repository (PostgreSQL)', (
     expect(board!.tasks.find(t => t.id === task.id)!.group_id).toBeNull();
   });
 
+  it('links tasks, refuses duplicates and loops, and pushes later tasks on request', async () => {
+    const a = await repo.createTask(ids.plan, { title: 'Link A', start_date: '2026-05-04', due_date: '2026-05-08' }, ids.user);
+    const b = await repo.createTask(ids.plan, { title: 'Link B', start_date: '2026-05-06', due_date: '2026-05-07' }, ids.user);
+    const c = await repo.createTask(ids.otherPlan, { title: 'Link C (other plan)', start_date: '2026-05-01', due_date: '2026-05-01' }, ids.user);
+
+    const ab = await repo.createLink(b.id, { predecessor_id: a.id }, ids.user);
+    expect(ab).toMatchObject({ predecessor_id: a.id, successor_id: b.id, link_type: 'FS', lag_days: 0 });
+    await expect(repo.createLink(b.id, { predecessor_id: a.id }, ids.user)).rejects.toThrow(/already linked/);
+    await expect(repo.createLink(a.id, { predecessor_id: b.id }, ids.user)).rejects.toThrow(/already linked/);
+    await repo.createLink(c.id, { predecessor_id: b.id, link_type: 'SS' }, ids.user);
+    await expect(repo.createLink(a.id, { predecessor_id: c.id }, ids.user)).rejects.toThrow(/loop/);
+
+    const board = await repo.getBoard(ids.plan);
+    expect(board!.links).toHaveLength(2);
+    expect(board!.external_tasks.map(t => t.id)).toEqual([c.id]);
+
+    const preview = await repo.reschedulePlan(ids.plan, false, ids.user);
+    expect(preview).toEqual([expect.objectContaining({ id: b.id, start_date: '2026-05-09', due_date: '2026-05-10', old_start_date: '2026-05-06' })]);
+    expect((await repo.getBoard(ids.plan))!.tasks.find(t => t.id === b.id)!.start_date).toBe('2026-05-06'); // preview only
+    await repo.reschedulePlan(ids.plan, true, ids.user);
+    const after = await repo.getBoard(ids.plan);
+    expect(after!.tasks.find(t => t.id === b.id)).toMatchObject({ start_date: '2026-05-09', due_date: '2026-05-10' });
+    // Tasks in other plans are never moved, even when out of order.
+    expect((await repo.getBoard(ids.otherPlan))!.tasks.find(t => t.id === c.id)!.start_date).toBe('2026-05-01');
+
+    expect(await repo.updateLink(ab.id, { lag_days: 2 })).toMatchObject({ lag_days: 2 });
+    expect(await repo.deleteLink(ab.id)).toBe(true);
+    await repo.deleteTask(b.id); // removes its remaining link too
+    expect((await repo.getBoard(ids.plan))!.links).toHaveLength(0);
+  });
+
   it('enforces due date after start date in the database', async () => {
     await expect(repo.createTask(ids.plan, { title: 'Bad dates', start_date: '2026-03-10', due_date: '2026-03-01' }, ids.user))
       .rejects.toMatchObject({ code: '23514' });

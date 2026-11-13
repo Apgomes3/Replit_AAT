@@ -1,7 +1,8 @@
 // Writes a Planner import into the drafting tables. All-or-nothing, and safe to re-run:
 // projects/plans/groups are matched by code/name and tasks by their [Planner #N] marker.
 import type { PoolClient } from 'pg';
-import { ImportPlan, plannerMarker } from './plannerPlan';
+import { ImportPlan, parsePlannerDependencies, plannerMarker } from './plannerPlan';
+import { createLink, DraftingRuleError } from '../repository';
 
 export type ImportOptions = {
   teamName: string;
@@ -102,6 +103,44 @@ export async function applyImport(db: Db, plans: ImportPlan[], opts: ImportOptio
         await db.query(`INSERT INTO drafting_task_assignees (task_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, [task.id, userId]);
       }
       report.tasksCreated++;
+    }
+  }
+  return report;
+}
+
+export type LinkReport = { created: number; existing: number; unresolved: string[]; refused: string[] };
+
+const DEPENDS_LINE = /Depends on Planner task\(s\) ([^\n]*)/;
+const MARKER = /\[Planner #(\d+)\]/;
+
+/**
+ * Turns the "Depends on Planner task(s) …" lines kept in imported task notes into real task links.
+ * Safe to re-run: links that already exist are counted, not duplicated. Notes are left as they are.
+ */
+export async function linkPlannerDependencies(db: Db, actorId: string | null): Promise<LinkReport> {
+  const report: LinkReport = { created: 0, existing: 0, unresolved: [], refused: [] };
+  const rows: Array<{ id: string; notes: string }> = (await db.query(
+    `SELECT id, notes FROM drafting_tasks WHERE notes LIKE '%[Planner #%'`,
+  )).rows;
+  const byNumber = new Map<string, string>();
+  for (const r of rows) { const m = MARKER.exec(r.notes); if (m) byNumber.set(m[1]!, r.id); }
+
+  for (const r of rows) {
+    const deps = DEPENDS_LINE.exec(r.notes);
+    if (!deps) continue;
+    const own = MARKER.exec(r.notes)?.[1] ?? '?';
+    for (const d of parsePlannerDependencies(deps[1]!)) {
+      const predId = byNumber.get(d.plannerNumber);
+      if (!predId) { report.unresolved.push(`#${own} → #${d.plannerNumber}`); continue; }
+      const exists = await db.query(`SELECT 1 FROM drafting_task_links WHERE predecessor_id = $1 AND successor_id = $2`, [predId, r.id]);
+      if (exists.rowCount) { report.existing++; continue; }
+      try {
+        await createLink(r.id, { predecessor_id: predId, link_type: d.type, lag_days: d.lagDays }, actorId, db);
+        report.created++;
+      } catch (e) {
+        if (!(e instanceof DraftingRuleError)) throw e;
+        report.refused.push(`#${own} → #${d.plannerNumber}: ${e.message}`);
+      }
     }
   }
   return report;

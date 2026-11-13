@@ -91,6 +91,23 @@ CREATE TABLE IF NOT EXISTS drafting_task_assignees (
 );
 CREATE INDEX IF NOT EXISTS idx_drafting_task_assignees_user ON drafting_task_assignees (user_id);
 
+-- D.3: links between tasks ("successor waits for predecessor"), MS Project style.
+-- FS = start after the predecessor finishes, SS = start together, FF = finish together,
+-- SF = finish once the predecessor starts. lag_days shifts the constraint (negative = overlap).
+-- Links may cross plans. Cycles are refused in the repository.
+CREATE TABLE IF NOT EXISTS drafting_task_links (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  predecessor_id UUID NOT NULL REFERENCES drafting_tasks(id) ON DELETE CASCADE,
+  successor_id UUID NOT NULL REFERENCES drafting_tasks(id) ON DELETE CASCADE,
+  link_type VARCHAR(2) NOT NULL DEFAULT 'FS' CHECK (link_type IN ('FS', 'SS', 'FF', 'SF')),
+  lag_days INTEGER NOT NULL DEFAULT 0 CHECK (lag_days BETWEEN -365 AND 365),
+  created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (predecessor_id <> successor_id),
+  UNIQUE (predecessor_id, successor_id)
+);
+CREATE INDEX IF NOT EXISTS idx_drafting_task_links_successor ON drafting_task_links (successor_id);
+
 -- Module visibility: viewers can look, every other role can manage.
 -- Admins can change this per role in Admin > Roles.
 INSERT INTO role_module_access (role_id, module_key, access_level)

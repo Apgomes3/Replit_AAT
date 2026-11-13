@@ -1,11 +1,20 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import { readSheetRows, serialToIso, tasksFromRows } from './plannerFile';
-import { buildImport, mapStatus, parseProjectHeader, splitAssignees } from './plannerPlan';
+import { buildImport, mapStatus, parsePlannerDependencies, parseProjectHeader, splitAssignees } from './plannerPlan';
 
 const row = (o: Record<string, string>) => o;
 
 describe('Planner import mapping', () => {
+  it('reads Planner "Depends on" text', () => {
+    expect(parsePlannerDependencies('2FS')).toEqual([{ plannerNumber: '2', type: 'FS', lagDays: 0 }]);
+    expect(parsePlannerDependencies('5SS+3 days; 7, 9FF-1d, junk')).toEqual([
+      { plannerNumber: '5', type: 'SS', lagDays: 3 },
+      { plannerNumber: '7', type: 'FS', lagDays: 0 },
+      { plannerNumber: '9', type: 'FF', lagDays: -1 },
+    ]);
+  });
+
   it('parses project headers and internal projects', () => {
     expect(parseProjectHeader('001-042-Merlin Orlando')).toEqual({ code: '001-042', name: 'Merlin Orlando' });
     expect(parseProjectHeader('064-xxx NZ Underwater UV')).toEqual({ code: '064-XXX', name: 'NZ Underwater UV' });

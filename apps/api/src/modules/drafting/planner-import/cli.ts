@@ -2,12 +2,13 @@
 //
 //   npm run import:planner -- --file "<Planner export.xlsx>"          dry run: shows what would be created
 //   npm run import:planner -- --file "<Planner export.xlsx>" --apply  imports in one transaction (safe to re-run)
+//   npm run import:planner -- --links-only                            turns "Depends on" notes of imported tasks into task links
 //
 // Uses DATABASE_URL from .env.
 import path from 'path';
 import pool, { withTransaction } from '../../../db';
 import { logAudit } from '../../../db/audit';
-import { applyImport, ImportOptions, unknownAssignees } from './apply';
+import { applyImport, ImportOptions, linkPlannerDependencies, LinkReport, unknownAssignees } from './apply';
 import { readPlannerFile } from './plannerFile';
 import { buildImport } from './plannerPlan';
 
@@ -25,7 +26,19 @@ function arg(name: string): string | undefined {
   return i > -1 ? process.argv[i + 1] : undefined;
 }
 
+function printLinks(r: LinkReport) {
+  console.log(`Task links created: ${r.created}; already linked: ${r.existing}`);
+  if (r.unresolved.length) console.log(`Not found (left in notes only): ${r.unresolved.join(', ')}`);
+  if (r.refused.length) console.log(`Refused:\n  ${r.refused.join('\n  ')}`);
+}
+
 async function main() {
+  if (process.argv.includes('--links-only')) {
+    const r = await withTransaction(db => linkPlannerDependencies(db, null));
+    await logAudit(null, 'drafting', 'planner-import', 'IMPORT', { summary: 'Planner links', ...r });
+    printLinks(r);
+    return;
+  }
   const file = arg('--file');
   if (!file) throw new Error('--file "<Planner export.xlsx>" is required');
   const plans = buildImport(readPlannerFile(file), { aliases: ALIASES, internalProjects: INTERNAL_PROJECTS });
@@ -46,8 +59,12 @@ async function main() {
     return;
   }
 
-  const report = await withTransaction(db => applyImport(db, plans, OPTIONS, null));
-  await logAudit(null, 'drafting', 'planner-import', 'IMPORT', { summary: 'Planner import', file: path.basename(file), ...report });
+  const { report, links } = await withTransaction(async db => ({
+    report: await applyImport(db, plans, OPTIONS, null),
+    links: await linkPlannerDependencies(db, null),
+  }));
+  await logAudit(null, 'drafting', 'planner-import', 'IMPORT', { summary: 'Planner import', file: path.basename(file), ...report, links });
+  printLinks(links);
   console.log(`\nProjects created (${report.projectsCreated.length}): ${report.projectsCreated.join('; ') || 'none'}`);
   console.log(`Plans created (${report.plansCreated.length}), reused: ${report.plansReused.join(', ') || 'none'}`);
   console.log(`Groups created: ${report.groupsCreated}; tasks created: ${report.tasksCreated}; already imported (skipped): ${report.tasksSkipped}`);

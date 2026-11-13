@@ -5,7 +5,7 @@ import { authenticate, AuthRequest, requireModuleAccess, requireModuleManage } f
 import { logAudit } from '../../db/audit';
 import * as repo from './repository';
 import {
-  isUuid, PLAN_STATUSES, validateGroupInput, validatePlanInput, validateTaskInput, validateTeamInput,
+  isUuid, PLAN_STATUSES, validateGroupInput, validateLinkInput, validatePlanInput, validateTaskInput, validateTeamInput,
 } from './validation';
 
 const router = Router();
@@ -197,6 +197,59 @@ router.patch('/tasks/:id', manage, async (req: AuthRequest, res, next) => {
       fields: Object.keys(value!), ...(value!.status ? { status: value!.status } : {}),
     });
     res.json(task);
+  } catch (e) { handleDbError(e, res, next); }
+});
+
+// ---------- task links (D.3) ----------
+
+router.post('/tasks/:id/links', manage, async (req: AuthRequest, res, next) => {
+  try {
+    if (!isUuid(req.params.id)) return fail(res, 400, 'VALIDATION', 'id must be a valid id.');
+    const { value, error } = validateLinkInput(req.body, { creating: true });
+    if (error) return fail(res, 400, 'VALIDATION', error);
+    const link = await repo.createLink(req.params.id, value!, req.user!.id);
+    await logAudit(req.user!.id, 'drafting_task', link.successor_id, 'LINK', {
+      predecessor_id: link.predecessor_id, link_type: link.link_type, lag_days: link.lag_days,
+    });
+    res.status(201).json(link);
+  } catch (e) { handleDbError(e, res, next); }
+});
+
+router.patch('/links/:id', manage, async (req: AuthRequest, res, next) => {
+  try {
+    if (!isUuid(req.params.id)) return fail(res, 400, 'VALIDATION', 'id must be a valid id.');
+    const { value, error } = validateLinkInput(req.body, { creating: false });
+    if (error) return fail(res, 400, 'VALIDATION', error);
+    const link = await repo.updateLink(req.params.id, value!);
+    if (!link) return fail(res, 404, 'NOT_FOUND', 'Link not found.');
+    await logAudit(req.user!.id, 'drafting_task', link.successor_id, 'UPDATE_LINK', { link_id: link.id, ...value });
+    res.json(link);
+  } catch (e) { handleDbError(e, res, next); }
+});
+
+router.delete('/links/:id', manage, async (req: AuthRequest, res, next) => {
+  try {
+    if (!isUuid(req.params.id)) return fail(res, 400, 'VALIDATION', 'id must be a valid id.');
+    const planIds = await repo.getLinkPlanIds(req.params.id);
+    if (!planIds || !(await repo.deleteLink(req.params.id))) return fail(res, 404, 'NOT_FOUND', 'Link not found.');
+    await logAudit(req.user!.id, 'drafting_link', req.params.id, 'DELETE', { plan_ids: planIds });
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+/** Push this plan's later tasks so every link is respected. { apply: false } previews the changes. */
+router.post('/plans/:id/reschedule', manage, async (req: AuthRequest, res, next) => {
+  try {
+    if (!isUuid(req.params.id)) return fail(res, 400, 'VALIDATION', 'id must be a valid id.');
+    const apply = req.body?.apply === true;
+    if (!(await repo.getPlan(req.params.id))) return fail(res, 404, 'NOT_FOUND', 'Plan not found.');
+    const changes = await repo.reschedulePlan(req.params.id, apply, req.user!.id);
+    if (apply && changes.length) {
+      await logAudit(req.user!.id, 'drafting_plan', req.params.id, 'RESCHEDULE', {
+        moved: changes.map(c => ({ id: c.id, from: c.old_start_date, to: c.start_date })),
+      });
+    }
+    res.json({ data: changes, applied: apply });
   } catch (e) { handleDbError(e, res, next); }
 });
 
