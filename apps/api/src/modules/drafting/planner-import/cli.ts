@@ -8,7 +8,7 @@
 import path from 'path';
 import pool, { withTransaction } from '../../../db';
 import { logAudit } from '../../../db/audit';
-import { applyImport, ImportOptions, linkPlannerDependencies, LinkReport, unknownAssignees } from './apply';
+import { applyImport, applyPlannerExtras, ImportOptions, linkPlannerDependencies, LinkReport, unknownAssignees } from './apply';
 import { readPlannerFile } from './plannerFile';
 import { buildImport } from './plannerPlan';
 
@@ -34,9 +34,10 @@ function printLinks(r: LinkReport) {
 
 async function main() {
   if (process.argv.includes('--links-only')) {
-    const r = await withTransaction(db => linkPlannerDependencies(db, null));
-    await logAudit(null, 'drafting', 'planner-import', 'IMPORT', { summary: 'Planner links', ...r });
+    const { r, extras } = await withTransaction(async db => ({ r: await linkPlannerDependencies(db, null), extras: await applyPlannerExtras(db) }));
+    await logAudit(null, 'drafting', 'planner-import', 'IMPORT', { summary: 'Planner links', ...r, extras });
     printLinks(r);
+    console.log(`Progress copied to ${extras.progress} tasks; ${extras.milestones} tasks marked as milestones`);
     return;
   }
   const file = arg('--file');
@@ -59,10 +60,11 @@ async function main() {
     return;
   }
 
-  const { report, links } = await withTransaction(async db => ({
-    report: await applyImport(db, plans, OPTIONS, null),
-    links: await linkPlannerDependencies(db, null),
-  }));
+  const { report, links } = await withTransaction(async db => {
+    const result = { report: await applyImport(db, plans, OPTIONS, null), links: await linkPlannerDependencies(db, null) };
+    await applyPlannerExtras(db);
+    return result;
+  });
   await logAudit(null, 'drafting', 'planner-import', 'IMPORT', { summary: 'Planner import', file: path.basename(file), ...report, links });
   printLinks(links);
   console.log(`\nProjects created (${report.projectsCreated.length}): ${report.projectsCreated.join('; ') || 'none'}`);

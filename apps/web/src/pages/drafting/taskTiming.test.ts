@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addDays, daysBetween, durationDays, isLate, linkShortfall, timeElapsedPercent, todayIso } from './taskTiming';
+import { addDays, daysBetween, durationDays, isLate, timeElapsedPercent, todayIso } from './taskTiming';
 import { buildSections, sortTasks } from './planViews';
 import type { Task } from './draftingApi';
 
@@ -30,13 +30,7 @@ describe('drafting task timing', () => {
     expect(todayIso(new Date(2026, 10, 12, 23, 30))).toBe('2026-11-12');
   });
 
-  it('checks task links with the same rules as the API', () => {
-    const pred = { start_date: '2026-03-02', due_date: '2026-03-06' };
-    expect(linkShortfall({ link_type: 'FS', lag_days: 0 }, pred, { start_date: '2026-03-05', due_date: '2026-03-09' })).toBe(2);
-    expect(linkShortfall({ link_type: 'FS', lag_days: 0 }, pred, { start_date: '2026-03-07', due_date: '2026-03-09' })).toBe(0);
-    expect(linkShortfall({ link_type: 'SS', lag_days: 1 }, pred, { start_date: '2026-03-02', due_date: '2026-03-03' })).toBe(1);
-    expect(linkShortfall({ link_type: 'FF', lag_days: 0 }, pred, { start_date: '2026-03-01', due_date: '2026-03-04' })).toBe(2);
-    expect(linkShortfall({ link_type: 'FS', lag_days: 0 }, pred, { start_date: null, due_date: null })).toBe(0);
+  it('adds and counts calendar days', () => {
     expect(addDays('2026-02-27', 2)).toBe('2026-03-01');
     expect(daysBetween('2026-03-01', '2026-02-27')).toBe(-2);
   });
@@ -45,7 +39,7 @@ describe('drafting task timing', () => {
 describe('plan view sections', () => {
   const t = (id: string, o: Partial<Task> = {}): Task => ({
     id, plan_id: 'p', group_id: null, title: id, status: 'not_started', priority: 'medium', start_date: null, due_date: null,
-    notes: null, sort_order: 0, completed_at: null, assignees: [], ...o,
+    notes: null, sort_order: 0, completed_at: null, assignees: [], progress_pct: 0, is_milestone: false, ...o,
   });
   const ann = { id: 'u1', name: 'Ann', email: 'a@x' };
   const bob = { id: 'u2', name: 'Bob', email: 'b@x' };

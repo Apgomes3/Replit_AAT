@@ -108,6 +108,22 @@ export async function applyImport(db: Db, plans: ImportPlan[], opts: ImportOptio
   return report;
 }
 
+/**
+ * Copies "Planner progress: N%" and "Milestone" from imported task notes into the progress and
+ * milestone fields. Only fills tasks still at 0% / not a milestone, so later edits are kept. Dates never change.
+ */
+export async function applyPlannerExtras(db: Db): Promise<{ progress: number; milestones: number }> {
+  const progress = await db.query(
+    `UPDATE drafting_tasks SET progress_pct = LEAST(100, (substring(notes from 'Planner progress: (\\d+)%'))::int)
+     WHERE notes ~ 'Planner progress: \\d+%' AND notes LIKE '%[Planner #%' AND progress_pct = 0 AND status <> 'done'`,
+  );
+  const milestones = await db.query(
+    `UPDATE drafting_tasks SET is_milestone = true
+     WHERE notes ~ '(^|\\n)Milestone(\\n|$)' AND notes LIKE '%[Planner #%' AND NOT is_milestone`,
+  );
+  return { progress: progress.rowCount ?? 0, milestones: milestones.rowCount ?? 0 };
+}
+
 export type LinkReport = { created: number; existing: number; unresolved: string[]; refused: string[] };
 
 const DEPENDS_LINE = /Depends on Planner task\(s\) ([^\n]*)/;

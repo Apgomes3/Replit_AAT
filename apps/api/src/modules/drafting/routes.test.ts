@@ -18,7 +18,8 @@ vi.mock('./repository', () => ({
   listPlans: vi.fn(), getPlan: vi.fn(), createPlan: vi.fn(), updatePlan: vi.fn(),
   getBoard: vi.fn(), createGroup: vi.fn(), updateGroup: vi.fn(), deleteGroup: vi.fn(),
   createTask: vi.fn(), updateTask: vi.fn(), deleteTask: vi.fn(), getTaskPlanId: vi.fn(),
-  createLink: vi.fn(), updateLink: vi.fn(), deleteLink: vi.fn(), getLinkPlanIds: vi.fn(), reschedulePlan: vi.fn(),
+  createLinkAndSchedule: vi.fn(), updateLink: vi.fn(), deleteLink: vi.fn(), getLinkPlanIds: vi.fn(), reschedulePlan: vi.fn(),
+  setTaskDates: vi.fn(), setBaseline: vi.fn(),
 }));
 
 import * as repo from './repository';
@@ -155,13 +156,13 @@ describe('drafting routes', () => {
     expect((await call('POST', `/tasks/${TEAM}/links`, { predecessor_id: USER, link_type: 'XX' })).status).toBe(400);
     expect((await call('POST', `/tasks/${TEAM}/links`, { predecessor_id: USER, lag_days: 1.5 })).status).toBe(400);
 
-    mocked.createLink.mockResolvedValueOnce({ id: 'l1', predecessor_id: USER, successor_id: TEAM, link_type: 'SS', lag_days: 2 });
+    mocked.createLinkAndSchedule.mockResolvedValueOnce({ id: 'l1', predecessor_id: USER, successor_id: TEAM, link_type: 'SS', lag_days: 2 });
     const ok = await call('POST', `/tasks/${TEAM}/links`, { predecessor_id: USER, link_type: 'SS', lag_days: 2 });
     expect(ok.status).toBe(201);
-    expect(mocked.createLink).toHaveBeenCalledWith(TEAM, { predecessor_id: USER, link_type: 'SS', lag_days: 2 }, 'actor-1');
+    expect(mocked.createLinkAndSchedule).toHaveBeenCalledWith(TEAM, { predecessor_id: USER, link_type: 'SS', lag_days: 2 }, 'actor-1');
 
     const { DraftingRuleError } = await import('./repository');
-    mocked.createLink.mockRejectedValueOnce(new (DraftingRuleError as any)('This link would make a loop.'));
+    mocked.createLinkAndSchedule.mockRejectedValueOnce(new (DraftingRuleError as any)('This link would make a loop.'));
     const loop = await call('POST', `/tasks/${TEAM}/links`, { predecessor_id: USER });
     expect(loop.status).toBe(400);
     expect(loop.json.error.message).toMatch(/loop/);

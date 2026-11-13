@@ -31,6 +31,7 @@ import clientRoutes from './routes/clients';
 import enquiryRoutes from './routes/enquiries';
 import uvEngineeringRoutes, { uvEngineeringConsumerRoutes } from './routes/uvEngineering';
 import draftingRoutes from './modules/drafting/routes';
+import planningRoutes from './modules/planning/routes';
 import pimRoutes from './modules/pim/routes';
 import { errorHandler, notFound } from './middleware/errors';
 import { observe, summary } from './lib/telemetry';
@@ -77,6 +78,7 @@ app.use('/api/v1', ozoneCalculationRoutes);
 app.use('/api/v1/clients', clientRoutes);
 app.use('/api/v1/enquiries', enquiryRoutes);
 app.use('/api/v1/drafting', draftingRoutes);
+app.use('/api/v1/planning', planningRoutes);
 app.use('/api/v1/pim', pimRoutes);
 
 app.get('/api/live', (_, res) => res.json({ status: 'alive' }));

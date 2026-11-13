@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import {
-  AlertTriangle, ArrowDown, ArrowLeft, ArrowUp, Check, FolderPlus, ChartGantt, Link2, List, Pencil, Plus, Trash2, X,
+  AlertTriangle, ArrowDown, ArrowLeft, ArrowUp, Check, Diamond, FolderPlus, ChartGantt, Link2, List, Pencil, Plus, Trash2, X,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Avatar } from './TeamsPanel';
@@ -13,7 +13,8 @@ import {
   useBoard, useCanManageDrafting, useDeleteGroup, useReschedule, useSaveGroup, useSaveTask, useTeams,
 } from './draftingApi';
 import { buildSections, GroupBy, GROUP_BY, GROUP_BY_LABELS, Section, Sort, SortKey } from './planViews';
-import { durationDays, isLate, linkShortfall, timeElapsedPercent, todayIso } from './taskTiming';
+import { isLate, timeElapsedPercent, todayIso } from './taskTiming';
+import PlanSettings from './PlanSettings';
 import { useConfirm } from '../../hooks/useConfirm';
 
 const PRIORITY_STYLE: Record<TaskPriority, string> = {
@@ -86,19 +87,15 @@ export default function PlanBoard() {
     return c;
   }, [tasks, today]);
 
+  // How many tasks each task waits for, and how early it is (worked out by the API on the plan's calendar).
   const linkInfo: LinkInfo = useMemo(() => {
-    const byId = new Map<string, { start_date: string | null; due_date: string | null; status: string }>(
-      [...tasks, ...externalTasks].map(t => [t.id, t]));
     const info: LinkInfo = new Map();
     for (const l of links) {
-      const pred = byId.get(l.predecessor_id), succ = byId.get(l.successor_id);
-      if (!pred || !succ) continue;
       const cur = info.get(l.successor_id) ?? { waitsFor: 0, earlyBy: 0 };
-      const early = succ.status === 'done' ? 0 : linkShortfall(l, pred, succ);
-      info.set(l.successor_id, { waitsFor: cur.waitsFor + 1, earlyBy: Math.max(cur.earlyBy, early) });
+      info.set(l.successor_id, { waitsFor: cur.waitsFor + 1, earlyBy: Math.max(cur.earlyBy, l.early_days ?? 0) });
     }
     return info;
-  }, [links, tasks, externalTasks]);
+  }, [links]);
   const outOfOrder = tasks.filter(t => (linkInfo.get(t.id)?.earlyBy ?? 0) > 0).length;
 
   if (board.isError) return <div className="p-8 text-sm text-rose-700">This plan could not be loaded. <button className="underline font-bold" onClick={() => board.refetch()}>Try again</button></div>;
@@ -169,9 +166,12 @@ export default function PlanBoard() {
       </div>
     </div>
 
+    <PlanSettings plan={plan} calendarName={board.data!.calendar.name} canManage={canManage} />
+
     {outOfOrder > 0 && <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-900">
       <AlertTriangle className="w-4 h-4 shrink-0" />
-      <span className="flex-1"><b>{outOfOrder} {outOfOrder === 1 ? 'task starts' : 'tasks start'} before the task {outOfOrder === 1 ? 'it waits' : 'they wait'} for is finished.</b> This is a warning only.</span>
+      <span className="flex-1"><b>{outOfOrder} {outOfOrder === 1 ? 'task starts' : 'tasks start'} before the task {outOfOrder === 1 ? 'it waits' : 'they wait'} for is finished.</b>{' '}
+        {plan.auto_schedule ? 'They will move on the next date change, or move them now.' : 'Automatic scheduling is off for this plan, so this is a warning only.'}</span>
       {canManage && <button onClick={pushLater} disabled={reschedule.isPending} className="px-3 py-1.5 rounded-lg bg-white border border-amber-300 text-xs font-bold hover:bg-amber-100 disabled:opacity-50">Move later tasks…</button>}
     </div>}
 
@@ -179,6 +179,7 @@ export default function PlanBoard() {
 
     {view === 'gantt'
       ? <GanttView planId={id} sections={sections} groupBy={groupBy} tasks={tasks} links={links} externalTasks={externalTasks}
+          calendar={board.data!.calendar} hasBaseline={!!plan.baseline_set_at}
           today={today} canManage={canManage} onOpen={task => setModal({ task })} />
       : <div className="space-y-4">
           {sections.map(section => <BoardSection key={section.key} planId={id} section={section} groupBy={groupBy} today={today}
@@ -218,9 +219,9 @@ function NewGroupRow({ planId, onDone }: { planId: string; onDone: () => void })
   </form>;
 }
 
-const COLUMNS: Array<{ label: string; sort?: SortKey }> = [
+const COLUMNS: Array<{ label: string; sort?: SortKey; title?: string }> = [
   { label: 'Task', sort: 'title' }, { label: 'Assigned to' }, { label: 'Priority', sort: 'priority' }, { label: 'Status', sort: 'status' },
-  { label: 'Start', sort: 'start' }, { label: 'Due', sort: 'due' }, { label: 'Days' }, { label: 'Time used' },
+  { label: 'Start', sort: 'start' }, { label: 'Due', sort: 'due' }, { label: 'Days', title: 'Working days on the plan calendar' }, { label: 'Progress' },
 ];
 
 function BoardSection({ planId, section, groupBy, today, canManage, showHeader, sort, onSort, linkInfo, onOpen }: {
@@ -283,7 +284,7 @@ function BoardSection({ planId, section, groupBy, today, canManage, showHeader, 
       <table className="w-full text-sm min-w-[880px]">
         <thead><tr className="border-b border-[#edf2ef]">{COLUMNS.map(c =>
           <th key={c.label} aria-sort={c.sort && sort.key === c.sort ? (sort.desc ? 'descending' : 'ascending') : undefined}
-            className="text-left px-4 py-2 text-[10px] uppercase tracking-[.13em] text-[#6f8082] font-extrabold">
+            title={c.title} className="text-left px-4 py-2 text-[10px] uppercase tracking-[.13em] text-[#6f8082] font-extrabold">
             {c.sort
               ? <button onClick={() => clickSort(c.sort!)} className="inline-flex items-center gap-1 uppercase tracking-[.13em] hover:text-[#087f73]">
                   {c.label}{sort.key === c.sort && (sort.desc ? <ArrowDown className="w-3 h-3" /> : <ArrowUp className="w-3 h-3" />)}
@@ -294,11 +295,13 @@ function BoardSection({ planId, section, groupBy, today, canManage, showHeader, 
           {tasks.map(task => {
             const late = isLate(task, today);
             const elapsed = timeElapsedPercent(task.start_date, task.due_date, today);
-            const days = durationDays(task.start_date, task.due_date);
+            const behind = !late && task.status !== 'done' && elapsed !== null && elapsed - task.progress_pct >= 25;
             const li = linkInfo.get(task.id);
             return <tr key={task.id} className="border-b border-[#edf2ef] last:border-0 hover:bg-[#f8fbf9]">
               <td className="px-4 py-2.5 max-w-[340px]">
+                {task.is_milestone && <Diamond className="inline w-3.5 h-3.5 mr-1 -mt-0.5 text-[#087f73] fill-current" aria-label="Milestone" />}
                 <button onClick={() => onOpen({ task })} className={`text-left font-semibold hover:text-[#087f73] ${task.status === 'done' ? 'line-through text-[#8a9b9a]' : ''}`}>{task.title}</button>
+                {task.critical && <span title="On the critical path: a delay here delays the plan's end" className="ml-2 rounded px-1.5 py-0.5 text-[10px] font-bold align-middle bg-rose-100 text-rose-700">Critical</span>}
                 {li && <span title={li.earlyBy ? `Starts ${li.earlyBy} ${li.earlyBy === 1 ? 'day' : 'days'} before the task it waits for allows` : `Waits for ${li.waitsFor} ${li.waitsFor === 1 ? 'task' : 'tasks'}`}
                   className={`ml-2 inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-bold align-middle ${li.earlyBy ? 'bg-amber-100 text-amber-800' : 'bg-[#eef4f1] text-[#53686b]'}`}>
                   <Link2 className="w-3 h-3" />{li.waitsFor}{li.earlyBy ? ` · ${li.earlyBy}d early` : ''}
@@ -316,14 +319,18 @@ function BoardSection({ planId, section, groupBy, today, canManage, showHeader, 
                   </select>
                 : <span className={`border rounded-md px-2 py-1 text-xs font-bold ${STATUS_STYLE[task.status]}`}>{TASK_STATUS_LABELS[task.status]}</span>}</td>
               <td className="px-4 py-2.5 whitespace-nowrap text-[#53686b]">{formatDay(task.start_date)}</td>
-              <td className={`px-4 py-2.5 whitespace-nowrap ${late ? 'text-rose-700 font-bold' : 'text-[#53686b]'}`}>{formatDay(task.due_date)}</td>
-              <td className="px-4 py-2.5 text-[#53686b]">{days ?? '—'}</td>
-              <td className="px-4 py-2.5 w-40">{task.status === 'done'
+              <td className={`px-4 py-2.5 whitespace-nowrap ${late ? 'text-rose-700 font-bold' : 'text-[#53686b]'}`}>{formatDay(task.due_date)}
+                {!!task.slip_days && <span title={`Due date moved ${Math.abs(task.slip_days)} working days ${task.slip_days > 0 ? 'later' : 'earlier'} than the baseline (${formatDay(task.baseline_due ?? null)})`}
+                  className={`ml-1.5 rounded px-1 py-0.5 text-[10px] font-bold ${task.slip_days > 0 ? 'bg-rose-50 text-rose-700' : 'bg-[#e4f2ee] text-[#087f73]'}`}>{task.slip_days > 0 ? '+' : ''}{task.slip_days}d</span>}</td>
+              <td className="px-4 py-2.5 text-[#53686b]">{task.working_days ?? '—'}</td>
+              <td className="px-4 py-2.5 w-44">{task.status === 'done'
                 ? <span className="text-xs font-bold text-[#087f73]">Done</span>
-                : elapsed === null ? <span className="text-xs text-[#a3b1af]">No dates</span>
-                : <div className="flex items-center gap-2" title={late ? 'Past due date' : `${elapsed}% of the planned time used`}>
-                    <div className="h-1.5 flex-1 rounded-full bg-[#edf2ef] overflow-hidden"><div className={`h-full rounded-full ${late ? 'bg-rose-500' : elapsed >= 80 ? 'bg-amber-500' : 'bg-[#087f73]'}`} style={{ width: `${elapsed}%` }} /></div>
-                    <span className={`text-xs tabular-nums ${late ? 'text-rose-700 font-bold' : 'text-[#53686b]'}`}>{late ? 'Late' : `${elapsed}%`}</span>
+                : <div className="flex items-center gap-2" title={`${task.progress_pct}% done${elapsed !== null ? `, ${elapsed}% of the planned time used` : ''}`}>
+                    <div className="relative h-1.5 flex-1 rounded-full bg-[#edf2ef] overflow-hidden">
+                      <div className={`h-full rounded-full ${late ? 'bg-rose-500' : behind ? 'bg-amber-500' : 'bg-[#087f73]'}`} style={{ width: `${task.progress_pct}%` }} />
+                      {elapsed !== null && <div className="absolute top-0 h-full w-px bg-[#20333a]/40" style={{ left: `${elapsed}%` }} />}
+                    </div>
+                    <span className={`text-xs tabular-nums w-14 ${late ? 'text-rose-700 font-bold' : behind ? 'text-amber-700 font-bold' : 'text-[#53686b]'}`}>{late ? 'Late' : behind ? 'Behind' : `${task.progress_pct}%`}</span>
                   </div>}</td>
             </tr>;
           })}

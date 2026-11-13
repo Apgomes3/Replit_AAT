@@ -2,11 +2,11 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { CalendarDays, Link2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
-  apiErrorMessage, ExternalTask, LINK_TYPE_LABELS, Task, TaskLink, TaskStatus, TASK_STATUS_LABELS,
+  apiErrorMessage, BoardCalendar, ExternalTask, LINK_TYPE_LABELS, Task, TaskLink, TaskStatus, TASK_STATUS_LABELS,
   useCreateLink, useDeleteLink, useSaveTask,
 } from './draftingApi';
 import { GroupBy, Section } from './planViews';
-import { addDays, daysBetween, isLate, linkShortfall } from './taskTiming';
+import { addDays, daysBetween, isLate } from './taskTiming';
 import { useConfirm } from '../../hooks/useConfirm';
 
 const ROW = 34;
@@ -40,18 +40,29 @@ const mondayOnOrBefore = (iso: string) => {
 
 const fmt = (iso: string, opts: Intl.DateTimeFormatOptions) => new Date(`${iso}T00:00:00Z`).toLocaleDateString(undefined, { ...opts, timeZone: 'UTC' });
 
+/** Hours worked on a day by the plan calendar (exceptions first, then the weekday; Monday = index 0). */
+const hoursOn = (cal: BoardCalendar, iso: string) => {
+  const ex = cal.days[iso];
+  if (ex !== undefined) return ex;
+  return Number(cal.week_hours[(new Date(`${iso}T00:00:00Z`).getUTCDay() + 6) % 7] ?? 0);
+};
+
 type Props = {
   planId: string; sections: Section[]; groupBy: GroupBy; tasks: Task[]; links: TaskLink[]; externalTasks: ExternalTask[];
+  calendar: BoardCalendar; hasBaseline: boolean;
   today: string; canManage: boolean; onOpen: (task: Task) => void;
 };
 
-export default function GanttView({ planId, sections, groupBy, tasks, links, externalTasks, today, canManage, onOpen }: Props) {
+export default function GanttView({ planId, sections, groupBy, tasks, links, externalTasks, calendar, hasBaseline, today, canManage, onOpen }: Props) {
   const saveTask = useSaveTask(planId);
   const createLink = useCreateLink(planId);
   const deleteLink = useDeleteLink(planId);
   const { confirm, dialog } = useConfirm();
   const [zoom, setZoom] = useState<Zoom>('day');
-  const [overrides, setOverrides] = useState<Record<string, Dates>>({});
+  const [showCritical, setShowCritical] = useState(true);
+  const [showBaseline, setShowBaseline] = useState(true);
+  // Dates shown while a move is being saved; `settled` ones are dropped when the refreshed board arrives.
+  const [overrides, setOverrides] = useState<Record<string, Dates & { settled?: boolean }>>({});
   const [preview, setPreview] = useState<{ id: string } & Dates | null>(null);
   const [linking, setLinking] = useState<Linking | null>(null);
   const drag = useRef<Drag | null>(null);
@@ -59,13 +70,9 @@ export default function GanttView({ planId, sections, groupBy, tasks, links, ext
   const innerRef = useRef<HTMLDivElement>(null);
   const dayW = ZOOMS[zoom];
 
-  // Drop optimistic dates once the refreshed board shows them.
   useEffect(() => {
-    setOverrides(o => {
-      const next = { ...o };
-      for (const t of tasks) { const d = next[t.id]; if (d && t.start_date === d.start && t.due_date === d.due) delete next[t.id]; }
-      return Object.keys(next).length === Object.keys(o).length ? o : next;
-    });
+    setOverrides(o => (Object.values(o).some(d => d.settled)
+      ? Object.fromEntries(Object.entries(o).filter(([, d]) => !d.settled)) : o));
   }, [tasks]);
 
   const datesOf = (t: Task): Dates | null => (preview?.id === t.id ? preview : overrides[t.id] ?? spanOf(t));
@@ -175,8 +182,10 @@ export default function GanttView({ planId, sections, groupBy, tasks, links, ext
     setPreview(null);
     if (!p || (p.start === d.orig.start && p.due === d.orig.due)) return;
     setOverrides(o => ({ ...o, [task.id]: { start: p.start, due: p.due } }));
-    try { await saveTask.mutateAsync({ id: task.id, body: { start_date: p.start, due_date: p.due } }); }
-    catch (err) {
+    try {
+      await saveTask.mutateAsync({ id: task.id, body: { start_date: p.start, due_date: p.due } });
+      setOverrides(o => (o[task.id] ? { ...o, [task.id]: { ...o[task.id]!, settled: true } } : o));
+    } catch (err) {
       setOverrides(o => { const { [task.id]: _, ...rest } = o; return rest; });
       toast.error(apiErrorMessage(err, 'Could not move the task'));
     }
@@ -208,8 +217,9 @@ export default function GanttView({ planId, sections, groupBy, tasks, links, ext
     const y1 = pr * ROW + ROW / 2, y2 = sr * ROW + ROW / 2;
     const xa = x1 + (fromEnd ? 6 : -6), xb = x2 + (toStart ? -6 : 6);
     const ymid = y2 > y1 ? y2 - ROW / 2 : y2 + ROW / 2;
-    const early = succ.status === 'done' ? 0 : linkShortfall(l, { start_date: pd.start, due_date: pd.due }, { start_date: sd.start, due_date: sd.due });
-    return [{ link: l, d: `M${x1},${y1} H${xa} V${ymid} H${xb} V${y2} H${x2}`, early, pred, succ }];
+    const early = l.early_days ?? 0;
+    const critical = showCritical && !!pred.critical && !!succ.critical;
+    return [{ link: l, d: `M${x1},${y1} H${xa} V${ymid} H${xb} V${y2} H${x2}`, early, critical, pred, succ }];
   });
 
   const removeLink = async (a: (typeof arrows)[number]) => {
@@ -226,9 +236,12 @@ export default function GanttView({ planId, sections, groupBy, tasks, links, ext
   const externalPreds = (taskId: string) => links.filter(l => l.successor_id === taskId && !rowOf.has(l.predecessor_id))
     .map(l => externalTasks.find(t => t.id === l.predecessor_id)).filter((t): t is ExternalTask => !!t);
 
-  const grid = zoom === 'day'
-    ? `repeating-linear-gradient(90deg, transparent 0 ${5 * dayW}px, #f3f6f4 ${5 * dayW}px ${7 * dayW}px)`
-    : `repeating-linear-gradient(90deg, #edf2ef 0 1px, transparent 1px ${7 * dayW}px)`;
+  // Week lines (range starts on a Monday); Sundays and holidays are shaded from the plan calendar.
+  const grid = `repeating-linear-gradient(90deg, #edf2ef 0 1px, transparent 1px ${7 * dayW}px)`;
+  const offDays = useMemo(() => Array.from({ length: range.days }, (_, i) => addDays(range.start, i))
+    .filter(d => hoursOn(calendar, d) === 0)
+    .map(d => ({ day: d, name: calendar.days[d] === 0 ? 'Holiday' : 'Day off' })), [range, calendar]);
+  const criticalCount = tasks.filter(t => t.critical).length;
 
   return <div className="bg-white rounded-xl border border-[#dce7e2] shadow-sm overflow-hidden">
     <div className="flex flex-wrap items-center gap-3 px-4 py-2 border-b border-[#dce7e2] bg-[#f8fbf9] text-xs text-[#53686b]">
@@ -238,7 +251,15 @@ export default function GanttView({ planId, sections, groupBy, tasks, links, ext
       </div>
       <button onClick={() => scrollTo(today)}
         className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-[#dce7e2] bg-white font-bold"><CalendarDays className="w-3.5 h-3.5" /> Today</button>
-      <span className="ml-auto">{canManage ? 'Drag a bar to move it, its ends to change dates. Drag the dot at a bar\'s end onto another bar to link them. Click an arrow to remove it.' : 'Read-only.'}</span>
+      <label className="inline-flex items-center gap-1.5 font-bold" title="Tasks with no slack: a delay on any of them delays the plan's last task">
+        <input type="checkbox" checked={showCritical} onChange={e => setShowCritical(e.target.checked)} />
+        <span className="inline-block w-2.5 h-2.5 rounded-sm bg-rose-500" /> Critical path ({criticalCount})
+      </label>
+      {hasBaseline && <label className="inline-flex items-center gap-1.5 font-bold">
+        <input type="checkbox" checked={showBaseline} onChange={e => setShowBaseline(e.target.checked)} />
+        <span className="inline-block w-3 h-1 rounded-sm bg-stone-400" /> Baseline
+      </label>}
+      <span className="ml-auto text-[11px]">{canManage ? 'Drag a bar to move it, its ends to change dates; drag the dot at a bar\'s end onto another bar to link them; click an arrow to remove it.' : 'Read-only.'}</span>
     </div>
 
     <div ref={scrollRef} className="overflow-auto max-h-[72vh]">
@@ -264,8 +285,13 @@ export default function GanttView({ planId, sections, groupBy, tasks, links, ext
               <div style={{ width }} />
             </div>
           : <TaskRow key={r.key} task={r.task} dates={datesOf(r.task)} today={today} dayW={dayW} width={width} grid={grid} xOf={xOf}
-              canManage={canManage} externalPreds={externalPreds(r.task.id)} onOpen={onOpen}
+              canManage={canManage} externalPreds={externalPreds(r.task.id)} onOpen={onOpen} critical={showCritical && !!r.task.critical}
+              baseline={hasBaseline && showBaseline ? spanOf({ start_date: r.task.baseline_start ?? null, due_date: r.task.baseline_due ?? null }) : null}
               onBarDown={onBarDown} onBarMove={onBarMove} onBarUp={onBarUp} onSchedule={scheduleAt} />)}
+
+        {/* Sundays and holidays on the plan calendar */}
+        {zoom !== 'month' && offDays.map(o => <div key={o.day} className="absolute z-[2] bg-stone-400/10 pointer-events-none"
+          style={{ left: NAME_W + xOf(o.day), width: dayW, top: HEAD, bottom: 0 }} />)}
 
         {/* today line */}
         <div className="absolute z-[6] w-0.5 bg-rose-400/70 pointer-events-none" style={{ left: NAME_W + xOf(today) + dayW / 2, top: HEAD, bottom: 0 }} />
@@ -273,13 +299,14 @@ export default function GanttView({ planId, sections, groupBy, tasks, links, ext
         {/* link arrows */}
         <svg className="absolute z-[5] pointer-events-none overflow-visible" style={{ left: NAME_W, top: HEAD }} width={width} height={rows.length * ROW}>
           <defs>
-            {[['ok', '#7d8f8e'], ['early', '#d97706']].map(([id, c]) =>
+            {[['ok', '#7d8f8e'], ['early', '#d97706'], ['critical', '#e11d48']].map(([id, c]) =>
               <marker key={id} id={`gantt-arrow-${id}`} viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
                 <path d="M0,0 L8,4 L0,8 z" fill={c} />
               </marker>)}
           </defs>
           {arrows.map(a => <g key={a.link.id}>
-            <path d={a.d} fill="none" stroke={a.early ? '#d97706' : '#7d8f8e'} strokeWidth={a.early ? 1.75 : 1.25} markerEnd={`url(#gantt-arrow-${a.early ? 'early' : 'ok'})`} />
+            <path d={a.d} fill="none" stroke={a.early ? '#d97706' : a.critical ? '#e11d48' : '#7d8f8e'} strokeWidth={a.early || a.critical ? 1.75 : 1.25}
+              markerEnd={`url(#gantt-arrow-${a.early ? 'early' : a.critical ? 'critical' : 'ok'})`} />
             <path d={a.d} fill="none" stroke="transparent" strokeWidth={10} className={canManage ? 'cursor-pointer' : ''} style={{ pointerEvents: 'stroke' }}
               onClick={() => removeLink(a)}>
               <title>{`${a.pred.title} → ${a.succ.title}\n${LINK_TYPE_LABELS[a.link.link_type]}${a.link.lag_days ? `, ${a.link.lag_days > 0 ? '+' : ''}${a.link.lag_days} days` : ''}${a.early ? `\nStarts ${a.early} days too early` : ''}`}</title>
@@ -294,14 +321,24 @@ export default function GanttView({ planId, sections, groupBy, tasks, links, ext
   </div>;
 }
 
-function TaskRow({ task, dates, today, dayW, width, grid, xOf, canManage, externalPreds, onOpen, onBarDown, onBarMove, onBarUp, onSchedule }: {
+function TaskRow({ task, dates, today, dayW, width, grid, xOf, canManage, externalPreds, onOpen, critical, baseline, onBarDown, onBarMove, onBarUp, onSchedule }: {
   task: Task; dates: Dates | null; today: string; dayW: number; width: number; grid: string; xOf: (iso: string) => number;
-  canManage: boolean; externalPreds: ExternalTask[]; onOpen: (t: Task) => void;
+  canManage: boolean; externalPreds: ExternalTask[]; onOpen: (t: Task) => void; critical: boolean; baseline: Dates | null;
   onBarDown: (e: React.PointerEvent, t: Task) => void; onBarMove: (e: React.PointerEvent) => void;
   onBarUp: (e: React.PointerEvent, t: Task) => void; onSchedule: (e: React.MouseEvent, t: Task) => void;
 }) {
   const late = isLate(task, today);
   const done = task.status === 'done';
+  const events = {
+    'data-task-id': task.id, role: 'button', tabIndex: 0,
+    onKeyDown: (e: React.KeyboardEvent) => { if (e.key === 'Enter') onOpen(task); },
+    onPointerDown: (e: React.PointerEvent) => onBarDown(e, task), onPointerMove: onBarMove, onPointerUp: (e: React.PointerEvent) => onBarUp(e, task),
+  };
+  const linkDot = canManage && <span data-handle="link" title="Drag onto another task to make it wait for this one"
+    className="absolute -right-3.5 top-1/2 -translate-y-1/2 h-2.5 w-2.5 rounded-full border-2 border-[#087f73] bg-white opacity-0 group-hover/bar:opacity-100 cursor-crosshair" />;
+  const who = <span className="pointer-events-none absolute left-full top-0 ml-4 whitespace-nowrap text-[11px] leading-5 text-[#6f8082]">
+    {task.assignees.map(a => a.name.split(' ')[0]).join(', ')}
+  </span>;
   return <div className="group/row flex border-b border-[#edf2ef] hover:bg-[#f8fbf9]" style={{ height: ROW }}>
     <div className="sticky left-0 z-10 bg-white group-hover/row:bg-[#f8fbf9] border-r border-[#dce7e2] px-4 flex items-center gap-2 min-w-0" style={{ width: NAME_W, minWidth: NAME_W }}>
       <button onClick={() => onOpen(task)} title={task.title}
@@ -310,22 +347,25 @@ function TaskRow({ task, dates, today, dayW, width, grid, xOf, canManage, extern
         className="shrink-0 inline-flex items-center gap-0.5 rounded bg-[#eef4f1] px-1 py-0.5 text-[10px] font-bold text-[#53686b]"><Link2 className="w-3 h-3" />{externalPreds[0]!.plan_code}</span>}
     </div>
     <div className="relative" style={{ width, backgroundImage: grid, backgroundPosition: '0 0' }}>
-      {dates
-        ? <div data-task-id={task.id} role="button" tabIndex={0} aria-label={`${task.title}: ${dates.start} to ${dates.due}, ${TASK_STATUS_LABELS[task.status]}`}
-            onKeyDown={e => { if (e.key === 'Enter') onOpen(task); }}
-            onPointerDown={e => onBarDown(e, task)} onPointerMove={onBarMove} onPointerUp={e => onBarUp(e, task)}
-            className={`group/bar absolute top-[7px] h-5 rounded-md shadow-sm ${BAR[task.status]} ${late ? 'ring-2 ring-rose-500' : ''} ${canManage ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'}`}
+      {baseline && <div title={`Baseline: ${baseline.start} to ${baseline.due}`} className="absolute z-[3] top-[28px] h-1 rounded-full bg-stone-400/70 pointer-events-none"
+        style={{ left: xOf(baseline.start), width: Math.max(dayW, (daysBetween(baseline.start, baseline.due) + 1) * dayW) - 1 }} />}
+      {dates && task.is_milestone
+        ? <div {...events} aria-label={`Milestone ${task.title}: ${dates.start}, ${TASK_STATUS_LABELS[task.status]}`}
+            className={`group/bar absolute z-[3] top-[9px] h-4 w-4 rotate-45 rounded-[2px] shadow-sm ${critical && !done ? 'bg-rose-600' : done ? 'bg-[#087f73]/60' : 'bg-[#087f73]'} ${late ? 'ring-2 ring-rose-500' : ''} ${canManage ? 'cursor-grab' : 'cursor-pointer'}`}
+            style={{ left: xOf(dates.start) + dayW / 2 - 8, touchAction: 'none' }}>
+            <span className="-rotate-45 absolute inset-0">{linkDot}{who}</span>
+          </div>
+        : dates
+        ? <div {...events} aria-label={`${task.title}: ${dates.start} to ${dates.due}, ${TASK_STATUS_LABELS[task.status]}, ${task.progress_pct}% done${critical ? ', critical' : ''}`}
+            className={`group/bar absolute z-[3] top-[7px] h-5 rounded-md shadow-sm overflow-visible ${critical && !done ? 'bg-rose-500 text-white' : BAR[task.status]} ${late ? 'ring-2 ring-rose-500 ring-offset-1' : ''} ${canManage ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'}`}
             style={{ left: xOf(dates.start), width: Math.max(dayW, (daysBetween(dates.start, dates.due) + 1) * dayW) - 1, touchAction: 'none' }}>
-            {(daysBetween(dates.start, dates.due) + 1) * dayW > 90 && <span className="pointer-events-none block truncate px-2 text-[11px] font-semibold leading-5">{task.title}</span>}
+            {!done && task.progress_pct > 0 && <span className="pointer-events-none absolute inset-y-0 left-0 rounded-l-md bg-black/25" style={{ width: `${task.progress_pct}%` }} />}
+            {(daysBetween(dates.start, dates.due) + 1) * dayW > 90 && <span className="pointer-events-none relative block truncate px-2 text-[11px] font-semibold leading-5">{task.title}</span>}
             {canManage && <>
               <span data-handle="start" className="absolute inset-y-0 left-0 w-1.5 cursor-ew-resize rounded-l-md hover:bg-black/20" />
               <span data-handle="end" className="absolute inset-y-0 right-0 w-1.5 cursor-ew-resize rounded-r-md hover:bg-black/20" />
-              <span data-handle="link" title="Drag onto another task to make it wait for this one"
-                className="absolute -right-3.5 top-1/2 -translate-y-1/2 h-2.5 w-2.5 rounded-full border-2 border-[#087f73] bg-white opacity-0 group-hover/bar:opacity-100 cursor-crosshair" />
             </>}
-            <span className="pointer-events-none absolute left-full top-0 ml-4 whitespace-nowrap text-[11px] leading-5 text-[#6f8082]">
-              {task.assignees.map(a => a.name.split(' ')[0]).join(', ')}
-            </span>
+            {linkDot}{who}
           </div>
         : <button onClick={e => onSchedule(e, task)} className="absolute inset-0 text-left px-3 text-xs text-[#a3b1af] hover:text-[#087f73]">
             <span className="sticky inline-block" style={{ left: NAME_W + 12 }}>{canManage ? 'No dates — click a day to schedule it' : 'No dates'}</span>

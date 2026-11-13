@@ -2,6 +2,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../../lib/api';
 import { useAuthStore } from '../../store/authStore';
+import { showRescheduleToast } from './rescheduleToast';
 
 export const PLAN_STATUSES = ['planning', 'active', 'on_hold', 'completed', 'archived'] as const;
 export type PlanStatus = typeof PLAN_STATUSES[number];
@@ -40,6 +41,11 @@ export type Plan = {
   task_count: number;
   done_count: number;
   late_count: number;
+  /** null = the default calendar. */
+  calendar_id: string | null;
+  calendar_name: string | null;
+  auto_schedule: boolean;
+  baseline_set_at: string | null;
 };
 
 export const TASK_STATUSES = ['not_started', 'in_progress', 'review', 'done'] as const;
@@ -74,8 +80,21 @@ export type Task = {
   notes: string | null;
   sort_order: number;
   completed_at: string | null;
-  assignees: Array<{ id: string; name: string; email: string }>;
+  progress_pct: number;
+  is_milestone: boolean;
+  baseline_start?: string | null;
+  baseline_due?: string | null;
+  assignees: Array<{ id: string; name: string; email: string; allocation_pct?: number }>;
+  // Schedule figures from the plan's calendar (present on board tasks).
+  working_days?: number | null;
+  /** Working days the task can slip before the plan end moves. */
+  float_days?: number | null;
+  critical?: boolean;
+  /** Working days the due date moved since the baseline (positive = later). */
+  slip_days?: number | null;
 };
+
+export type BoardCalendar = { id: string | null; name: string; week_hours: number[]; days: Record<string, number> };
 
 export const LINK_TYPES = ['FS', 'SS', 'FF', 'SF'] as const;
 export type LinkType = typeof LINK_TYPES[number];
@@ -87,14 +106,20 @@ export const LINK_TYPE_LABELS: Record<LinkType, string> = {
 };
 
 /** successor waits for predecessor. */
-export type TaskLink = { id: string; predecessor_id: string; successor_id: string; link_type: LinkType; lag_days: number };
+export type TaskLink = {
+  id: string; predecessor_id: string; successor_id: string; link_type: LinkType; lag_days: number;
+  /** Working days the successor is too early for this link (0 = in order). */
+  early_days?: number;
+};
 
 /** A task in another plan that a task of this plan is linked to. */
 export type ExternalTask = {
   id: string; title: string; status: TaskStatus; start_date: string | null; due_date: string | null; plan_id: string; plan_code: string;
 };
 
-export type Board = { plan: Plan; groups: TaskGroup[]; tasks: Task[]; links: TaskLink[]; external_tasks: ExternalTask[] };
+export type Board = {
+  plan: Plan; groups: TaskGroup[]; tasks: Task[]; links: TaskLink[]; external_tasks: ExternalTask[]; calendar: BoardCalendar;
+};
 
 export type RescheduleChange = {
   id: string; title: string; start_date: string | null; due_date: string | null;
@@ -110,6 +135,10 @@ export type TaskPayload = Partial<{
   due_date: string | null;
   notes: string | null;
   assignee_ids: string[];
+  progress_pct: number;
+  is_milestone: boolean;
+  /** Allocation % per assigned user id. */
+  allocations: Record<string, number>;
 }>;
 
 export type TeamPayload = {
@@ -173,20 +202,51 @@ export const useBoard = (planId: string) => useQuery({
   enabled: !!planId,
 });
 
-/** Mutations on one plan's board refresh the board and the plan list counts. */
-function useBoardMutation<TVars, TResult = unknown>(planId: string, fn: (vars: TVars) => Promise<TResult>) {
+/** Settings of one plan (calendar, automatic scheduling, …) changed from the board. */
+export function usePatchPlan(planId: string) {
   const qc = useQueryClient();
   return useMutation({
+    mutationFn: (body: Partial<PlanPayload & { calendar_id: string | null; auto_schedule: boolean }>) =>
+      api.patch(`/drafting/plans/${planId}`, body).then(r => r.data as Plan),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: boardKey(planId) }); qc.invalidateQueries({ queryKey: keys.plans }); },
+  });
+}
+
+/** Save the plan's current dates as its baseline, or clear it. */
+export const useSetBaseline = (planId: string) => useBoardMutation(planId, (clear: boolean) =>
+  api.post(`/drafting/plans/${planId}/baseline`, { clear }).then(r => r.data as Plan));
+
+/**
+ * Mutations on one plan's board refresh the board and the plan list counts. When the automatic
+ * scheduler moved tasks (`rescheduled` in the response), an Undo message is shown.
+ */
+function useBoardMutation<TVars, TResult = unknown>(planId: string, fn: (vars: TVars) => Promise<TResult>) {
+  const qc = useQueryClient();
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: boardKey(planId) });
+    qc.invalidateQueries({ queryKey: keys.plans });
+    qc.invalidateQueries({ queryKey: ['planning', 'workload'] });
+  };
+  return useMutation({
     mutationFn: fn,
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: boardKey(planId) });
-      qc.invalidateQueries({ queryKey: keys.plans });
+    onSuccess: (result: TResult) => {
+      refresh();
+      const r = result as { id?: string; rescheduled?: RescheduleChange[]; successor_id?: string } | undefined;
+      if (r?.rescheduled?.length) {
+        showRescheduleToast(r.rescheduled, r.successor_id ? null : r.id ?? null, async changes => {
+          await api.post(`/drafting/plans/${planId}/dates`, {
+            changes: changes.map(c => ({ id: c.id, start_date: c.old_start_date, due_date: c.old_due_date })),
+          });
+          refresh();
+        });
+      }
     },
   });
 }
 
 export const useSaveTask = (planId: string) => useBoardMutation(planId, ({ id, body }: { id?: string; body: TaskPayload }) =>
-  (id ? api.patch(`/drafting/tasks/${id}`, body) : api.post(`/drafting/plans/${planId}/tasks`, body)).then(r => r.data as Task));
+  (id ? api.patch(`/drafting/tasks/${id}`, body) : api.post(`/drafting/plans/${planId}/tasks`, body))
+    .then(r => r.data as Task & { rescheduled?: RescheduleChange[] }));
 
 export const useDeleteTask = (planId: string) => useBoardMutation(planId, (id: string) => api.delete(`/drafting/tasks/${id}`));
 

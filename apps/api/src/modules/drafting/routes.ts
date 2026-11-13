@@ -5,8 +5,13 @@ import { authenticate, AuthRequest, requireModuleAccess, requireModuleManage } f
 import { logAudit } from '../../db/audit';
 import * as repo from './repository';
 import {
-  isUuid, PLAN_STATUSES, validateGroupInput, validateLinkInput, validatePlanInput, validateTaskInput, validateTeamInput,
+  isUuid, PLAN_STATUSES, validateDateChanges, validateGroupInput, validateLinkInput, validatePlanInput, validateTaskInput,
+  validateTeamInput,
 } from './validation';
+
+/** Compact audit record of tasks the scheduler moved: id and start date before → after. */
+const movedSummary = (changes: repo.RescheduleChange[] | undefined) =>
+  (changes ?? []).map(c => ({ id: c.id, from: c.old_start_date ?? c.old_due_date, to: c.start_date ?? c.due_date }));
 
 const router = Router();
 router.use(authenticate, requireModuleAccess('drafting'));
@@ -195,6 +200,7 @@ router.patch('/tasks/:id', manage, async (req: AuthRequest, res, next) => {
     if (!task) return fail(res, 404, 'NOT_FOUND', 'Task not found.');
     await logAudit(req.user!.id, 'drafting_task', task.id, 'UPDATE', {
       fields: Object.keys(value!), ...(value!.status ? { status: value!.status } : {}),
+      ...(task.rescheduled?.length ? { moved: movedSummary(task.rescheduled) } : {}),
     });
     res.json(task);
   } catch (e) { handleDbError(e, res, next); }
@@ -207,9 +213,9 @@ router.post('/tasks/:id/links', manage, async (req: AuthRequest, res, next) => {
     if (!isUuid(req.params.id)) return fail(res, 400, 'VALIDATION', 'id must be a valid id.');
     const { value, error } = validateLinkInput(req.body, { creating: true });
     if (error) return fail(res, 400, 'VALIDATION', error);
-    const link = await repo.createLink(req.params.id, value!, req.user!.id);
+    const link = await repo.createLinkAndSchedule(req.params.id, value!, req.user!.id);
     await logAudit(req.user!.id, 'drafting_task', link.successor_id, 'LINK', {
-      predecessor_id: link.predecessor_id, link_type: link.link_type, lag_days: link.lag_days,
+      predecessor_id: link.predecessor_id, link_type: link.link_type, lag_days: link.lag_days, moved: movedSummary(link.rescheduled),
     });
     res.status(201).json(link);
   } catch (e) { handleDbError(e, res, next); }
@@ -220,9 +226,9 @@ router.patch('/links/:id', manage, async (req: AuthRequest, res, next) => {
     if (!isUuid(req.params.id)) return fail(res, 400, 'VALIDATION', 'id must be a valid id.');
     const { value, error } = validateLinkInput(req.body, { creating: false });
     if (error) return fail(res, 400, 'VALIDATION', error);
-    const link = await repo.updateLink(req.params.id, value!);
+    const link = await repo.updateLink(req.params.id, value!, req.user!.id);
     if (!link) return fail(res, 404, 'NOT_FOUND', 'Link not found.');
-    await logAudit(req.user!.id, 'drafting_task', link.successor_id, 'UPDATE_LINK', { link_id: link.id, ...value });
+    await logAudit(req.user!.id, 'drafting_task', link.successor_id, 'UPDATE_LINK', { link_id: link.id, ...value, moved: movedSummary(link.rescheduled) });
     res.json(link);
   } catch (e) { handleDbError(e, res, next); }
 });
@@ -251,6 +257,30 @@ router.post('/plans/:id/reschedule', manage, async (req: AuthRequest, res, next)
     }
     res.json({ data: changes, applied: apply });
   } catch (e) { handleDbError(e, res, next); }
+});
+
+/** Undo of an automatic reschedule: put tasks back on the given dates (no scheduling runs). */
+router.post('/plans/:id/dates', manage, async (req: AuthRequest, res, next) => {
+  try {
+    if (!isUuid(req.params.id)) return fail(res, 400, 'VALIDATION', 'id must be a valid id.');
+    const { value, error } = validateDateChanges(req.body);
+    if (error) return fail(res, 400, 'VALIDATION', error);
+    const updated = await repo.setTaskDates(req.params.id, value!, req.user!.id);
+    await logAudit(req.user!.id, 'drafting_plan', req.params.id, 'RESTORE_DATES', { tasks: value!.map(c => c.id) });
+    res.json({ updated });
+  } catch (e) { handleDbError(e, res, next); }
+});
+
+/** Save the plan's current dates as its baseline ({ clear: true } removes it). */
+router.post('/plans/:id/baseline', manage, async (req: AuthRequest, res, next) => {
+  try {
+    if (!isUuid(req.params.id)) return fail(res, 400, 'VALIDATION', 'id must be a valid id.');
+    const clear = req.body?.clear === true;
+    const plan = await repo.setBaseline(req.params.id, clear, req.user!.id);
+    if (!plan) return fail(res, 404, 'NOT_FOUND', 'Plan not found.');
+    await logAudit(req.user!.id, 'drafting_plan', plan.id, clear ? 'CLEAR_BASELINE' : 'SET_BASELINE', {});
+    res.json(plan);
+  } catch (e) { next(e); }
 });
 
 router.delete('/tasks/:id', manage, async (req: AuthRequest, res, next) => {

@@ -8,7 +8,6 @@ import {
   TASK_PRIORITY_LABELS, TASK_STATUSES, TASK_STATUS_LABELS, useCreateLink, useDeleteLink, useDeleteTask, usePeople, useSaveTask,
   useUpdateLink,
 } from './draftingApi';
-import { linkShortfall } from './taskTiming';
 import { useConfirm } from '../../hooks/useConfirm';
 
 /** "Waits for" (editable) and "Waited on by" (read-only) links of one task. Changes save immediately. */
@@ -30,8 +29,7 @@ function TaskLinks({ planId, task, board }: { planId: string; task: Task; board:
     <legend className={fieldLabel}>Waits for</legend>
     <div className="mt-1.5 rounded-lg border border-[#dce7e2] divide-y divide-[#edf2ef]">
       {waitsFor.map(l => {
-        const pred = all.get(l.predecessor_id);
-        const early = pred && task.status !== 'done' ? linkShortfall(l, pred, task) : 0;
+        const early = l.early_days ?? 0;
         return <div key={l.id} className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm">
           <span className="flex-1 min-w-[160px] font-semibold truncate" title={label(l.predecessor_id)}>{label(l.predecessor_id)}</span>
           {early > 0 && <span className="inline-flex items-center gap-1 text-xs font-bold text-amber-700" title="This task starts before the link allows"><AlertTriangle className="w-3.5 h-3.5" /> {early}d early</span>}
@@ -79,6 +77,9 @@ type FormState = Required<Pick<TaskPayload, 'title' | 'status' | 'priority'>> & 
   due_date: string | null;
   notes: string;
   assignee_ids: string[];
+  progress_pct: number;
+  is_milestone: boolean;
+  allocations: Record<string, number>;
 };
 
 export default function TaskModal({ planId, groups, teamPeopleIds, task, defaults = {}, board, onClose }: Props) {
@@ -96,6 +97,9 @@ export default function TaskModal({ planId, groups, teamPeopleIds, task, default
     due_date: task?.due_date ?? null,
     notes: task?.notes ?? '',
     assignee_ids: task?.assignees.map(a => a.id) ?? defaults.assignee_ids ?? [],
+    progress_pct: task?.progress_pct ?? 0,
+    is_milestone: task?.is_milestone ?? false,
+    allocations: Object.fromEntries((task?.assignees ?? []).map(a => [a.id, a.allocation_pct ?? 100])),
   }));
 
   const candidates = useMemo(() => {
@@ -113,9 +117,13 @@ export default function TaskModal({ planId, groups, teamPeopleIds, task, default
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.title.trim()) return toast.error('Task name is required');
-    if (form.start_date && form.due_date && form.due_date < form.start_date) return toast.error('Due date cannot be before start date');
+    if (!form.is_milestone && form.start_date && form.due_date && form.due_date < form.start_date) return toast.error('Due date cannot be before start date');
+    const allocations = Object.fromEntries(form.assignee_ids.map(id => [id, Math.min(100, Math.max(1, Math.round(form.allocations[id] ?? 100)))]));
+    // A milestone is one day: its date is the start date (or the due date if only that is set).
+    const day = form.start_date ?? form.due_date;
+    const dates = form.is_milestone ? { start_date: day, due_date: day } : {};
     try {
-      await save.mutateAsync({ id: task?.id, body: { ...form, title: form.title.trim(), notes: form.notes.trim() || null } });
+      await save.mutateAsync({ id: task?.id, body: { ...form, ...dates, allocations, title: form.title.trim(), notes: form.notes.trim() || null } });
       toast.success(task ? 'Task updated' : 'Task added');
       onClose();
     } catch (err) {
@@ -147,8 +155,20 @@ export default function TaskModal({ planId, groups, teamPeopleIds, task, default
       <label className={fieldLabel}>Priority<select value={form.priority} onChange={e => setForm({ ...form, priority: e.target.value as FormState['priority'] })} className={fieldInput}>
         {TASK_PRIORITIES.map(p => <option key={p} value={p}>{TASK_PRIORITY_LABELS[p]}</option>)}
       </select></label>
-      <label className={fieldLabel}>Start<input type="date" value={form.start_date ?? ''} onChange={e => setForm({ ...form, start_date: e.target.value || null })} className={fieldInput} /></label>
-      <label className={fieldLabel}>Due<input type="date" value={form.due_date ?? ''} min={form.start_date ?? undefined} onChange={e => setForm({ ...form, due_date: e.target.value || null })} className={fieldInput} /></label>
+      <label className={fieldLabel}>{form.is_milestone ? 'Date' : 'Start'}<input type="date" value={form.start_date ?? ''} onChange={e => setForm({ ...form, start_date: e.target.value || null })} className={fieldInput} /></label>
+      {form.is_milestone
+        ? <div className={`${fieldLabel} self-end pb-2 text-[#6f8082] font-normal`}>A milestone is a single day, such as "Drawings issued to client".</div>
+        : <label className={fieldLabel}>Due<input type="date" value={form.due_date ?? ''} min={form.start_date ?? undefined} onChange={e => setForm({ ...form, due_date: e.target.value || null })} className={fieldInput} /></label>}
+      <label className={fieldLabel}>Progress
+        <div className="mt-1.5 flex items-center gap-2">
+          <input type="range" min={0} max={100} step={5} value={form.status === 'done' ? 100 : form.progress_pct} disabled={form.status === 'done'}
+            onChange={e => setForm({ ...form, progress_pct: Number(e.target.value) })} className="flex-1 accent-[#087f73]" aria-label="Progress percentage" />
+          <span className="w-10 text-right text-sm font-bold tabular-nums">{form.status === 'done' ? 100 : form.progress_pct}%</span>
+        </div>
+      </label>
+      <label className={`${fieldLabel} flex items-center gap-2 self-end pb-2`}>
+        <input type="checkbox" checked={form.is_milestone} onChange={e => setForm({ ...form, is_milestone: e.target.checked })} /> Milestone
+      </label>
       <label className={`sm:col-span-2 ${fieldLabel}`}>Group<select value={form.group_id ?? ''} onChange={e => setForm({ ...form, group_id: e.target.value || null })} className={fieldInput}>
         <option value="">No group</option>
         {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
@@ -168,6 +188,11 @@ export default function TaskModal({ planId, groups, teamPeopleIds, task, default
               <Avatar person={p} />
               <span className="font-semibold">{p.name}</span>
               <span className="text-xs text-[#8a9b9a] truncate">{p.role}</span>
+              {form.assignee_ids.includes(p.id) && <span className="ml-auto inline-flex items-center gap-1 text-xs text-[#6f8082]" title="Share of this person's working day spent on the task">
+                <input aria-label={`Allocation of ${p.name}`} type="number" min={1} max={100} step={5} value={form.allocations[p.id] ?? 100}
+                  onChange={e => setForm({ ...form, allocations: { ...form.allocations, [p.id]: Number(e.target.value) } })}
+                  className="w-14 border border-[#dce7e2] rounded px-1.5 py-0.5 text-xs" />% of day
+              </span>}
             </label>)}
         </div>
       </fieldset>
