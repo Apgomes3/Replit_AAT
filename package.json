@@ -18,6 +18,7 @@
     "check": "npm run typecheck && npm test",
     "build:api": "tsc -p apps/api/tsconfig.json",
     "import:pricelist": "tsx apps/api/src/modules/pim-import/cli.ts",
+    "import:planner": "tsx apps/api/src/modules/drafting/planner-import/cli.ts",
     "test:watch": "vitest"
   },
   "keywords": [],
