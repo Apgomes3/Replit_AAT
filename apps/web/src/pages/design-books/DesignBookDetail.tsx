@@ -26,6 +26,7 @@ import FrictionLossTab from './FrictionLossTab';
 import ControlFieldInstrumentsTab, { getLssSystems } from './ControlFieldInstrumentsTab';
 import NewRevisionModal from './NewRevisionModal';
 import EquipmentBreakdownTab from './EquipmentBreakdownTab';
+import { isEditorRole } from '../../lib/roles';
 
 type Tab = 'exhibits' | 'lss' | 'thermal' | 'piping' | 'control' | 'equipment-breakdown' | 'review' | 'versions';
 
@@ -4683,7 +4684,7 @@ export default function DesignBookDetail() {
   const { data: reviewersData, isLoading: reviewersLoading, error: reviewersError } = useQuery({
     queryKey: ['design-book-review-reviewers'],
     queryFn: () => api.get('/design-books/review-reviewers').then(r => r.data),
-    enabled: !!id && !!user && (user.role === 'admin' || user.role === 'engineer') &&
+    enabled: !!id && !!user && (isEditorRole(user.role)) &&
       !!book && ['Draft', 'In Progress'].includes(book.status),
     staleTime: 60_000,
   });
@@ -4719,7 +4720,7 @@ export default function DesignBookDetail() {
   const controlSystems = getLssSystems(systems);
   const isReleased = book.status === 'Released';
   const isDesignReadOnly = !['Draft', 'In Progress'].includes(book.status);
-  const isDesigner = user?.role === 'admin' || user?.role === 'engineer';
+  const isDesigner = isEditorRole(user?.role);
   // An absent module-access row is a legacy account and remains manageable,
   // matching the backend requireModuleManage guard.
   const canManageDesignBooks = !user?.moduleAccess?.design_books

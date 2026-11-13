@@ -6,6 +6,7 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import { renderTdsPdf } from '../lib/tdsRenderer';
+import { EDITOR_ROLES } from '../lib/roles';
 
 const router = Router();
 router.use(authenticate, requireModuleAccess('documents'));
@@ -380,7 +381,7 @@ router.delete('/documents/:id', authenticate, requireRole('admin'), async (req: 
 });
 
 // APPROVALS
-router.post('/documents/:id/approvals', authenticate, requireModuleManage('documents'), requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
+router.post('/documents/:id/approvals', authenticate, requireModuleManage('documents'), requireRole(...EDITOR_ROLES), async (req: AuthRequest, res: Response) => {
   const { revision_id, action, comment, role } = req.body;
   const allowedActions = ['Approved', 'Released', 'Rejected', 'Review Commented'];
   if (!revision_id || !allowedActions.includes(action)) {

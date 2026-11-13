@@ -31,6 +31,7 @@ import { resolveLoopFlows } from '../lib/flowRoute';
 import PDFDocument from 'pdfkit';
 import { buildTankDesignSheet } from '../lib/tankDesignSheet';
 import { versionMatches, versionConflict, withVersion } from '../lib/concurrency';
+import { EDITOR_ROLES } from '../lib/roles';
 
 const uploadsDir = path.join(__dirname, '../../uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
@@ -591,7 +592,7 @@ router.get('/document-classifications', async (_req: AuthRequest, res: Response)
 
 router.post(
   '/projects/:id/documents',
-  requireRole('admin', 'engineer'),
+  requireRole(...EDITOR_ROLES),
   requireModuleManage('projects'),
   requireModuleManage('documents'),
   uploadProjectDocument.single('file'),
@@ -709,7 +710,7 @@ router.get('/exhibits', authenticate, async (req: AuthRequest, res: Response) =>
   res.json({ items: result.rows });
 });
 
-router.put('/exhibits/:id', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
+router.put('/exhibits/:id', authenticate, requireRole(...EDITOR_ROLES), async (req: AuthRequest, res: Response) => {
   const { exhibit_code, exhibit_name, water_type, design_temperature_min, design_temperature_max, design_salinity, area_id, notes } = req.body;
   if (!exhibit_name) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'exhibit_name is required' } });
   const result = await query(
@@ -720,7 +721,7 @@ router.put('/exhibits/:id', authenticate, requireRole('admin', 'engineer'), asyn
   res.json(result.rows[0]);
 });
 
-router.delete('/exhibits/:id', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
+router.delete('/exhibits/:id', authenticate, requireRole(...EDITOR_ROLES), async (req: AuthRequest, res: Response) => {
   const result = await query('DELETE FROM exhibits WHERE id=$1 RETURNING id', [req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Exhibit not found' } });
   res.json({ deleted: true });
@@ -732,7 +733,7 @@ router.get('/exhibits/:id', authenticate, async (req: AuthRequest, res: Response
   res.json(result.rows[0]);
 });
 
-router.post('/exhibits', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
+router.post('/exhibits', authenticate, requireRole(...EDITOR_ROLES), async (req: AuthRequest, res: Response) => {
   const {
     exhibit_code, project_id, area_id, exhibit_name, water_type,
     design_temperature_min, design_temperature_max, design_salinity,
@@ -1286,7 +1287,7 @@ router.get('/projects/:projectId/tanks/:tankId/design-sheet.pdf', authenticate, 
   }
 });
 
-router.post('/tanks', authenticate, requireRole('admin', 'engineer'), requireModuleManage('projects'), async (req: AuthRequest, res: Response) => {
+router.post('/tanks', authenticate, requireRole(...EDITOR_ROLES), requireModuleManage('projects'), async (req: AuthRequest, res: Response) => {
   try {
   const { tank_code, project_id, tank_name, tank_type, product_master_id, system_id, exhibit_id, quantity, shape_type, gross_volume_m3, operating_volume_m3, length_mm, width_mm, height_mm, design_water_level_mm, overflow_level_mm, primary_material, status, notes, custom_footprint } = req.body;
   const tankCode = String(tank_code ?? '').trim();
@@ -1431,7 +1432,7 @@ router.post('/tanks', authenticate, requireRole('admin', 'engineer'), requireMod
 router.post(
   '/tanks/from-pim',
   authenticate,
-  requireRole('admin', 'engineer'),
+  requireRole(...EDITOR_ROLES),
   requireModuleManage('projects'),
   requireModuleManage('pim'),
   async (req: AuthRequest, res: Response) => {
@@ -1659,7 +1660,7 @@ router.post(
 router.post(
   '/tanks/:id/promote-to-pim',
   authenticate,
-  requireRole('admin', 'engineer'),
+  requireRole(...EDITOR_ROLES),
   requireModuleManage('pim'),
   async (req: AuthRequest, res: Response) => {
     const productCode = String(req.body.product_code || '').trim().toUpperCase();
@@ -1858,7 +1859,7 @@ router.post(
   },
 );
 
-router.post('/tanks/:id/duplicate', authenticate, requireRole('admin', 'engineer'), requireModuleManage('projects'), async (req: AuthRequest, res: Response) => {
+router.post('/tanks/:id/duplicate', authenticate, requireRole(...EDITOR_ROLES), requireModuleManage('projects'), async (req: AuthRequest, res: Response) => {
   const orig = await query('SELECT * FROM tanks WHERE id=$1', [req.params.id]);
   if (!orig.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found' } });
   const t = orig.rows[0];
@@ -1882,7 +1883,7 @@ router.post('/tanks/:id/duplicate', authenticate, requireRole('admin', 'engineer
   res.status(201).json(newTank);
 });
 
-router.patch('/systems/reorder', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
+router.patch('/systems/reorder', authenticate, requireRole(...EDITOR_ROLES), async (req: AuthRequest, res: Response) => {
   const { orderedIds } = req.body;
   if (!Array.isArray(orderedIds)) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'orderedIds must be an array' } });
   for (let i = 0; i < orderedIds.length; i++) {
@@ -1891,7 +1892,7 @@ router.patch('/systems/reorder', authenticate, requireRole('admin', 'engineer'),
   res.json({ ok: true });
 });
 
-router.patch('/tanks/reorder', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
+router.patch('/tanks/reorder', authenticate, requireRole(...EDITOR_ROLES), async (req: AuthRequest, res: Response) => {
   const { orderedIds } = req.body;
   if (!Array.isArray(orderedIds)) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'orderedIds must be an array' } });
   for (let i = 0; i < orderedIds.length; i++) {
@@ -1900,7 +1901,7 @@ router.patch('/tanks/reorder', authenticate, requireRole('admin', 'engineer'), a
   res.json({ ok: true });
 });
 
-router.patch('/tanks/:id', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
+router.patch('/tanks/:id', authenticate, requireRole(...EDITOR_ROLES), async (req: AuthRequest, res: Response) => {
   try {
     const { system_id, product_master_id } = req.body;
     const hasPM = 'product_master_id' in req.body;
@@ -1928,7 +1929,7 @@ router.patch('/tanks/:id', authenticate, requireRole('admin', 'engineer'), async
   }
 });
 
-router.put('/tanks/:id', authenticate, requireRole('admin', 'engineer'), requireModuleManage('projects'), async (req: AuthRequest, res: Response) => {
+router.put('/tanks/:id', authenticate, requireRole(...EDITOR_ROLES), requireModuleManage('projects'), async (req: AuthRequest, res: Response) => {
   try {
   const {
     tank_code, tank_name, tank_type, shape_type,
@@ -2098,7 +2099,7 @@ router.put('/tanks/:id', authenticate, requireRole('admin', 'engineer'), require
 });
 
 // Quick exhibit assignment for tanks
-router.patch('/tanks/:id/exhibit', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
+router.patch('/tanks/:id/exhibit', authenticate, requireRole(...EDITOR_ROLES), async (req: AuthRequest, res: Response) => {
   try {
     const { exhibit_id, replace_tank_id } = req.body;
     const currentTank = await query(
@@ -2179,7 +2180,7 @@ router.patch('/tanks/:id/exhibit', authenticate, requireRole('admin', 'engineer'
   }
 });
 
-router.delete('/tanks/:id', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
+router.delete('/tanks/:id', authenticate, requireRole(...EDITOR_ROLES), async (req: AuthRequest, res: Response) => {
   await query('DELETE FROM tank_instances WHERE tank_id=$1', [req.params.id]);
   const result = await query('DELETE FROM tanks WHERE id=$1 RETURNING id, tank_code', [req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Tank not found' } });
@@ -2318,7 +2319,7 @@ router.get('/systems/:id/sand-filter-products', authenticate, async (req: AuthRe
   res.json({ items: result.rows });
 });
 
-router.post('/systems', authenticate, requireRole('admin', 'engineer'), requireModuleManage('projects'), async (req: AuthRequest, res: Response) => {
+router.post('/systems', authenticate, requireRole(...EDITOR_ROLES), requireModuleManage('projects'), async (req: AuthRequest, res: Response) => {
   const client = await pool.connect();
   try {
     const {
@@ -2415,7 +2416,7 @@ router.post('/systems', authenticate, requireRole('admin', 'engineer'), requireM
   }
 });
 
-router.put('/systems/:id', authenticate, requireRole('admin', 'engineer'), requireModuleManage('projects'), async (req: AuthRequest, res: Response) => {
+router.put('/systems/:id', authenticate, requireRole(...EDITOR_ROLES), requireModuleManage('projects'), async (req: AuthRequest, res: Response) => {
   try {
     const {
       system_code, system_name, system_type, design_flow_m3h, turnover_rate_hr,
@@ -3021,7 +3022,7 @@ router.put('/systems/:id', authenticate, requireRole('admin', 'engineer'), requi
 router.post(
   '/systems/:id/configuration-reset',
   authenticate,
-  requireRole('admin', 'engineer'),
+  requireRole(...EDITOR_ROLES),
   requireModuleManage('projects'),
   async (req: AuthRequest, res: Response) => {
   const designBookId = req.body?.design_book_id;
@@ -3147,7 +3148,7 @@ router.get('/systems/:id/side-streams', authenticate, async (req: AuthRequest, r
   res.json({ items: await loadSystemSideStreams(String(req.params.id)), presets: FLOW_SIDE_STREAM_PRESETS });
 });
 
-router.post('/systems/:id/side-streams', authenticate, requireRole('admin', 'engineer'), requireModuleManage('projects'), async (req: AuthRequest, res: Response) => {
+router.post('/systems/:id/side-streams', authenticate, requireRole(...EDITOR_ROLES), requireModuleManage('projects'), async (req: AuthRequest, res: Response) => {
   let stream;
   try {
     stream = normalizeSideStreams([req.body])?.[0];
@@ -3190,7 +3191,7 @@ router.post('/systems/:id/side-streams', authenticate, requireRole('admin', 'eng
   res.status(201).json(created);
 });
 
-router.put('/systems/:id/side-streams/:sideStreamId', authenticate, requireRole('admin', 'engineer'), requireModuleManage('projects'), async (req: AuthRequest, res: Response) => {
+router.put('/systems/:id/side-streams/:sideStreamId', authenticate, requireRole(...EDITOR_ROLES), requireModuleManage('projects'), async (req: AuthRequest, res: Response) => {
   let stream;
   try {
     stream = normalizeSideStreams([req.body])?.[0];
@@ -3267,7 +3268,7 @@ router.put('/systems/:id/side-streams/:sideStreamId', authenticate, requireRole(
   res.json(updated);
 });
 
-router.delete('/systems/:id/side-streams/:sideStreamId', authenticate, requireRole('admin', 'engineer'), requireModuleManage('projects'), async (req: AuthRequest, res: Response) => {
+router.delete('/systems/:id/side-streams/:sideStreamId', authenticate, requireRole(...EDITOR_ROLES), requireModuleManage('projects'), async (req: AuthRequest, res: Response) => {
   const editable = await loadEditableSystem(query, String(req.params.id));
   if (!editable.system) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
   if (editable.error) return res.status(409).json({ error: editable.error });
@@ -3283,7 +3284,7 @@ router.delete('/systems/:id/side-streams/:sideStreamId', authenticate, requireRo
   res.json({ deleted: true, id: req.params.sideStreamId });
 });
 
-router.delete('/systems/:id', authenticate, requireRole('admin', 'engineer'), requireModuleManage('projects'), async (_req: AuthRequest, res: Response) => {
+router.delete('/systems/:id', authenticate, requireRole(...EDITOR_ROLES), requireModuleManage('projects'), async (_req: AuthRequest, res: Response) => {
   res.status(409).json({
     error: {
       code: 'PHYSICAL_DELETE_DISABLED',
@@ -3295,7 +3296,7 @@ router.delete('/systems/:id', authenticate, requireRole('admin', 'engineer'), re
 router.post(
   '/systems/:id/archive',
   authenticate,
-  requireRole('admin', 'engineer'),
+  requireRole(...EDITOR_ROLES),
   requireModuleManage('projects'),
   async (req: AuthRequest, res: Response) => {
     const reason = String(req.body?.reason || '').trim();
@@ -3355,7 +3356,7 @@ router.post(
 router.post(
   '/systems/:id/supersede',
   authenticate,
-  requireRole('admin', 'engineer'),
+  requireRole(...EDITOR_ROLES),
   requireModuleManage('projects'),
   async (req: AuthRequest, res: Response) => {
     const reason = String(req.body?.reason || '').trim();
@@ -3449,7 +3450,7 @@ router.post(
   },
 );
 
-router.post('/systems/:id/duplicate', authenticate, requireRole('admin', 'engineer'), requireModuleManage('projects'), async (req: AuthRequest, res: Response) => {
+router.post('/systems/:id/duplicate', authenticate, requireRole(...EDITOR_ROLES), requireModuleManage('projects'), async (req: AuthRequest, res: Response) => {
   const src = await query('SELECT * FROM systems WHERE id=$1', [req.params.id]);
   if (!src.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
   const s = src.rows[0];
@@ -3477,7 +3478,7 @@ router.get('/systems/:id/exhibit-links', authenticate, async (req: AuthRequest, 
   res.json(result.rows);
 });
 
-router.post('/systems/:id/exhibit-links', authenticate, requireRole('admin', 'engineer'), requireModuleManage('projects'), async (req: AuthRequest, res: Response) => {
+router.post('/systems/:id/exhibit-links', authenticate, requireRole(...EDITOR_ROLES), requireModuleManage('projects'), async (req: AuthRequest, res: Response) => {
   const editable = await loadEditableSystem(query, String(req.params.id));
   if (!editable.system) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
   if (editable.error) return res.status(409).json({ error: editable.error });
@@ -3529,7 +3530,7 @@ router.post('/systems/:id/exhibit-links', authenticate, requireRole('admin', 'en
   }
 });
 
-router.put('/systems/:id/exhibit-links/:linkId', authenticate, requireRole('admin', 'engineer'), requireModuleManage('projects'), async (req: AuthRequest, res: Response) => {
+router.put('/systems/:id/exhibit-links/:linkId', authenticate, requireRole(...EDITOR_ROLES), requireModuleManage('projects'), async (req: AuthRequest, res: Response) => {
   const editable = await loadEditableSystem(query, String(req.params.id));
   if (!editable.system) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
   if (editable.error) return res.status(409).json({ error: editable.error });
@@ -3556,7 +3557,7 @@ router.put('/systems/:id/exhibit-links/:linkId', authenticate, requireRole('admi
   res.json(enriched.rows[0]);
 });
 
-router.delete('/systems/:id/exhibit-links/:linkId', authenticate, requireRole('admin', 'engineer'), requireModuleManage('projects'), async (req: AuthRequest, res: Response) => {
+router.delete('/systems/:id/exhibit-links/:linkId', authenticate, requireRole(...EDITOR_ROLES), requireModuleManage('projects'), async (req: AuthRequest, res: Response) => {
   const editable = await loadEditableSystem(query, String(req.params.id));
   if (!editable.system) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System not found' } });
   if (editable.error) return res.status(409).json({ error: editable.error });
@@ -3569,7 +3570,7 @@ router.delete('/systems/:id/exhibit-links/:linkId', authenticate, requireRole('a
 });
 
 // EQUIPMENT ITEMS (direct product-to-project/system relationship)
-router.post('/equipment-items', authenticate, requireRole('admin', 'engineer'), requireModuleManage('projects'), async (req: AuthRequest, res: Response) => {
+router.post('/equipment-items', authenticate, requireRole(...EDITOR_ROLES), requireModuleManage('projects'), async (req: AuthRequest, res: Response) => {
   const { equip_code, project_id, system_id, product_master_id, component_id, description, quantity, unit, notes, status } = req.body;
   if (!equip_code || !project_id) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'equip_code and project_id are required' } });
   if (system_id) {
@@ -3597,7 +3598,7 @@ router.post('/equipment-items', authenticate, requireRole('admin', 'engineer'), 
   }
 });
 
-router.put('/equipment-items/:id', authenticate, requireRole('admin', 'engineer'), requireModuleManage('projects'), async (req: AuthRequest, res: Response) => {
+router.put('/equipment-items/:id', authenticate, requireRole(...EDITOR_ROLES), requireModuleManage('projects'), async (req: AuthRequest, res: Response) => {
   const { equip_code, system_id, product_master_id, component_id, description, quantity, unit, notes, status } = req.body;
   const current = await query('SELECT system_id FROM project_equipment_items WHERE id=$1', [req.params.id]);
   if (!current.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Equipment item not found' } });
@@ -3627,7 +3628,7 @@ router.put('/equipment-items/:id', authenticate, requireRole('admin', 'engineer'
   res.json(result.rows[0]);
 });
 
-router.delete('/equipment-items/:id', authenticate, requireRole('admin', 'engineer'), requireModuleManage('projects'), async (req: AuthRequest, res: Response) => {
+router.delete('/equipment-items/:id', authenticate, requireRole(...EDITOR_ROLES), requireModuleManage('projects'), async (req: AuthRequest, res: Response) => {
   const existing = await query('SELECT * FROM project_equipment_items WHERE id=$1', [req.params.id]);
   const item = existing.rows[0];
   if (item?.system_id) {
@@ -3675,7 +3676,7 @@ router.get('/equipment-instances/:id', authenticate, async (req: AuthRequest, re
   res.json({ ...result.rows[0], documents: documents.rows });
 });
 
-router.post('/equipment-instances', authenticate, requireRole('admin', 'engineer'), requireModuleManage('projects'), async (req: AuthRequest, res: Response) => {
+router.post('/equipment-instances', authenticate, requireRole(...EDITOR_ROLES), requireModuleManage('projects'), async (req: AuthRequest, res: Response) => {
   const { equipment_code, project_id, system_id, equipment_type, equipment_name, design_flow_m3h, design_head_m, power_kw, material_code, operational_duty, location_reference, product_master_id } = req.body;
   if (system_id) {
     const editable = await loadEditableSystem(query, String(system_id));
@@ -3701,7 +3702,7 @@ router.post('/equipment-instances', authenticate, requireRole('admin', 'engineer
   res.status(201).json(eq);
 });
 
-router.put('/equipment-instances/:id', authenticate, requireRole('admin', 'engineer'), requireModuleManage('projects'), async (req: AuthRequest, res: Response) => {
+router.put('/equipment-instances/:id', authenticate, requireRole(...EDITOR_ROLES), requireModuleManage('projects'), async (req: AuthRequest, res: Response) => {
   const { equipment_name, equipment_type, design_flow_m3h, design_head_m, power_kw, material_code, status, operational_duty, serial_number, installation_date, commissioning_date } = req.body;
   const current = await query('SELECT system_id FROM equipment_instances WHERE id=$1', [req.params.id]);
   if (!current.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Equipment not found' } });
@@ -3724,7 +3725,7 @@ router.put('/equipment-instances/:id', authenticate, requireRole('admin', 'engin
 });
 
 // LIFECYCLE TRANSITIONS
-router.post('/lifecycle/transition', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
+router.post('/lifecycle/transition', authenticate, requireRole(...EDITOR_ROLES), async (req: AuthRequest, res: Response) => {
   const { entity_type, entity_id, to_state, comment } = req.body;
   if (!entity_type || !entity_id || !to_state) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'entity_type, entity_id, to_state required' } });
 
@@ -3806,7 +3807,7 @@ router.get('/projects/:id/piping', authenticate, async (req: AuthRequest, res: R
   res.json({ items: result.rows });
 });
 
-router.post('/piping-items', authenticate, requireRole('admin', 'engineer'), requireModuleManage('projects'), async (req: AuthRequest, res: Response) => {
+router.post('/piping-items', authenticate, requireRole(...EDITOR_ROLES), requireModuleManage('projects'), async (req: AuthRequest, res: Response) => {
   const { piping_code, project_id, system_id, product_master_id, description, quantity, unit, notes, status } = req.body;
   if (!piping_code || !project_id) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'piping_code and project_id are required' } });
   if (system_id) {
@@ -3822,7 +3823,7 @@ router.post('/piping-items', authenticate, requireRole('admin', 'engineer'), req
   res.status(201).json(result.rows[0]);
 });
 
-router.put('/piping-items/:id', authenticate, requireRole('admin', 'engineer'), requireModuleManage('projects'), async (req: AuthRequest, res: Response) => {
+router.put('/piping-items/:id', authenticate, requireRole(...EDITOR_ROLES), requireModuleManage('projects'), async (req: AuthRequest, res: Response) => {
   const { description, quantity, unit, notes, status, system_id } = req.body;
   const current = await query('SELECT system_id FROM project_piping_items WHERE id=$1', [req.params.id]);
   if (!current.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Piping item not found' } });
@@ -3843,7 +3844,7 @@ router.put('/piping-items/:id', authenticate, requireRole('admin', 'engineer'), 
   res.json(result.rows[0]);
 });
 
-router.delete('/piping-items/:id', authenticate, requireRole('admin', 'engineer'), requireModuleManage('projects'), async (req: AuthRequest, res: Response) => {
+router.delete('/piping-items/:id', authenticate, requireRole(...EDITOR_ROLES), requireModuleManage('projects'), async (req: AuthRequest, res: Response) => {
   const current = await query('SELECT system_id FROM project_piping_items WHERE id=$1', [req.params.id]);
   if (current.rows[0]?.system_id) {
     const editable = await loadEditableSystem(query, String(current.rows[0].system_id));

@@ -39,6 +39,7 @@ import {
   calculateBioCrateCount,
   calculateBioCrateSpatialBasis,
 } from './BioDegasPlenumDesigner';
+import { isEditorRole } from '../../lib/roles';
 export { BioDegasPlenumPanel, BIO_CRATE_MEDIA_CAPACITY_M3, calculateBioCrateCount, calculateBioCrateSpatialBasis };
 
 const SYSTEM_TYPES = [
@@ -2567,9 +2568,9 @@ export default function DesignBookLSSDetail() {
   // legacy module row treated as allowed) and a designer role.
   const canManageDesignBooks = user?.moduleAccess?.design_books !== 'view'
     && user?.moduleAccess?.design_books !== 'hidden';
-  const canEdit = (user?.role === 'admin' || user?.role === 'engineer') && canManageDesignBooks;
+  const canEdit = (isEditorRole(user?.role)) && canManageDesignBooks;
   const canCreateRevision = book?.status === 'Released'
-    && (user?.role === 'admin' || user?.role === 'engineer');
+    && (isEditorRole(user?.role));
   const retired = ['Archived', 'Decommissioned', 'Superseded'].includes(system.status);
   const readOnly = !canEdit
     || (!!book && !['Draft', 'In Progress'].includes(book.status))

@@ -20,6 +20,7 @@ vi.mock('./repository', () => ({
   createTask: vi.fn(), updateTask: vi.fn(), deleteTask: vi.fn(), getTaskPlanId: vi.fn(),
   createLinkAndSchedule: vi.fn(), updateLink: vi.fn(), deleteLink: vi.fn(), getLinkPlanIds: vi.fn(), reschedulePlan: vi.fn(),
   setTaskDates: vi.fn(), setBaseline: vi.fn(),
+  DRAFTING_DEPARTMENT: 'Drafting',
 }));
 
 import * as repo from './repository';
@@ -60,9 +61,24 @@ describe('drafting routes', () => {
     mocked.createTeam.mockResolvedValue({ id: TEAM, name: 'Fabrication' });
     const r = await call('POST', '/teams', { name: ' Fabrication ', manager_user_id: USER, member_ids: [USER] });
     expect(r.status).toBe(201);
-    expect(mocked.createTeam).toHaveBeenCalledWith({ name: 'Fabrication', manager_user_id: USER, member_ids: [USER] }, 'actor-1');
+    expect(mocked.createTeam).toHaveBeenCalledWith({ name: 'Fabrication', manager_user_id: USER, member_ids: [USER], department: 'Drafting' }, 'actor-1');
     expect(mocked.findUnknownUsers).toHaveBeenCalledWith([USER]);
     expect(logAudit).toHaveBeenCalledWith('actor-1', 'drafting_team', TEAM, 'CREATE', { name: 'Fabrication' });
+  });
+
+  it('only lists and edits Drafting department teams, and never moves a team out of Drafting', async () => {
+    mocked.listTeams.mockResolvedValue([]);
+    await call('GET', '/teams');
+    expect(mocked.listTeams).toHaveBeenCalledWith({ department: 'Drafting' });
+
+    mocked.getTeam.mockResolvedValue({ id: TEAM, department: 'Engineering' });
+    expect((await call('PATCH', `/teams/${TEAM}`, { name: 'X' })).status).toBe(404);
+    expect(mocked.updateTeam).not.toHaveBeenCalled();
+
+    mocked.getTeam.mockResolvedValue({ id: TEAM, department: 'Drafting' });
+    mocked.updateTeam.mockResolvedValue({ id: TEAM, department: 'Drafting' });
+    expect((await call('PATCH', `/teams/${TEAM}`, { name: 'X', department: 'Sales' })).status).toBe(200);
+    expect(mocked.updateTeam).toHaveBeenCalledWith(TEAM, { name: 'X' }, 'actor-1');
   });
 
   it('rejects members who are not active users', async () => {

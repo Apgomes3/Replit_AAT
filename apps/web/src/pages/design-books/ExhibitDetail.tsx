@@ -30,6 +30,7 @@ import {
   FRANCIS_MIN_HEAD_M,
   WeirMethod,
 } from '../../lib/weir';
+import { isEditorRole } from '../../lib/roles';
 
 type ExhibitTab = 'tank' | 'species' | 'flow' | 'weir' | 'pipes' | 'lights';
 
@@ -3760,7 +3761,7 @@ export default function ExhibitDetail() {
     (calculation: any) => calculation.inputs?.exhibit_id === exhibitId,
   ) ?? null;
   const unassigned = tanks.filter((t: any) => !t.exhibit_id && !t.product_master_id);
-  const canEdit = user?.role === 'admin' || user?.role === 'engineer';
+  const canEdit = isEditorRole(user?.role);
   const readOnly = !canEdit || !['Draft', 'In Progress'].includes(book.status);
   const canUsePim = canEdit && user?.moduleAccess?.pim !== 'hidden';
 

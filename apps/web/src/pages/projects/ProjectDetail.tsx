@@ -18,6 +18,7 @@ import CountryCombobox from '../../components/ui/CountryCombobox';
 import { useAuthStore } from '../../store/authStore';
 import { useRecordTitle } from '../../hooks/usePageTitle';
 import ProjectReleasePOModal from './ProjectReleasePOModal';
+import { isEditorRole } from '../../lib/roles';
 
 const ProjectsMap = lazy(() => import('../../components/ui/ProjectsMap'));
 
@@ -56,7 +57,7 @@ export default function ProjectDetail() {
   const location = useLocation();
   const qc = useQueryClient();
   const { user } = useAuthStore();
-  const isPrivileged = user?.role === 'admin' || user?.role === 'engineer';
+  const isPrivileged = isEditorRole(user?.role);
   const canUploadDocuments = isPrivileged
     && user?.moduleAccess?.projects !== 'view'
     && user?.moduleAccess?.projects !== 'hidden'

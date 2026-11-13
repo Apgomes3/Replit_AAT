@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Palmtree } from 'lucide-react';
-import { useTeams } from './draftingApi';
-import { useWorkload, WorkloadRow, WorkloadWeek } from './planningApi';
+import { ChevronDown, ChevronLeft, ChevronRight, Palmtree } from 'lucide-react';
+import { groupRowsByTeam, usePlanningScope, useScopedTeams, useWorkload, WorkloadRow, WorkloadWeek } from './planningApi';
+import PeopleFilterSelect, { parsePeopleFilter } from './PeopleFilterSelect';
 import { addDays, todayIso } from './taskTiming';
 import { useAuthStore } from '../../store/authStore';
 
@@ -23,19 +23,30 @@ const CELL: Record<string, string> = {
   none: 'bg-stone-50 text-stone-400 border-stone-200',
 };
 
-/** Team-first workload: each person's booked hours per week across every plan, against what they can work. */
+/**
+ * Each person's booked hours per week across every plan, against what they can work.
+ * In Drafting it opens on the manager's own team; in Resources on the whole company, grouped by team.
+ */
 export default function WorkloadPanel() {
-  const teams = useTeams();
+  const company = usePlanningScope() === 'company';
+  const teams = useScopedTeams();
   const userId = useAuthStore(s => s.user?.id);
   const active = (teams.data ?? []).filter(t => t.active);
   const mine = active.find(t => t.manager?.id === userId) ?? active[0];
-  const [teamId, setTeamId] = useState<string>('');
-  const team = teamId === 'all' ? undefined : active.find(t => t.id === teamId) ?? mine;
+  // Drafting starts on "my team" once the teams are known; Resources starts on the whole company.
+  const [picked, setPicked] = useState<string | null>(null);
+  const value = picked ?? (company || !mine ? '' : `team:${mine.id}`);
+  const filter = parsePeopleFilter(value);
+  const team = filter.teamId ? active.find(t => t.id === filter.teamId) : undefined;
   const [from, setFrom] = useState(() => mondayOf(todayIso()));
-  const workload = useWorkload(teamId === 'all' ? undefined : team?.id, from, WEEKS);
+  const workload = useWorkload(filter, from, WEEKS, company || picked !== null || !teams.isLoading);
   const [open, setOpen] = useState<{ user: string; week: string } | null>(null);
+  const [showLoose, setShowLoose] = useState(false);
 
   const rows = workload.data?.data ?? [];
+  // Drafting groups "Everyone" by its own teams only; Resources by every company team.
+  const groupDept = filter.department ?? (company ? undefined : 'Drafting');
+  const sections = useMemo(() => filter.teamId ? null : groupRowsByTeam(rows, groupDept), [rows, filter.teamId, groupDept]);
   const totals = useMemo(() => {
     const t = { capacity: 0, booked: 0, over: 0 };
     rows.forEach(r => r.weeks.slice(0, 4).forEach(w => { t.capacity += w.capacity; t.booked += w.booked; if (load(w) === 'over') t.over++; }));
@@ -49,12 +60,9 @@ export default function WorkloadPanel() {
 
   return <div>
     <div className="flex flex-wrap items-center gap-3 mb-4">
-      <select aria-label="Team" value={teamId || team?.id || ''} onChange={e => { setTeamId(e.target.value); setOpen(null); }}
-        className="border border-[#dce7e2] rounded-lg px-3 py-2 text-sm bg-white font-bold">
-        {active.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-        <option value="all">Everyone</option>
-      </select>
-      {team && teamId !== 'all' && <span className="text-sm text-[#6f8082]">Manager: {team.manager?.name ?? '—'} · {rows.length} people</span>}
+      <PeopleFilterSelect value={value} onChange={v => { setPicked(v); setOpen(null); }} />
+      {team ? <span className="text-sm text-[#6f8082]">Manager: {team.manager?.name ?? '—'} · {rows.length} people</span>
+        : workload.data && <span className="text-sm text-[#6f8082]">{rows.length} people</span>}
       <div className="ml-auto flex items-center gap-1">
         <button aria-label="Earlier weeks" onClick={() => setFrom(addDays(from, -7))} className="p-2 rounded-lg border border-[#dce7e2] bg-white"><ChevronLeft className="w-4 h-4" /></button>
         <button onClick={() => setFrom(mondayOf(todayIso()))} className="px-3 py-2 rounded-lg border border-[#dce7e2] bg-white text-xs font-bold">This week</button>
@@ -79,7 +87,24 @@ export default function WorkloadPanel() {
               {rows[0]!.weeks.map(w => <th key={w.week_start} className="px-2 py-2 text-[10px] uppercase tracking-[.1em] text-[#6f8082] font-extrabold">
                 {w.week_start === mondayOf(todayIso()) ? 'This week' : `Wk ${fmtWeek(w.week_start)}`}</th>)}
             </tr></thead>
-            <tbody>{rows.map(r => <PersonRow key={r.user_id} row={r} open={open} onOpen={setOpen} />)}</tbody>
+            <tbody>{sections
+              ? sections.map(s => {
+                  const hidden = !s.team && !showLoose;
+                  return <Fragment key={s.key}>
+                    <tr className="bg-[#f8fbf9] border-b border-[#edf2ef]">
+                      <td colSpan={WEEKS + 1} className="px-4 py-1.5">
+                        {s.team
+                          ? <span className="text-xs font-extrabold text-[#20333a]">{s.team.name}
+                              <span className="ml-2 font-semibold text-[#8a9b9a]">{s.team.department} · {s.rows.length} {s.rows.length === 1 ? 'person' : 'people'}</span></span>
+                          : <button onClick={() => setShowLoose(v => !v)} className="inline-flex items-center gap-1 text-xs font-extrabold text-[#6f8082]">
+                              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${hidden ? '-rotate-90' : ''}`} />
+                              {company ? 'Not in a team' : 'Not in a drafting team'} · {s.rows.length} {s.rows.length === 1 ? 'person' : 'people'}</button>}
+                      </td>
+                    </tr>
+                    {!hidden && s.rows.map(r => <PersonRow key={`${s.key}:${r.user_id}`} row={r} open={open} onOpen={setOpen} />)}
+                  </Fragment>;
+                })
+              : rows.map(r => <PersonRow key={r.user_id} row={r} open={open} onOpen={setOpen} />)}</tbody>
           </table>
         </div>}
 

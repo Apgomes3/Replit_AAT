@@ -3,7 +3,9 @@ export interface User {
   email: string;
   firstName: string;
   lastName: string;
-  role: 'admin' | 'engineer' | 'viewer' | 'hq_manager' | 'pmo';
+  role: 'admin' | 'manager' | 'user' | 'engineer' | 'viewer' | 'hq_manager' | 'pmo';
+  /** Job position, e.g. "Drafting Supervisor"; separate from the access role. */
+  job_title?: string | null;
   canSeeAllPos?: boolean;
   moduleAccess?: Record<string, 'manage' | 'view' | 'hidden'>;
 }

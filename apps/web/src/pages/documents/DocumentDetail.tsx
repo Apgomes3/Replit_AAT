@@ -17,6 +17,7 @@ import TdsRenderer from '../../components/documents/TdsRenderer';
 import TdsEditor from '../../components/documents/TdsEditor';
 import { useModalFocus } from '../../hooks/useModalFocus';
 import { DocumentRevision } from '../../types';
+import { isEditorRole } from '../../lib/roles';
 
 function nextRevLetter(existing: string[]): string {
   if (existing.length === 0) return 'A';
@@ -95,7 +96,7 @@ export default function DocumentDetail() {
   const qc = useQueryClient();
   const { user } = useAuthStore();
   const isAdmin = user?.role === 'admin';
-  const canManageDocuments = (user?.role === 'admin' || user?.role === 'engineer')
+  const canManageDocuments = (isEditorRole(user?.role))
     && user?.moduleAccess?.documents !== 'view'
     && user?.moduleAccess?.documents !== 'hidden';
   const { confirm, dialog } = useConfirm();

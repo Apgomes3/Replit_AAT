@@ -22,6 +22,8 @@ export type Team = {
   id: string;
   name: string;
   description: string | null;
+  /** Company department (Drafting, Engineering, Design, ...). */
+  department: string;
   active: boolean;
   manager: Person | null;
   members: Person[];
@@ -147,6 +149,8 @@ export type TeamPayload = {
   manager_user_id: string | null;
   member_ids: string[];
   active?: boolean;
+  /** Only used in Resources; Drafting teams always stay in Drafting. */
+  department?: string;
 };
 
 export type PlanPayload = {

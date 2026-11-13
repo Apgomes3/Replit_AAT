@@ -41,6 +41,7 @@ const ROUTE_TITLES: { path: string; title: string }[] = [
   { path: '/purchase-orders', title: 'Purchase Orders' },
   { path: '/drafting/plans/:id', title: 'Drafting Plan' },
   { path: '/drafting', title: 'Drafting' },
+  { path: '/resources', title: 'Resources' },
 ];
 
 const APP_NAME = 'Shark OS';

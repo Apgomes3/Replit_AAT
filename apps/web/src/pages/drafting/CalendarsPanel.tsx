@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { CalendarDays, Plus, Star, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { apiErrorMessage, useCanManageDrafting } from './draftingApi';
+import { apiErrorMessage } from './draftingApi';
 import {
-  Calendar, useCalendarDays, useCalendars, useDeleteCalendar, useDeleteCalendarDays, useSaveCalendar, useSaveCalendarDays,
+  Calendar, useCalendarDays, useCanManagePlanning, useCalendars, useDeleteCalendar, useDeleteCalendarDays, useSaveCalendar, useSaveCalendarDays,
   weekTotal, WEEKDAYS,
 } from './planningApi';
 import { addDays } from './taskTiming';
@@ -15,7 +15,7 @@ const fmt = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString(und
 export default function CalendarsPanel() {
   const calendars = useCalendars();
   const [selected, setSelected] = useState<string>('');
-  const canManage = useCanManageDrafting();
+  const canManage = useCanManagePlanning();
   const list = calendars.data ?? [];
   const cal = list.find(c => c.id === selected) ?? list.find(c => c.is_default) ?? list[0];
 

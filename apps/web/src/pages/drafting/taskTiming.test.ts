@@ -2,6 +2,32 @@ import { describe, expect, it } from 'vitest';
 import { addDays, daysBetween, durationDays, isLate, timeElapsedPercent, todayIso } from './taskTiming';
 import { buildSections, sortTasks } from './planViews';
 import type { Task } from './draftingApi';
+import { byDepartment, groupRowsByTeam, type WorkloadRow } from './planningApi';
+
+describe('company resources grouping', () => {
+  const team = (id: string, name: string, department: string) => ({ id, name, department, is_manager: false });
+  const row = (user_id: string, teams: ReturnType<typeof team>[]): WorkloadRow =>
+    ({ user_id, name: user_id, calendar_name: 'China office', capacity_pct: 100, teams, weeks: [] });
+  const fab = team('t1', 'Drafting – Fabrication', 'Drafting');
+  const asw = team('t2', 'ASW Engineering', 'Engineering');
+
+  it('lists a person under every team they are in, with people in no team last', () => {
+    const s = groupRowsByTeam([row('ann', [fab, asw]), row('bob', [fab]), row('cat', [])]);
+    expect(s.map(x => [x.team?.name ?? null, x.rows.map(r => r.user_id)])).toEqual([
+      ['Drafting – Fabrication', ['ann', 'bob']], ['ASW Engineering', ['ann']], [null, ['cat']],
+    ]);
+  });
+
+  it('keeps only the chosen department\'s teams', () => {
+    const s = groupRowsByTeam([row('ann', [fab, asw]), row('bob', [fab])], 'engineering');
+    expect(s.map(x => [x.team?.name ?? null, x.rows.map(r => r.user_id)])).toEqual([['ASW Engineering', ['ann']], [null, ['bob']]]);
+  });
+
+  it('groups teams by department regardless of case', () => {
+    const g = byDepartment([{ department: 'Engineering', n: 1 }, { department: 'Design', n: 2 }, { department: 'engineering', n: 3 }]);
+    expect(g.map(x => [x.department, x.teams.map(t => t.n)])).toEqual([['Design', [2]], ['Engineering', [1, 3]]]);
+  });
+});
 
 describe('drafting task timing', () => {
   it('counts duration in calendar days including both ends, like Planner', () => {

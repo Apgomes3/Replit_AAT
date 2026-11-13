@@ -14,6 +14,7 @@ export type Team = {
   id: string;
   name: string;
   description: string | null;
+  department: string;
   active: boolean;
   manager: Person | null;
   members: Person[];
@@ -101,7 +102,7 @@ export type Board = {
 const PERSON_NAME = `COALESCE(NULLIF(TRIM(CONCAT_WS(' ', u.first_name, u.last_name)), ''), u.email)`;
 
 const TEAM_SELECT = `
-  SELECT t.id, t.name, t.description, t.active, t.created_at, t.updated_at,
+  SELECT t.id, t.name, t.description, t.department, t.active, t.created_at, t.updated_at,
     CASE WHEN m.id IS NULL THEN NULL ELSE json_build_object(
       'id', m.id, 'email', m.email, 'role', m.role,
       'name', COALESCE(NULLIF(TRIM(CONCAT_WS(' ', m.first_name, m.last_name)), ''), m.email)
@@ -161,8 +162,14 @@ export async function findUnknownUsers(ids: string[], db: Db = { query } as Db):
 
 // ---------- teams ----------
 
-export async function listTeams(): Promise<Team[]> {
-  return (await query(`${TEAM_SELECT} ORDER BY t.active DESC, t.name`)).rows;
+/** The department whose teams the Drafting screens show and create. */
+export const DRAFTING_DEPARTMENT = 'Drafting';
+
+/** Company teams; with a department, only that department's teams (case-insensitive). */
+export async function listTeams(opts: { department?: string } = {}): Promise<Team[]> {
+  return opts.department
+    ? (await query(`${TEAM_SELECT} WHERE LOWER(t.department) = LOWER($1) ORDER BY t.active DESC, t.name`, [opts.department])).rows
+    : (await query(`${TEAM_SELECT} ORDER BY LOWER(t.department), t.active DESC, t.name`)).rows;
 }
 
 export async function getTeam(id: string, db: Db = { query } as Db): Promise<Team | null> {
@@ -183,9 +190,9 @@ async function replaceMembers(db: Db, teamId: string, memberIds: string[]) {
 export async function createTeam(input: TeamInput, actorId: string): Promise<Team> {
   return withTransaction(async db => {
     const inserted = await db.query(
-      `INSERT INTO drafting_teams (name, description, manager_user_id, active, created_by, updated_by)
-       VALUES ($1, $2, $3, $4, $5, $5) RETURNING id`,
-      [input.name, input.description ?? null, input.manager_user_id ?? null, input.active ?? true, actorId],
+      `INSERT INTO drafting_teams (name, description, manager_user_id, active, department, created_by, updated_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $6) RETURNING id`,
+      [input.name, input.description ?? null, input.manager_user_id ?? null, input.active ?? true, input.department ?? DRAFTING_DEPARTMENT, actorId],
     );
     const id = inserted.rows[0].id;
     await replaceMembers(db, id, input.member_ids ?? []);
@@ -197,7 +204,7 @@ export async function updateTeam(id: string, input: TeamInput, actorId: string):
   return withTransaction(async db => {
     const set: string[] = [];
     const values: unknown[] = [id];
-    for (const key of ['name', 'description', 'manager_user_id', 'active'] as const) {
+    for (const key of ['name', 'description', 'manager_user_id', 'active', 'department'] as const) {
       if (input[key] !== undefined) { values.push(input[key]); set.push(`${key} = $${values.length}`); }
     }
     values.push(actorId);

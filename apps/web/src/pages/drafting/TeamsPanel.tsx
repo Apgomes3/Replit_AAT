@@ -2,11 +2,14 @@ import { useMemo, useState } from 'react';
 import { Pencil, Plus, Search, UsersRound } from 'lucide-react';
 import toast from 'react-hot-toast';
 import DraftingModal, { fieldInput, fieldLabel } from './DraftingModal';
-import { apiErrorMessage, initials, Person, Team, TeamPayload, useCanManageDrafting, usePeople, useSaveTeam, useTeams } from './draftingApi';
+import { apiErrorMessage, initials, Person, Team, TeamPayload, usePeople } from './draftingApi';
+import { byDepartment, SUGGESTED_DEPARTMENTS, useCanManagePlanning, usePlanningScope, useSaveScopedTeam, useScopedTeams } from './planningApi';
 
 type FormState = TeamPayload & { id?: string };
 
-const emptyForm = (): FormState => ({ name: '', description: '', manager_user_id: null, member_ids: [], active: true });
+const emptyForm = (department?: string): FormState => ({
+  name: '', description: '', manager_user_id: null, member_ids: [], active: true, ...(department !== undefined ? { department } : {}),
+});
 
 export function Avatar({ person, size = 'sm' }: { person: Pick<Person, 'name'>; size?: 'sm' | 'md' }) {
   const cls = size === 'md' ? 'w-9 h-9 text-xs' : 'w-7 h-7 text-[10px]';
@@ -14,8 +17,9 @@ export function Avatar({ person, size = 'sm' }: { person: Pick<Person, 'name'>; 
 }
 
 export default function TeamsPanel() {
-  const canManage = useCanManageDrafting();
-  const teams = useTeams();
+  const company = usePlanningScope() === 'company';
+  const canManage = useCanManagePlanning();
+  const teams = useScopedTeams();
   const [form, setForm] = useState<FormState | null>(null);
 
   const openEdit = (team: Team) => setForm({
@@ -25,24 +29,31 @@ export default function TeamsPanel() {
     manager_user_id: team.manager?.id ?? null,
     member_ids: team.members.map(m => m.id),
     active: team.active,
+    ...(company ? { department: team.department } : {}),
   });
 
   if (teams.isError) return <div className="p-8 text-sm text-rose-700">Teams could not be loaded. <button className="underline font-bold" onClick={() => teams.refetch()}>Try again</button></div>;
 
+  const groups = company ? byDepartment(teams.data ?? []) : [{ department: '', teams: teams.data ?? [] }];
+
   return <div>
     <div className="flex items-center justify-between mb-4">
-      <p className="text-sm text-[#6f8082]">Each team has a manager and the drafters whose work they oversee.</p>
-      {canManage && <button onClick={() => setForm(emptyForm())} className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-[#087f73] text-white text-sm font-bold"><Plus className="w-4 h-4" /> New team</button>}
+      <p className="text-sm text-[#6f8082]">{company
+        ? 'Every team in the company, by department. A person can be in more than one team. Drafting teams are also managed from the Drafting screen.'
+        : 'Each team has a manager and the drafters whose work they oversee.'}</p>
+      {canManage && <button onClick={() => setForm(emptyForm(company ? '' : undefined))} className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-[#087f73] text-white text-sm font-bold shrink-0"><Plus className="w-4 h-4" /> New team</button>}
     </div>
 
     {teams.isLoading ? <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">{[1, 2, 3].map(i => <div key={i} className="h-40 skeleton rounded-xl" />)}</div>
       : !teams.data?.length ? <div className="bg-white rounded-xl border border-dashed border-[#c9d9d2] p-16 text-center">
         <UsersRound className="mx-auto w-9 h-9 text-[#b8d9d0] mb-3" />
-        <p className="font-bold">No drafting teams yet</p>
-        <p className="text-sm text-[#6f8082] mt-1">Create a team, choose its manager and add the drafters.</p>
+        <p className="font-bold">{company ? 'No teams yet' : 'No drafting teams yet'}</p>
+        <p className="text-sm text-[#6f8082] mt-1">{company ? 'Create a team, put it in a department, choose its manager and add its people.' : 'Create a team, choose its manager and add the drafters.'}</p>
       </div>
-      : <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
-        {teams.data.map(team => <article key={team.id} className={`bg-white rounded-xl border border-[#dce7e2] p-5 shadow-sm ${team.active ? '' : 'opacity-60'}`}>
+      : groups.map(g => <section key={g.department || 'all'} className="mb-6">
+        {company && <h2 className="text-[11px] font-extrabold uppercase tracking-[.14em] text-[#6f8082] mb-2">{g.department} · {g.teams.length} {g.teams.length === 1 ? 'team' : 'teams'}</h2>}
+        <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
+        {g.teams.map(team => <article key={team.id} className={`bg-white rounded-xl border border-[#dce7e2] p-5 shadow-sm ${team.active ? '' : 'opacity-60'}`}>
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <h3 className="font-extrabold truncate">{team.name}</h3>
@@ -59,15 +70,18 @@ export default function TeamsPanel() {
           <div className="mt-1.5 flex -space-x-1.5 flex-wrap">{team.members.length ? team.members.map(m => <Avatar key={m.id} person={m} />) : <span className="text-sm text-[#8a9b9a]">No members yet</span>}</div>
           <div className="mt-4 pt-3 border-t border-[#edf2ef] text-xs text-[#53686b]"><b>{team.plan_count}</b> open {team.plan_count === 1 ? 'plan' : 'plans'}</div>
         </article>)}
-      </div>}
+        </div>
+      </section>)}
 
-    {form && canManage && <TeamForm form={form} setForm={setForm} onClose={() => setForm(null)} />}
+    {form && canManage && <TeamForm form={form} setForm={setForm} onClose={() => setForm(null)} departments={byDepartment(teams.data ?? []).map(g => g.department)} />}
   </div>;
 }
 
-function TeamForm({ form, setForm, onClose }: { form: FormState; setForm: (f: FormState) => void; onClose: () => void }) {
+function TeamForm({ form, setForm, onClose, departments }: { form: FormState; setForm: (f: FormState) => void; onClose: () => void; departments: string[] }) {
+  const company = usePlanningScope() === 'company';
   const people = usePeople();
-  const save = useSaveTeam();
+  const save = useSaveScopedTeam();
+  const departmentOptions = [...new Set([...departments, ...SUGGESTED_DEPARTMENTS])];
   const [filter, setFilter] = useState('');
 
   const candidates = useMemo(() => {
@@ -83,9 +97,13 @@ function TeamForm({ form, setForm, onClose }: { form: FormState; setForm: (f: Fo
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name.trim()) return toast.error('Team name is required');
+    if (company && !form.department?.trim()) return toast.error('Choose or type a department');
     const { id, ...body } = form;
     try {
-      await save.mutateAsync({ id, body: { ...body, name: body.name.trim(), description: body.description?.trim() || null } });
+      await save.mutateAsync({ id, body: {
+        ...body, name: body.name.trim(), description: body.description?.trim() || null,
+        ...(company ? { department: body.department!.trim() } : {}),
+      } });
       toast.success(id ? 'Team updated' : 'Team created');
       onClose();
     } catch (err) {
@@ -93,9 +111,13 @@ function TeamForm({ form, setForm, onClose }: { form: FormState; setForm: (f: Fo
     }
   };
 
-  return <DraftingModal title={form.id ? 'Edit team' : 'New drafting team'} subtitle="The manager sees all plans and work assigned to this team."
+  return <DraftingModal title={form.id ? 'Edit team' : company ? 'New team' : 'New drafting team'} subtitle="The manager sees all plans and work assigned to this team."
     saving={save.isPending} submitLabel={form.id ? 'Save team' : 'Create team'} onClose={onClose} onSubmit={submit}>
-    <label className={fieldLabel}>Team name<input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="e.g. Fabrication Drawing Team" className={fieldInput} /></label>
+    <label className={fieldLabel}>Team name<input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder={company ? 'e.g. ASW Engineering' : 'e.g. Fabrication Drawing Team'} className={fieldInput} /></label>
+    {company && <label className={fieldLabel}>Department<input required list="team-departments" value={form.department ?? ''} onChange={e => setForm({ ...form, department: e.target.value })} placeholder="e.g. Engineering" className={fieldInput} />
+      <datalist id="team-departments">{departmentOptions.map(d => <option key={d} value={d} />)}</datalist>
+      {form.id && form.department?.trim().toLowerCase() !== 'drafting' && <span className="block text-[11px] font-normal text-[#8a9b9a] mt-1">Only teams in Drafting show on the Drafting screen.</span>}
+    </label>}
     <label className={fieldLabel}>Manager<select value={form.manager_user_id ?? ''} onChange={e => setForm({ ...form, manager_user_id: e.target.value || null })} className={fieldInput}>
       <option value="">Not assigned</option>
       {(people.data ?? []).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}

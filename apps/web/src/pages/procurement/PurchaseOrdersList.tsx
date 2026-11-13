@@ -15,6 +15,7 @@ import AssignUserModal from './AssignUserModal';
 import QueryError from '../../components/ui/QueryError';
 import EmptyState from '../../components/ui/EmptyState';
 import { currentReturnContext } from '../../lib/navigation';
+import { EDITOR_ROLES } from '../../lib/roles';
 
 type Preset = { name: string; search: string; statusFilter: string; mineOnly: boolean };
 
@@ -121,8 +122,8 @@ function requiredByUrgency(dateStr: string | null, status: string): RequiredByUr
   return requiredBy <= sevenDaysFromToday ? 'upcoming' : null;
 }
 
-const CAN_BULK_ASSIGN = new Set(['admin', 'engineer', 'hq_manager']);
-const CAN_MANAGE = new Set(['admin', 'engineer', 'hq_manager']);
+const CAN_BULK_ASSIGN = new Set<string>([...EDITOR_ROLES, 'hq_manager']);
+const CAN_MANAGE = new Set<string>([...EDITOR_ROLES, 'hq_manager']);
 const CAN_APPROVE = new Set(['admin', 'hq_manager']);
 
 export default function PurchaseOrdersList() {

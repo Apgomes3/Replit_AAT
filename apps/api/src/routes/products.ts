@@ -8,6 +8,7 @@ import fs from 'fs';
 import crypto from 'crypto';
 import { calculateWaterSurfaceAreaM2 } from '../lib/tankCalculations';
 import { isSupportedCurrency, SUPPORTED_CURRENCY_TEXT } from '../lib/currencies';
+import { EDITOR_ROLES } from '../lib/roles';
 
 const uploadsDir = path.join(__dirname, '../../uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
@@ -385,7 +386,7 @@ router.put('/product-families/:id', authenticate, async (req: AuthRequest, res: 
   }
 });
 
-router.delete('/product-families/:id', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
+router.delete('/product-families/:id', authenticate, requireRole(...EDITOR_ROLES), async (req: AuthRequest, res: Response) => {
   const existing = await query(
     `SELECT pf.id, pf.product_family_code, COUNT(pm.id)::int AS product_count
      FROM product_families pf
@@ -566,7 +567,7 @@ router.get('/product-masters/:id', authenticate, async (req: AuthRequest, res: R
 router.post(
   '/product-masters/:id/generate-tds',
   authenticate,
-  requireRole('admin', 'engineer'),
+  requireRole(...EDITOR_ROLES),
   requireModuleManage('pim'),
   requireModuleManage('documents'),
   async (req: AuthRequest, res: Response, next: NextFunction) => {

@@ -21,6 +21,7 @@ import {
 } from './designBooks';
 import { isLifeSupportSystem } from '../lib/lssSystems';
 import { isRetiredSystem, systemLifecycleError } from '../lib/systemLifecycle';
+import { EDITOR_ROLES } from '../lib/roles';
 
 const router = Router();
 router.use(authenticate, requireModuleAccess('design_books'));
@@ -104,7 +105,7 @@ router.get('/design-books/:bookId/friction-loss/:systemId', async (req: AuthRequ
 
 router.put(
   '/design-books/:bookId/friction-loss/:systemId',
-  requireRole('admin', 'engineer'),
+  requireRole(...EDITOR_ROLES),
   requireModuleManage('design_books'),
   async (req: AuthRequest, res: Response) => {
     const client = await pool.connect();

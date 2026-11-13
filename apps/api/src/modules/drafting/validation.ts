@@ -23,6 +23,8 @@ export type TeamInput = {
   manager_user_id?: string | null;
   member_ids?: string[];
   active?: boolean;
+  /** Company department the team belongs to (Drafting, Engineering, Design, ...). */
+  department?: string;
 };
 
 export type PlanInput = {
@@ -91,6 +93,11 @@ export function validateTeamInput(body: any, { creating }: { creating: boolean }
   if (has(body, 'active')) {
     if (typeof body.active !== 'boolean') return { error: 'active must be true or false.' };
     out.active = body.active;
+  }
+  if (has(body, 'department')) {
+    const v = typeof body.department === 'string' ? body.department.trim().replace(/\s+/g, ' ') : '';
+    if (!v || v.length > 100) return { error: 'department must be a name of 1 to 100 characters.' };
+    out.department = v;
   }
   if (!creating && Object.keys(out).length === 0) return { error: 'Nothing to update.' };
   return { value: out };

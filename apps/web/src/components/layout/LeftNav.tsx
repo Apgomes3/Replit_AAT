@@ -1,10 +1,11 @@
 import { NavLink, useNavigate } from 'react-router-dom';
- import { FolderOpen, Package, BookOpen, FileText, Network, Search, Users, Upload, Boxes, Pipette, Container, GripVertical, Settings, ChevronRight, Ruler, ShoppingCart, Home, ClipboardList, Layers, GitBranch, DollarSign, BookMarked, PanelLeftClose, PanelLeftOpen, Fish, Activity, Sun, Wind, SlidersHorizontal, BriefcaseBusiness, ClipboardCheck, PencilRuler } from 'lucide-react';
+ import { FolderOpen, Package, BookOpen, FileText, Network, Search, Users, Upload, Boxes, Pipette, Container, GripVertical, Settings, ChevronRight, Ruler, ShoppingCart, Home, ClipboardList, Layers, GitBranch, DollarSign, BookMarked, PanelLeftClose, PanelLeftOpen, Fish, Activity, Sun, Wind, SlidersHorizontal, BriefcaseBusiness, ClipboardCheck, PencilRuler, Gauge } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import clsx from 'clsx';
 import { useCommandPalette } from '../../store/commandPaletteStore';
 import { useAuthStore } from '../../store/authStore';
 import { ModuleKey, ROUTES } from '../../lib/navigation';
+import { isEditorRole } from '../../lib/roles';
 
 type NavItemDef = { id: string; to: string; icon: any; label: string; end?: boolean };
 type NavSection = { id: string; moduleKey: ModuleKey; group: string; label: string; hub: string; icon: any; items: NavItemDef[] };
@@ -23,6 +24,10 @@ const SECTIONS: NavSection[] = [
   {
     id: 'projects', moduleKey: 'projects', group: 'Operational', label: 'Project Management', hub: ROUTES.projectManagement, icon: FolderOpen,
     items: [{ id: 'projects', to: ROUTES.projects, icon: FolderOpen, label: 'Projects' }],
+  },
+  {
+    id: 'resources', moduleKey: 'resources', group: 'Operational', label: 'Resources', hub: ROUTES.resources, icon: Gauge,
+    items: [{ id: 'resources-overview', to: ROUTES.resources, icon: Gauge, label: 'Teams & Workload', end: true }],
   },
   {
     id: 'design-book-engine', moduleKey: 'design_books', group: 'Engineering', label: 'Design Book Engine', hub: ROUTES.designBookEngine, icon: BookMarked,
@@ -258,7 +263,7 @@ function AdminPopup({ onClose, onNavigate }: { onClose: () => void; onNavigate?:
   const ref = useRef<HTMLDivElement>(null);
   const menuItemRefs = useRef<HTMLButtonElement[]>([]);
   const [activeItemIndex, setActiveItemIndex] = useState(0);
-  const visibleGroups = user?.role === 'engineer'
+  const visibleGroups = user?.role !== 'admin'
     ? ADMIN_GROUPS.map(group => ({
       ...group,
       items: group.items.filter(item => item.id === 'thermal-wall-constructions'),
@@ -366,7 +371,7 @@ export default function LeftNav({ collapsed, onToggleCollapsed, onNavigate }: Le
   const user = useAuthStore(state => state.user);
   const moduleVisible = (moduleKey: ModuleKey) => user?.moduleAccess?.[moduleKey] !== 'hidden';
   const canAccessPlatformAdmin = user?.role === 'admin' ||
-    (user?.role === 'engineer' && user?.moduleAccess?.design_books === 'manage');
+    (isEditorRole(user?.role) && user?.moduleAccess?.design_books === 'manage');
   const visibleSections = SECTIONS.filter(section => moduleVisible(section.moduleKey));
 
   const handleOrderChange = (sectionId: string, newOrder: string[]) => {

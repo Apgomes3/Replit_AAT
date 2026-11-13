@@ -15,6 +15,7 @@ import { exportCsv, csvDate } from '../../lib/exportCsv';
 import toast from 'react-hot-toast';
 import QueryError from '../../components/ui/QueryError';
 import EmptyState from '../../components/ui/EmptyState';
+import { isEditorRole } from '../../lib/roles';
 
 const ProjectsMap = lazy(() => import('../../components/ui/ProjectsMap'));
 
@@ -31,7 +32,7 @@ const ALL_SCOPES = [
 export default function ProjectsList() {
   const navigate = useNavigate();
   const { user } = useAuthStore();
-  const isPrivileged = user?.role === 'admin' || user?.role === 'engineer';
+  const isPrivileged = isEditorRole(user?.role);
   const [search, setSearch] = useState('');
   const [showNew, setShowNew] = useState(false);
   const [view, setView] = useState<'table' | 'map'>('table');

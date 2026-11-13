@@ -60,7 +60,7 @@ export async function emitNotification(db: PoolClient, opts: {
        LEFT JOIN roles r ON r.name = u.role
        LEFT JOIN role_module_access access ON access.role_id = r.id AND access.module_key = $10
       WHERE u.is_active = true AND u.id <> $11
-        AND ($5 <> 'uv_engineering_revision' OR u.role IN ('admin', 'engineer'))
+        AND ($5 <> 'uv_engineering_revision' OR u.role IN ('admin', 'engineer', 'manager', 'user'))
         AND u.id <> ALL($14::uuid[])
         AND (u.id = ANY($12::uuid[]) OR ($13::boolean AND EXISTS (
           SELECT 1 FROM notification_subscriptions s

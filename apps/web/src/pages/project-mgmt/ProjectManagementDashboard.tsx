@@ -4,6 +4,7 @@ import api from '../../lib/api';
 import { ChevronLeft, FolderOpen, ArrowUpRight, Plus } from 'lucide-react';
 import StatusBadge from '../../components/ui/StatusBadge';
 import { useAuthStore } from '../../store/authStore';
+import { isEditorRole } from '../../lib/roles';
 
 const STATUS_CONFIG: Record<string, { bg: string; text: string; dot: string; border: string }> = {
   'Planning':  { bg: 'bg-stone-50',   text: 'text-stone-600',   dot: 'bg-stone-400',   border: 'border-stone-200' },
@@ -33,7 +34,7 @@ function SkeletonRows({ count = 5 }: { count?: number }) {
 export default function ProjectManagementDashboard() {
   const navigate = useNavigate();
   const { user } = useAuthStore();
-  const isPrivileged = user?.role === 'admin' || user?.role === 'engineer';
+  const isPrivileged = isEditorRole(user?.role);
 
   const { data: projectsData, isLoading } = useQuery({
     queryKey: ['all-projects'],

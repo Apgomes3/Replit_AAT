@@ -24,6 +24,7 @@ interface UserRow {
   email: string;
   first_name: string;
   last_name: string;
+  job_title: string | null;
   role: string;
   is_active: boolean;
   can_see_all_pos: boolean;
@@ -144,7 +145,9 @@ interface InviteModalProps {
 }
 
 function InviteModal({ roleOptions, smtpConfigured, onClose, onSuccess }: InviteModalProps) {
-  const [form, setForm] = useState({ email: '', first_name: '', last_name: '', role: roleOptions[0] || 'viewer' });
+  const [form, setForm] = useState({
+    email: '', first_name: '', last_name: '', job_title: '', role: roleOptions.includes('user') ? 'user' : roleOptions[0] || 'viewer',
+  });
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -228,7 +231,18 @@ function InviteModal({ roleOptions, smtpConfigured, onClose, onSuccess }: Invite
             </div>
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">Role</label>
+            <label className="block text-xs font-medium text-slate-700 mb-1">Job Position</label>
+            <input
+              type="text"
+              maxLength={150}
+              value={form.job_title}
+              onChange={e => setForm(f => ({ ...f, job_title: e.target.value }))}
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="e.g. Drafting Supervisor"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-700 mb-1">Role (access)</label>
             <select
               value={form.role}
               onChange={e => setForm(f => ({ ...f, role: e.target.value }))}
@@ -291,9 +305,9 @@ interface BulkInviteModalProps {
 }
 
 const BULK_INVITE_TEMPLATE = [
-  'email,first_name,last_name,role',
-  'alex@example.com,Alex,Smith,viewer',
-  'sam@example.com,Sam,Lee,engineer',
+  'email,first_name,last_name,job_title,role',
+  'alex@example.com,Alex,Smith,Drafting Manager,manager',
+  'sam@example.com,Sam,Lee,Engineer,user',
 ].join('\n');
 
 function BulkInviteModal({ onClose, onSuccess }: BulkInviteModalProps) {
@@ -393,7 +407,7 @@ function BulkInviteModal({ onClose, onSuccess }: BulkInviteModalProps) {
               <div className="bg-slate-50 rounded-lg p-4">
                 <div className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2">Accepted columns</div>
                 <div className="flex flex-wrap gap-1.5">
-                  {['email *', 'first_name', 'last_name', 'role'].map(column => (
+                  {['email *', 'first_name', 'last_name', 'job_title', 'role'].map(column => (
                     <span key={column} className={`text-xs px-2 py-0.5 rounded font-mono ${column === 'email *' ? 'bg-blue-600/10 text-blue-600 font-semibold' : 'bg-slate-200 text-slate-600'}`}>
                       {column}
                     </span>
@@ -579,7 +593,7 @@ export default function AdminUsers() {
     enabled: isAdmin,
   });
 
-  const roleOptions: string[] = rolesData?.items?.map((r: any) => r.name) || ['admin', 'engineer', 'viewer'];
+  const roleOptions: string[] = rolesData?.items?.map((r: any) => r.name) || ['admin', 'manager', 'user', 'viewer'];
   const smtpConfigured = emailStatus?.smtp_configured ?? false;
 
   const pagination = data?.pagination;
@@ -754,6 +768,7 @@ export default function AdminUsers() {
               <tr className="bg-slate-50 border-b border-slate-200">
                 {sortableHeader('Email', 'email')}
                 {sortableHeader('Name', 'name')}
+                <th className="text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">Job position</th>
                 {sortableHeader('Role', 'role')}
                 {sortableHeader('Status', 'status')}
                 <th className="text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">See All POs</th>
@@ -765,7 +780,7 @@ export default function AdminUsers() {
             <tbody>
               {users.length === 0 ? (
                 <tr>
-                  <td colSpan={isAdmin ? 8 : 7} className="text-center py-12 text-slate-400 text-sm">
+                  <td colSpan={isAdmin ? 9 : 8} className="text-center py-12 text-slate-400 text-sm">
                     {(debouncedQ || roleFilter) ? 'No users match the current filters' : 'No users found'}
                   </td>
                 </tr>
@@ -778,6 +793,7 @@ export default function AdminUsers() {
                     <td className="px-4 py-3 text-slate-600">
                       {`${user.first_name || ''} ${user.last_name || ''}`.trim() || '—'}
                     </td>
+                    <td className="px-4 py-3 text-slate-600">{user.job_title || '—'}</td>
                     <td className="px-4 py-3">
                       <span className="bg-slate-100 text-slate-700 text-xs px-2 py-0.5 rounded capitalize">
                         {user.role?.replace(/_/g, ' ')}
@@ -911,17 +927,19 @@ export default function AdminUsers() {
           title="Edit User"
           submitLabel="Save Changes"
           onClose={() => setEditUser(null)}
-          initialValues={{ first_name: editUser.first_name, last_name: editUser.last_name, role: editUser.role }}
+          initialValues={{ first_name: editUser.first_name, last_name: editUser.last_name, job_title: editUser.job_title ?? '', role: editUser.role }}
           fields={[
             { name: 'first_name', label: 'First Name' },
             { name: 'last_name', label: 'Last Name' },
-            { name: 'role', label: 'Role', options: roleOptions },
+            { name: 'job_title', label: 'Job Position' },
+            { name: 'role', label: 'Role (access)', options: roleOptions },
           ]}
           onSubmit={async (values) => {
             try {
               await api.put(`/admin/users/${editUser.id}`, {
                 first_name: values.first_name,
                 last_name: values.last_name,
+                job_title: values.job_title || null,
                 role: values.role,
                 is_active: editUser.is_active,
               });

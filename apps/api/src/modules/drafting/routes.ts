@@ -47,22 +47,27 @@ router.get('/projects', async (_req, res, next) => {
 
 // ---------- teams ----------
 
+// Drafting only sees and edits the Drafting department's teams; the other company teams
+// are managed in Resources (/api/v1/planning/teams).
+const isDraftingTeam = (team: repo.Team | null): team is repo.Team =>
+  !!team && team.department.toLowerCase() === repo.DRAFTING_DEPARTMENT.toLowerCase();
+
 router.get('/teams', async (_req, res, next) => {
-  try { res.json({ data: await repo.listTeams() }); } catch (e) { next(e); }
+  try { res.json({ data: await repo.listTeams({ department: repo.DRAFTING_DEPARTMENT }) }); } catch (e) { next(e); }
 });
 
 router.get('/teams/:id', async (req, res, next) => {
   try {
     if (!isUuid(req.params.id)) return fail(res, 400, 'VALIDATION', 'id must be a valid id.');
     const team = await repo.getTeam(req.params.id);
-    if (!team) return fail(res, 404, 'NOT_FOUND', 'Team not found.');
+    if (!isDraftingTeam(team)) return fail(res, 404, 'NOT_FOUND', 'Team not found.');
     res.json(team);
   } catch (e) { next(e); }
 });
 
 router.post('/teams', manage, async (req: AuthRequest, res, next) => {
   try {
-    const { value, error } = validateTeamInput(req.body, { creating: true });
+    const { value, error } = validateTeamInput({ ...req.body, department: repo.DRAFTING_DEPARTMENT }, { creating: true });
     if (error) return fail(res, 400, 'VALIDATION', error);
     const peopleError = await checkPeople(value!.manager_user_id, value!.member_ids);
     if (peopleError) return fail(res, 400, 'VALIDATION', peopleError);
@@ -75,8 +80,10 @@ router.post('/teams', manage, async (req: AuthRequest, res, next) => {
 router.patch('/teams/:id', manage, async (req: AuthRequest, res, next) => {
   try {
     if (!isUuid(req.params.id)) return fail(res, 400, 'VALIDATION', 'id must be a valid id.');
-    const { value, error } = validateTeamInput(req.body, { creating: false });
+    const { department: _ignored, ...body } = req.body ?? {};
+    const { value, error } = validateTeamInput(body, { creating: false });
     if (error) return fail(res, 400, 'VALIDATION', error);
+    if (!isDraftingTeam(await repo.getTeam(req.params.id))) return fail(res, 404, 'NOT_FOUND', 'Team not found.');
     const peopleError = await checkPeople(value!.manager_user_id, value!.member_ids);
     if (peopleError) return fail(res, 400, 'VALIDATION', peopleError);
     const team = await repo.updateTeam(req.params.id, value!, req.user!.id);

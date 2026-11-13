@@ -4,6 +4,7 @@ import { authenticate, AuthRequest, requireModuleAccess, requireModuleManage, re
 import { calculateOzoneRequirement, evaluateOzoneGeneratorSelection, selectOzoneGenerator } from '../lib/ozoneCalculations';
 import { loadReleaseContext } from './designBooks';
 import { isRetiredSystem, systemLifecycleError } from '../lib/systemLifecycle';
+import { EDITOR_ROLES } from '../lib/roles';
 
 const router = Router();
 router.use(authenticate, requireModuleAccess('design_books'));
@@ -68,7 +69,7 @@ router.get('/systems/:id/ozone-calculation', async (req: AuthRequest, res: Respo
   });
 });
 
-router.put('/systems/:id/ozone-calculation', requireRole('admin', 'engineer'), requireModuleManage('design_books'), async (req: AuthRequest, res: Response) => {
+router.put('/systems/:id/ozone-calculation', requireRole(...EDITOR_ROLES), requireModuleManage('design_books'), async (req: AuthRequest, res: Response) => {
   const book = (await query('SELECT * FROM design_books WHERE id=$1', [req.body.design_book_id])).rows[0];
   if (!book) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Design book not found' } });
   if (!['Draft', 'In Progress'].includes(book.status)) {

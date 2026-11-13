@@ -225,7 +225,7 @@ describe('UV engineering lifecycle', () => {
     expect(state.queries.some(sql => sql.includes('u.id<>$1')
       && sql.includes('u.is_active=true')
       && sql.includes("(access.access_level is null or access.access_level='manage')")
-      && sql.includes("u.role in ('admin', 'engineer')"))).toBe(true);
+      && sql.includes("u.role in ('admin', 'engineer', 'manager', 'user')"))).toBe(true);
   });
 
   it('rejects unknown water compatibility types', async () => {

@@ -11,6 +11,7 @@ import multer from 'multer';
 import csv from 'csv-parser';
 import { Readable } from 'stream';
 import { SUPPORTED_CURRENCIES } from '../lib/currencies';
+import { EDITOR_ROLES } from '../lib/roles';
 
 const router = Router();
 const uploadUserCsv = multer({
@@ -48,11 +49,20 @@ function validEmail(email: string): boolean {
   return email.length <= 255 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
+/** Trimmed job position, null when empty, undefined when not valid text. */
+function cleanJobTitle(value: unknown): string | null | undefined {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'string') return undefined;
+  const v = value.trim().replace(/\s+/g, ' ');
+  if (v.length > 150) return undefined;
+  return v || null;
+}
+
 router.get('/email-status', authenticate, requireRole('admin'), (_req: AuthRequest, res: Response) => {
   res.json({ smtp_configured: isSmtpConfigured() });
 });
 
-router.get('/users', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
+router.get('/users', authenticate, requireRole(...EDITOR_ROLES), async (req: AuthRequest, res: Response) => {
   const page = Math.max(1, parseInt(req.query.page as string) || 1);
   const page_size = Math.min(1000, Math.max(1, parseInt(req.query.page_size as string) || 25));
   const offset = (page - 1) * page_size;
@@ -65,7 +75,7 @@ router.get('/users', authenticate, requireRole('admin', 'engineer'), async (req:
 
   if (q) {
     params.push(`%${q}%`);
-    conditions.push(`(email ILIKE $${params.length} OR first_name ILIKE $${params.length} OR last_name ILIKE $${params.length} OR (first_name || ' ' || last_name) ILIKE $${params.length})`);
+    conditions.push(`(email ILIKE $${params.length} OR first_name ILIKE $${params.length} OR last_name ILIKE $${params.length} OR (first_name || ' ' || last_name) ILIKE $${params.length} OR job_title ILIKE $${params.length})`);
   }
   if (role) {
     params.push(role);
@@ -96,7 +106,7 @@ router.get('/users', authenticate, requireRole('admin', 'engineer'), async (req:
   const [countResult, dataResult] = await Promise.all([
     query(`SELECT COUNT(*) FROM users ${where}`, countParams),
     query(
-      `SELECT id, email, first_name, last_name, role, is_active, can_see_all_pos, created_at, last_login_at
+      `SELECT id, email, first_name, last_name, job_title, role, is_active, can_see_all_pos, created_at, last_login_at
        FROM users ${where} ORDER BY ${orderBy} LIMIT $${dataParams.length - 1} OFFSET $${dataParams.length}`,
       dataParams
     ),
@@ -125,10 +135,12 @@ router.patch('/users/:id/po-visibility', authenticate, requireRole('admin'), asy
 router.post('/users', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
   const { email, password, first_name, last_name, role } = req.body;
   if (!email || !password) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'Email and password required' } });
+  const jobTitle = cleanJobTitle(req.body.job_title);
+  if (jobTitle === undefined) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'Job position must be text of 150 characters or fewer' } });
   try {
     const hash = await bcrypt.hash(password, 10);
-    const result = await query('INSERT INTO users (email, password_hash, first_name, last_name, role) VALUES ($1,$2,$3,$4,$5) RETURNING id, email, first_name, last_name, role, created_at',
-      [email, hash, first_name, last_name, role || 'viewer']);
+    const result = await query('INSERT INTO users (email, password_hash, first_name, last_name, role, job_title) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, email, first_name, last_name, job_title, role, created_at',
+      [email, hash, first_name, last_name, role || 'viewer', jobTitle]);
     await logAudit(req.user!.id, 'user', result.rows[0].id, 'CREATE', {
       summary: `User account created for ${email}`,
       target_email: email,
@@ -144,6 +156,8 @@ router.post('/users', authenticate, requireRole('admin'), async (req: AuthReques
 router.post('/users/invite', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
   const { email, first_name, last_name, role } = req.body;
   if (!email) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'Email is required' } });
+  const jobTitle = cleanJobTitle(req.body.job_title);
+  if (jobTitle === undefined) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'Job position must be text of 150 characters or fewer' } });
 
   // Create user with a random unusable password
   const randomPassword = crypto.randomBytes(32).toString('hex');
@@ -153,8 +167,8 @@ router.post('/users/invite', authenticate, requireRole('admin'), async (req: Aut
   let userEmail: string;
   try {
     const result = await query(
-      'INSERT INTO users (email, password_hash, first_name, last_name, role) VALUES ($1,$2,$3,$4,$5) RETURNING id, email',
-      [email.toLowerCase().trim(), hash, first_name || null, last_name || null, role || 'viewer']
+      'INSERT INTO users (email, password_hash, first_name, last_name, role, job_title) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, email',
+      [email.toLowerCase().trim(), hash, first_name || null, last_name || null, role || 'viewer', jobTitle]
     );
     userId = result.rows[0].id;
     userEmail = result.rows[0].email;
@@ -239,9 +253,11 @@ router.post('/users/import', authenticate, requireRole('admin'), uploadUserCsv.s
     const firstName = csvValue(row.first_name);
     const lastName = csvValue(row.last_name);
     const role = csvValue(row.role).toLowerCase() || 'viewer';
+    const jobTitle = cleanJobTitle(csvValue(row.job_title ?? row.job_position ?? row.position));
 
     let validationMessage: string | undefined;
     if (!email) validationMessage = 'Email is required';
+    else if (jobTitle === undefined) validationMessage = 'Job position must be 150 characters or fewer';
     else if (!validEmail(email)) validationMessage = 'Email address is invalid';
     else if (firstName.length > 100) validationMessage = 'First name must be 100 characters or fewer';
     else if (lastName.length > 100) validationMessage = 'Last name must be 100 characters or fewer';
@@ -270,8 +286,8 @@ router.post('/users/import', authenticate, requireRole('admin'), uploadUserCsv.s
       const randomPassword = crypto.randomBytes(32).toString('hex');
       const hash = await bcrypt.hash(randomPassword, 10);
       const inserted = await query(
-        'INSERT INTO users (email, password_hash, first_name, last_name, role) VALUES ($1,$2,$3,$4,$5) RETURNING id, email',
-        [email, hash, firstName || null, lastName || null, role]
+        'INSERT INTO users (email, password_hash, first_name, last_name, role, job_title) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, email',
+        [email, hash, firstName || null, lastName || null, role, jobTitle ?? null]
       );
       userId = inserted.rows[0].id;
 
@@ -317,9 +333,18 @@ router.put('/users/:id', authenticate, requireRole('admin'), async (req: AuthReq
   if (req.user!.id === req.params.id && is_active !== true) {
     return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'You cannot block your own account' } });
   }
+  // job_title is optional: left unchanged when the body does not include it.
+  const hasJobTitle = Object.prototype.hasOwnProperty.call(req.body, 'job_title');
+  const jobTitle = hasJobTitle ? cleanJobTitle(req.body.job_title) : null;
+  if (jobTitle === undefined) {
+    return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'Job position must be text of 150 characters or fewer' } });
+  }
   const existing = await query('SELECT is_active, role FROM users WHERE id=$1', [req.params.id]);
-  const result = await query('UPDATE users SET first_name=$1, last_name=$2, role=$3, is_active=$4, updated_at=NOW() WHERE id=$5 RETURNING id, email, first_name, last_name, role, is_active',
-    [first_name, last_name, role, is_active, req.params.id]);
+  const result = await query(
+    `UPDATE users SET first_name=$1, last_name=$2, role=$3, is_active=$4,
+       job_title = CASE WHEN $6 THEN $7 ELSE job_title END, updated_at=NOW()
+     WHERE id=$5 RETURNING id, email, first_name, last_name, job_title, role, is_active`,
+    [first_name, last_name, role, is_active, req.params.id, hasJobTitle, jobTitle]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'User not found' } });
   const updated = result.rows[0];
   let action = 'UPDATE';
@@ -451,7 +476,7 @@ router.delete('/users/:id', authenticate, requireRole('admin'), async (req: Auth
   }
 });
 
-router.get('/audit-logs', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
+router.get('/audit-logs', authenticate, requireRole(...EDITOR_ROLES), async (req: AuthRequest, res: Response) => {
   const page = parseInt(req.query.page as string) || 1;
   // Allow up to 10 000 rows for CSV export (page_size=10000 sent by the Export button)
   const page_size = Math.min(parseInt(req.query.page_size as string) || 50, 10000);
@@ -533,7 +558,7 @@ router.get('/categories', authenticate, async (req: AuthRequest, res: Response) 
   res.json({ items: result.rows });
 });
 
-router.post('/categories', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
+router.post('/categories', authenticate, requireRole(...EDITOR_ROLES), async (req: AuthRequest, res: Response) => {
   const { name, code, description, sort_order } = req.body;
   if (!name || !code) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'name and code required' } });
   try {
@@ -547,7 +572,7 @@ router.post('/categories', authenticate, requireRole('admin', 'engineer'), async
   }
 });
 
-router.put('/categories/:id', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
+router.put('/categories/:id', authenticate, requireRole(...EDITOR_ROLES), async (req: AuthRequest, res: Response) => {
   const { name, code, description, sort_order } = req.body;
   const result = await query(
     'UPDATE product_categories SET name=$1, code=$2, description=$3, sort_order=$4, updated_at=NOW() WHERE id=$5 RETURNING *',
@@ -693,7 +718,7 @@ router.put('/roles/:id/modules', authenticate, requireRole('admin'), async (req:
 });
 
 // PENDING APPROVALS (admin/engineer only)
-router.get('/pending-approvals', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
+router.get('/pending-approvals', authenticate, requireRole(...EDITOR_ROLES), async (req: AuthRequest, res: Response) => {
   const [pendingProducts, pendingDocs] = await Promise.all([
     query(`SELECT id, product_code as code, product_name as name, status, 'Product' as type, updated_at
            FROM product_masters WHERE status IN ('Draft','Internal Review','Pending Approval')
@@ -745,7 +770,7 @@ router.get('/tank-families', authenticate, async (req: AuthRequest, res: Respons
   res.json({ items: result.rows });
 });
 
-router.post('/tank-families', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
+router.post('/tank-families', authenticate, requireRole(...EDITOR_ROLES), async (req: AuthRequest, res: Response) => {
   const { code, name, description, sort_order } = req.body;
   if (!code || !name) return res.status(400).json({ error: { code: 'INVALID', message: 'code and name are required' } });
   try {
@@ -760,7 +785,7 @@ router.post('/tank-families', authenticate, requireRole('admin', 'engineer'), as
   }
 });
 
-router.put('/tank-families/:id', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
+router.put('/tank-families/:id', authenticate, requireRole(...EDITOR_ROLES), async (req: AuthRequest, res: Response) => {
   const { name, description, sort_order } = req.body;
   const result = await query(
     'UPDATE tank_families SET name=$1, description=$2, sort_order=$3, updated_at=NOW() WHERE id::text=$4 RETURNING *',
@@ -832,7 +857,7 @@ router.delete('/po-stage-roles/:id', authenticate, requireRole('admin'), async (
 
 // ── SYSTEM TYPES ─────────────────────────────────────────────────────────────
 
-router.post('/system-types', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
+router.post('/system-types', authenticate, requireRole(...EDITOR_ROLES), async (req: AuthRequest, res: Response) => {
   const { name, description, sort_order } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: { code: 'INVALID', message: 'name is required' } });
   try {
@@ -847,7 +872,7 @@ router.post('/system-types', authenticate, requireRole('admin', 'engineer'), asy
   }
 });
 
-router.put('/system-types/:id', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
+router.put('/system-types/:id', authenticate, requireRole(...EDITOR_ROLES), async (req: AuthRequest, res: Response) => {
   const { name, description, sort_order, is_active } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: { code: 'INVALID', message: 'name is required' } });
   try {

@@ -8,6 +8,7 @@ import { createNotification, emitNotification } from '../db/notifications';
 import { logAudit } from '../db/audit';
 import { versionMatches, versionConflict, withVersion } from '../lib/concurrency';
 import { createKeyError, findCreateRetry } from '../lib/createIdempotency';
+import { isEditorRole } from '../lib/roles';
 
 const uploadDir = path.join(__dirname, '../../uploads');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -61,7 +62,7 @@ async function isDesignated(poId: string, userId: string): Promise<boolean> {
 
 // Roles that may perform PO management actions (assign users, set due dates, update procurement meta, etc.)
 function canTransition(role: string): boolean {
-  return ['admin', 'engineer', 'hq_manager'].includes(role);
+  return isEditorRole(role) || role === 'hq_manager';
 }
 
 // ─── Procurement field allowlists ────────────────────────────────────────────

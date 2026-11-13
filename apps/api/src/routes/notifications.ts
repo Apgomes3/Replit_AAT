@@ -8,7 +8,7 @@ const filters = ['all', 'unread', 'action'] as const;
 type Filter = typeof filters[number];
 const visibility = `n.user_id = $1
  AND (n.entity_type IS NULL OR access.access_level IS DISTINCT FROM 'hidden')
- AND (n.entity_type IS DISTINCT FROM 'uv_engineering_revision' OR u.role IN ('admin', 'engineer'))
+ AND (n.entity_type IS DISTINCT FROM 'uv_engineering_revision' OR u.role IN ('admin', 'engineer', 'manager', 'user'))
  AND (n.entity_type IS DISTINCT FROM 'purchase_order' OR EXISTS (
    SELECT 1 FROM purchase_orders po JOIN users owner ON owner.id = $1
    WHERE po.id::text = n.entity_id::text

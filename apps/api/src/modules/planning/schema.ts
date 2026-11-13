@@ -27,6 +27,13 @@ CREATE TABLE IF NOT EXISTS planning_calendar_days (
   PRIMARY KEY (calendar_id, day)
 );
 
+-- Public holiday sets (country + year, see holidays.ts) already applied, so none is re-applied.
+CREATE TABLE IF NOT EXISTS planning_holiday_sets (
+  set_key VARCHAR(30) PRIMARY KEY,
+  calendar_id UUID REFERENCES planning_calendars(id) ON DELETE SET NULL,
+  loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- A person's planning settings. No row = default calendar at 100%.
 CREATE TABLE IF NOT EXISTS planning_resources (
   user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
@@ -60,6 +67,20 @@ ALTER TABLE drafting_tasks ADD COLUMN IF NOT EXISTS is_milestone BOOLEAN NOT NUL
 ALTER TABLE drafting_tasks ADD COLUMN IF NOT EXISTS baseline_start DATE;
 ALTER TABLE drafting_tasks ADD COLUMN IF NOT EXISTS baseline_due DATE;
 ALTER TABLE drafting_task_assignees ADD COLUMN IF NOT EXISTS allocation_pct INTEGER NOT NULL DEFAULT 100 CHECK (allocation_pct BETWEEN 1 AND 100);
+
+-- Company teams. drafting_teams holds every team in the company; department groups them
+-- (Drafting, Engineering, Design, Management, ...). Teams that existed before this were all
+-- drafting teams, and teams created from the Drafting screen stay in Drafting.
+-- A person can be in several teams.
+ALTER TABLE drafting_teams ADD COLUMN IF NOT EXISTS department VARCHAR(100) NOT NULL DEFAULT 'Drafting';
+CREATE INDEX IF NOT EXISTS idx_drafting_teams_department ON drafting_teams (LOWER(department));
+
+-- Resources (the company-wide view): admins manage it, managers, HQ managers and the PMO can look,
+-- everyone else is hidden until an admin opens it up in Admin > Roles.
+INSERT INTO role_module_access (role_id, module_key, access_level)
+SELECT r.id, 'resources', CASE WHEN r.name = 'admin' THEN 'manage' WHEN r.name IN ('manager', 'hq_manager', 'pmo') THEN 'view' ELSE 'hidden' END
+FROM roles r
+ON CONFLICT (role_id, module_key) DO NOTHING;
 
 -- Finished tasks are 100% complete.
 UPDATE drafting_tasks SET progress_pct = 100 WHERE status = 'done' AND progress_pct <> 100;

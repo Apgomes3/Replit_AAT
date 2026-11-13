@@ -10,6 +10,7 @@ import {
 } from '../lib/lssControls';
 import { logAudit } from '../db/audit';
 import { projectLssIoSchedule, renderLssIoSchedulePdf } from '../lib/lssIoSchedule';
+import { EDITOR_ROLES } from '../lib/roles';
 
 const router = Router();
 router.use(authenticate, requireModuleAccess('design_books'));
@@ -245,7 +246,7 @@ router.get('/systems/:id/control', async (req: AuthRequest, res: Response) => {
   }
 });
 
-router.put('/systems/:id/control', requireRole('admin', 'engineer'), requireModuleManage('design_books'), async (req: AuthRequest, res: Response) => {
+router.put('/systems/:id/control', requireRole(...EDITOR_ROLES), requireModuleManage('design_books'), async (req: AuthRequest, res: Response) => {
   const input = req.body || {};
   const bookId = String(input.design_book_id || '');
   if (!bookId || !['GPO', 'PLC'].includes(input.panel_type)) return res.status(400).json({ error: { code: 'VALIDATION', message: 'design_book_id and panel_type (GPO or PLC) are required.' } });

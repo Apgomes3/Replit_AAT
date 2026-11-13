@@ -77,6 +77,45 @@ export const requireModuleManage = (moduleKey: ModuleAccessKey) => async (req: A
   }
 };
 
+async function accessLevels(userId: string, keys: ModuleAccessKey[]): Promise<Array<string | null>> {
+  const result = await query(
+    `SELECT k.key, rma.access_level
+     FROM users u
+     CROSS JOIN unnest($2::text[]) AS k(key)
+     LEFT JOIN roles r ON r.name=u.role
+     LEFT JOIN role_module_access rma ON rma.role_id=r.id AND rma.module_key=k.key
+     WHERE u.id=$1`,
+    [userId, keys],
+  );
+  return result.rows.map(row => row.access_level ?? null);
+}
+
+/** Passes when any of the modules is visible to the user's role (a missing row counts as visible). */
+export const requireAnyModuleAccess = (...keys: ModuleAccessKey[]) => async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const levels = await accessLevels(req.user!.id, keys);
+    if (levels.length && levels.every(level => level === 'hidden')) {
+      return res.status(403).json({ error: { code: 'MODULE_HIDDEN', message: 'This module is hidden for your role.' } });
+    }
+    next();
+  } catch (error) {
+    next(error);
+  }
+};
+
+/** Passes when the user's role can manage any of the modules (a missing row counts as manage). */
+export const requireAnyModuleManage = (...keys: ModuleAccessKey[]) => async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const levels = await accessLevels(req.user!.id, keys);
+    if (levels.length && !levels.some(level => level === null || level === 'manage')) {
+      return res.status(403).json({ error: { code: 'MODULE_READ_ONLY', message: 'Manage access is required for this module.' } });
+    }
+    next();
+  } catch (error) {
+    next(error);
+  }
+};
+
 /**
  * Bulk imports are available to platform administrators or roles with manage
  * access to the governing module. Unlike legacy mutation guards, this returns

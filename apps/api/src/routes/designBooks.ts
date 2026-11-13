@@ -50,6 +50,7 @@ import {
 } from '../lib/uvCalculations';
 import { pipeVelocity } from '../lib/pipeSizing';
 import { versionMatches, versionConflict, withVersion } from '../lib/concurrency';
+import { EDITOR_ROLES } from '../lib/roles';
 
 const router = Router();
 
@@ -1375,7 +1376,7 @@ router.get('/thermal-wall-constructions', async (_req: AuthRequest, res: Respons
 
 router.get(
   '/thermal-wall-constructions/history',
-  requireRole('admin', 'engineer'),
+  requireRole(...EDITOR_ROLES),
   requireModuleManage('design_books'),
   async (_req: AuthRequest, res: Response) => {
     res.json({ items: await loadThermalWallConstructionHistory(query) });
@@ -1384,7 +1385,7 @@ router.get(
 
 router.post(
   '/thermal-wall-constructions/:constructionCode/versions',
-  requireRole('admin', 'engineer'),
+  requireRole(...EDITOR_ROLES),
   requireModuleManage('design_books'),
   async (req: AuthRequest, res: Response) => {
     const constructionCode = routeParam(req.params.constructionCode).trim().toLowerCase();
@@ -2546,14 +2547,14 @@ async function saveThermalCalculation(req: AuthRequest, res: Response) {
 router.post(
   '/design-books/:id/thermal/:systemId/calculate',
   authenticate,
-  requireRole('admin', 'engineer'),
+  requireRole(...EDITOR_ROLES),
   requireModuleManage('design_books'),
   saveThermalCalculation,
 );
 router.put(
   '/design-books/:id/thermal/:systemId',
   authenticate,
-  requireRole('admin', 'engineer'),
+  requireRole(...EDITOR_ROLES),
   requireModuleManage('design_books'),
   saveThermalCalculation,
 );
@@ -2922,7 +2923,7 @@ router.get('/design-books/:id/release-preflight', authenticate, async (req: Auth
   });
 });
 
-router.post('/design-books', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
+router.post('/design-books', authenticate, requireRole(...EDITOR_ROLES), async (req: AuthRequest, res: Response) => {
   const { book_code, book_title, project_id, description, revision, status, notes } = req.body;
   if (!book_code || !book_title) return res.status(400).json({ error: { code: 'VALIDATION', message: 'book_code and book_title are required' } });
   if (status && status !== 'Draft') {
@@ -2938,7 +2939,7 @@ router.post('/design-books', authenticate, requireRole('admin', 'engineer'), asy
   res.status(201).json(result.rows[0]);
 });
 
-router.put('/design-books/:id', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
+router.put('/design-books/:id', authenticate, requireRole(...EDITOR_ROLES), async (req: AuthRequest, res: Response) => {
   const { book_title, project_id, description, revision, status, notes } = req.body;
   const client = await pool.connect();
   try {
@@ -2984,7 +2985,7 @@ router.put('/design-books/:id', authenticate, requireRole('admin', 'engineer'), 
   }
 });
 
-router.delete('/design-books/:id', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
+router.delete('/design-books/:id', authenticate, requireRole(...EDITOR_ROLES), async (req: AuthRequest, res: Response) => {
   if (!await ensureBookEditable(routeParam(req.params.id), res)) return;
   const result = await query(
     `DELETE FROM design_books
@@ -3138,7 +3139,7 @@ function parseLightInput(body: any) {
   return { model, description, lightingType, quantity, powerUnit, powerValue, powerKw };
 }
 
-router.post('/design-books/:id/exhibits/:exhibitId/lights', authenticate, requireRole('admin', 'engineer'), requireModuleManage('design_books'), async (req: AuthRequest, res: Response) => {
+router.post('/design-books/:id/exhibits/:exhibitId/lights', authenticate, requireRole(...EDITOR_ROLES), requireModuleManage('design_books'), async (req: AuthRequest, res: Response) => {
   if (!await ensureBookEditable(routeParam(req.params.id), res)) return;
   if (!await ensureLightingExhibit(routeParam(req.params.id), routeParam(req.params.exhibitId), res)) return;
   try {
@@ -3176,7 +3177,7 @@ router.post('/design-books/:id/exhibits/:exhibitId/lights', authenticate, requir
   }
 });
 
-router.put('/design-books/:id/exhibits/:exhibitId/lights/:lightId', authenticate, requireRole('admin', 'engineer'), requireModuleManage('design_books'), async (req: AuthRequest, res: Response) => {
+router.put('/design-books/:id/exhibits/:exhibitId/lights/:lightId', authenticate, requireRole(...EDITOR_ROLES), requireModuleManage('design_books'), async (req: AuthRequest, res: Response) => {
   if (!await ensureBookEditable(routeParam(req.params.id), res)) return;
   if (!await ensureLightingExhibit(routeParam(req.params.id), routeParam(req.params.exhibitId), res)) return;
   try {
@@ -3245,7 +3246,7 @@ router.put('/design-books/:id/exhibits/:exhibitId/lights/:lightId', authenticate
   }
 });
 
-router.delete('/design-books/:id/exhibits/:exhibitId/lights/:lightId', authenticate, requireRole('admin', 'engineer'), requireModuleManage('design_books'), async (req: AuthRequest, res: Response) => {
+router.delete('/design-books/:id/exhibits/:exhibitId/lights/:lightId', authenticate, requireRole(...EDITOR_ROLES), requireModuleManage('design_books'), async (req: AuthRequest, res: Response) => {
   if (!await ensureBookEditable(routeParam(req.params.id), res)) return;
   if (!await ensureLightingExhibit(routeParam(req.params.id), routeParam(req.params.exhibitId), res)) return;
   const result = await query(
@@ -3260,7 +3261,7 @@ router.delete('/design-books/:id/exhibits/:exhibitId/lights/:lightId', authentic
 });
 
 // Species CRUD
-router.post('/design-books/:id/species', authenticate, requireRole('admin', 'engineer'), requireModuleManage('design_books'), async (req: AuthRequest, res: Response) => {
+router.post('/design-books/:id/species', authenticate, requireRole(...EDITOR_ROLES), requireModuleManage('design_books'), async (req: AuthRequest, res: Response) => {
   if (!await ensureBookEditable(routeParam(req.params.id), res)) return;
   const catalogId = req.body.catalog_species_id || req.body.catalog_id || null;
   const catalog = await loadCatalogSpecies(catalogId);
@@ -3315,7 +3316,7 @@ router.post('/design-books/:id/species', authenticate, requireRole('admin', 'eng
   }
 });
 
-router.put('/design-books/:id/species/:speciesId', authenticate, requireRole('admin', 'engineer'), requireModuleManage('design_books'), async (req: AuthRequest, res: Response) => {
+router.put('/design-books/:id/species/:speciesId', authenticate, requireRole(...EDITOR_ROLES), requireModuleManage('design_books'), async (req: AuthRequest, res: Response) => {
   if (!await ensureBookEditable(routeParam(req.params.id), res)) return;
   const existingResult = await query(
     `SELECT s.*
@@ -3417,7 +3418,7 @@ router.put('/design-books/:id/species/:speciesId', authenticate, requireRole('ad
   }
 });
 
-router.put('/design-books/:id/exhibits/:exhibitId/substrate', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
+router.put('/design-books/:id/exhibits/:exhibitId/substrate', authenticate, requireRole(...EDITOR_ROLES), async (req: AuthRequest, res: Response) => {
   if (!await ensureBookEditable(routeParam(req.params.id), res)) return;
   const { substrate_type, substrate_height_mm, substrate_volume_m3, theming_type, theming_height_mm, theming_volume_m3, theming_volume_pct, notes } = req.body;
   for (const [label, value] of [
@@ -3492,7 +3493,7 @@ router.put('/design-books/:id/exhibits/:exhibitId/substrate', authenticate, requ
   res.json(result.rows[0]);
 });
 
-router.put('/design-books/:id/exhibits/:exhibitId/hydraulics', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
+router.put('/design-books/:id/exhibits/:exhibitId/hydraulics', authenticate, requireRole(...EDITOR_ROLES), async (req: AuthRequest, res: Response) => {
   if (!await ensureBookEditable(routeParam(req.params.id), res)) return;
   const {
     target_turnover_rate, surface_skim_pct, bottom_drain_pct, notes,
@@ -3683,7 +3684,7 @@ router.put('/design-books/:id/exhibits/:exhibitId/hydraulics', authenticate, req
   res.json(result.rows[0]);
 });
 
-router.delete('/design-books/:id/species/:speciesId', authenticate, requireRole('admin', 'engineer'), requireModuleManage('design_books'), async (req: AuthRequest, res: Response) => {
+router.delete('/design-books/:id/species/:speciesId', authenticate, requireRole(...EDITOR_ROLES), requireModuleManage('design_books'), async (req: AuthRequest, res: Response) => {
   if (!await ensureBookEditable(routeParam(req.params.id), res)) return;
   const result = await query(
     'DELETE FROM design_book_exhibit_species WHERE id=$1 AND design_book_id=$2 RETURNING id',
@@ -4127,7 +4128,7 @@ router.post(
 router.post(
   '/design-books/:id/revisions',
   authenticate,
-  requireRole('admin', 'engineer'),
+  requireRole(...EDITOR_ROLES),
   async (req: AuthRequest, res: Response) => {
     const sourceResult = await query('SELECT * FROM design_books WHERE id=$1', [req.params.id]);
     const source = sourceResult.rows[0];
@@ -4659,7 +4660,7 @@ router.get('/design-books/:id/versions/:versionId/preview', authenticate, async 
   res.json(versionPresentation(result.rows[0], currentContext));
 });
 
-router.post('/design-books/:id/versions', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
+router.post('/design-books/:id/versions', authenticate, requireRole(...EDITOR_ROLES), async (req: AuthRequest, res: Response) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
@@ -4703,7 +4704,7 @@ router.post('/design-books/:id/versions', authenticate, requireRole('admin', 'en
   }
 });
 
-router.post('/design-books/:id/versions/:versionId/restore', authenticate, requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
+router.post('/design-books/:id/versions/:versionId/restore', authenticate, requireRole(...EDITOR_ROLES), async (req: AuthRequest, res: Response) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
@@ -5141,7 +5142,7 @@ router.get('/design-books/:id/thermal-selection/:systemId', async (req: AuthRequ
 
 router.post(
   '/design-books/:id/thermal-selection/:systemId',
-  requireRole('admin', 'engineer'),
+  requireRole(...EDITOR_ROLES),
   requireModuleManage('design_books'),
   async (req: AuthRequest, res: Response) => {
     const bookId = routeParam(req.params.id);
@@ -5382,7 +5383,7 @@ router.get(
 
 router.post(
   '/design-books/:id/uv/:systemId',
-  requireRole('admin', 'engineer'),
+  requireRole(...EDITOR_ROLES),
   requireModuleManage('design_books'),
   async (req: AuthRequest, res: Response) => {
     const bookId = routeParam(req.params.id);

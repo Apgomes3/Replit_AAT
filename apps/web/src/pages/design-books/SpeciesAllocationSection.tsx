@@ -4,6 +4,7 @@ import { AlertTriangle, Check, Fish, Link2, Pencil, Plus, RefreshCw, Search, Tra
 import toast from 'react-hot-toast';
 import api from '../../lib/api';
 import { useAuthStore } from '../../store/authStore';
+import { isEditorRole } from '../../lib/roles';
 
 type AllocationForm = {
   catalog_species_id: string;
@@ -151,7 +152,7 @@ export default function SpeciesAllocationSection({ bookId, exhibitId, species, a
 }) {
   const rows = (species || allSpecies || []).filter(item => item.exhibit_id === exhibitId);
   const user = useAuthStore(state => state.user);
-  const canManage = (user?.role === 'admin' || user?.role === 'engineer')
+  const canManage = (isEditorRole(user?.role))
     && user?.moduleAccess?.design_books !== 'view'
     && user?.moduleAccess?.design_books !== 'hidden';
   const [showEditor, setShowEditor] = useState(false);

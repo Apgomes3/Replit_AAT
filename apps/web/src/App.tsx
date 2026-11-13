@@ -66,7 +66,9 @@ import EnquiriesList from './pages/business-development/EnquiriesList';
 import EnquiryDetail from './pages/business-development/EnquiryDetail';
 import DraftingSetup from './pages/drafting/DraftingSetup';
 import PlanBoard from './pages/drafting/PlanBoard';
+import ResourcesPage from './pages/resources/ResourcesPage';
 import { LEGACY_ROUTE_REDIRECTS } from './lib/navigation';
+import { isEditorRole } from './lib/roles';
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30000 } } });
 
@@ -101,7 +103,7 @@ function ImportGuard({ children }: { children: React.ReactNode }) {
 
 function EngineeringAdminGuard({ children }: { children: React.ReactNode }) {
   const user = useAuthStore(state => state.user);
-  if (user?.role !== 'admin' && user?.role !== 'engineer') return <Navigate to="/" replace />;
+  if (!isEditorRole(user?.role)) return <Navigate to="/" replace />;
   return <>{children}</>;
 }
 
@@ -178,6 +180,7 @@ const router = createBrowserRouter(createRoutesFromElements(
               <Route path="enquiries/:id" element={<ModuleGuard moduleKey="business_development"><EnquiryDetail /></ModuleGuard>} />
             <Route path="drafting" element={<ModuleGuard moduleKey="drafting"><DraftingSetup /></ModuleGuard>} />
             <Route path="drafting/plans/:id" element={<ModuleGuard moduleKey="drafting"><PlanBoard /></ModuleGuard>} />
+            <Route path="resources" element={<ModuleGuard moduleKey="resources"><ResourcesPage /></ModuleGuard>} />
           </Route>
   </Route>
 ));

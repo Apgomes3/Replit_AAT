@@ -6,6 +6,7 @@ import {
   authenticate, AuthRequest, requireModuleAccess, requireModuleManage, requireRole,
 } from '../middleware/auth';
 import { logAudit } from '../db/audit';
+import { EDITOR_ROLES } from '../lib/roles';
 
 const router = Router();
 const routeParam = (value: string | string[]) => Array.isArray(value) ? value[0] : value;
@@ -175,7 +176,7 @@ router.get('/species-catalog/:id', async (req: AuthRequest, res: Response) => {
   }
 });
 
-router.post('/species-catalog', requireRole('admin', 'engineer'), requireModuleManage('design_books'), async (req: AuthRequest, res: Response) => {
+router.post('/species-catalog', requireRole(...EDITOR_ROLES), requireModuleManage('design_books'), async (req: AuthRequest, res: Response) => {
   let payload: ReturnType<typeof catalogPayload>;
   try { payload = catalogPayload(req.body); } catch (error) {
     return res.status(400).json({ error: { code: 'VALIDATION', message: errorMessage(error) } });
@@ -197,7 +198,7 @@ router.post('/species-catalog', requireRole('admin', 'engineer'), requireModuleM
   }
 });
 
-router.put('/species-catalog/:id', requireRole('admin', 'engineer'), requireModuleManage('design_books'), async (req: AuthRequest, res: Response) => {
+router.put('/species-catalog/:id', requireRole(...EDITOR_ROLES), requireModuleManage('design_books'), async (req: AuthRequest, res: Response) => {
   let payload: ReturnType<typeof catalogPayload>;
   try { payload = catalogPayload(req.body); } catch (error) {
     return res.status(400).json({ error: { code: 'VALIDATION', message: errorMessage(error) } });
@@ -222,7 +223,7 @@ router.put('/species-catalog/:id', requireRole('admin', 'engineer'), requireModu
   }
 });
 
-router.post('/species-catalog/import', requireRole('admin', 'engineer'), requireModuleManage('design_books'), async (req: AuthRequest, res: Response) => {
+router.post('/species-catalog/import', requireRole(...EDITOR_ROLES), requireModuleManage('design_books'), async (req: AuthRequest, res: Response) => {
   const records = Array.isArray(req.body?.records) ? req.body.records : [];
   if (!records.length || records.length > 1000) {
     return res.status(400).json({ error: { code: 'VALIDATION', message: 'Import must contain between 1 and 1,000 records.' } });

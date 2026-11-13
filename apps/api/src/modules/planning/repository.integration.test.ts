@@ -4,6 +4,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { query } from '../../db';
 import * as drafting from '../drafting/repository';
 import * as repo from './repository';
+import { HolidayDay, loadHolidaySets } from './holidays';
+
+const withDb = () => ({ query } as unknown as Parameters<typeof loadHolidaySets>[0]);
 
 const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 const ids: Record<string, string> = {};
@@ -22,6 +25,7 @@ describe.skipIf(!process.env.DATABASE_URL)('planning repository (PostgreSQL)', (
   afterAll(async () => {
     if (ids.plan) await query('DELETE FROM drafting_plans WHERE id = $1', [ids.plan]);
     if (ids.team) await query('DELETE FROM drafting_teams WHERE id = $1', [ids.team]);
+    if (ids.team2) await query('DELETE FROM drafting_teams WHERE id = $1', [ids.team2]);
     if (ids.project) await query('DELETE FROM projects WHERE id = $1', [ids.project]);
     if (ids.calendar) await query('DELETE FROM planning_calendars WHERE id = $1', [ids.calendar]);
     if (ids.user) await query('DELETE FROM users WHERE id = $1', [ids.user]);
@@ -34,6 +38,25 @@ describe.skipIf(!process.env.DATABASE_URL)('planning repository (PostgreSQL)', (
     expect(days.find(d => d.day === '2026-10-01')).toMatchObject({ hours: 0, name: 'National Day' });
     expect(days.find(d => d.day === '2026-09-20')!.hours).toBe(9);
     await expect(repo.deleteCalendar(def.id)).rejects.toThrow(/default/);
+  });
+
+  it('applies each holiday set once, creating its calendar and keeping later edits', async () => {
+    const calendar = { name: `Holiday test ${suffix}`, description: 'test', week_hours: [8, 8, 8, 8, 8, 0, 0] };
+    const set = { key: `T-${suffix}`.slice(0, 30), calendar, days: [['2027-03-01', 0, 'A'], ['2027-03-02', 0, 'B']] as HolidayDay[] };
+    try {
+      expect(await loadHolidaySets(withDb(), [set])).toEqual([set.key]);
+      const cal = (await repo.listCalendars()).find(c => c.name === calendar.name)!;
+      ids.holidayCal = cal.id;
+      expect(cal.is_default).toBe(false);
+      expect((await repo.listCalendarDays(cal.id)).map(d => d.day)).toEqual(['2027-03-01', '2027-03-02']);
+      // A manager removes one day; loading again changes nothing.
+      await repo.deleteCalendarDays(cal.id, ['2027-03-01']);
+      expect(await loadHolidaySets(withDb(), [set])).toEqual([]);
+      expect((await repo.listCalendarDays(cal.id)).map(d => d.day)).toEqual(['2027-03-02']);
+    } finally {
+      await query('DELETE FROM planning_holiday_sets WHERE set_key = $1', [set.key]);
+      if (ids.holidayCal) await query('DELETE FROM planning_calendars WHERE id = $1', [ids.holidayCal]);
+    }
   });
 
   it('manages calendars and exception days', async () => {
@@ -60,7 +83,30 @@ describe.skipIf(!process.env.DATABASE_URL)('planning repository (PostgreSQL)', (
     expect(row!.weeks[0]!.tasks).toEqual([expect.objectContaining({ title: 'Workload task', hours: 10 })]);
     expect(row!.weeks[1]).toMatchObject({ week_start: '2026-11-23', capacity: 20, booked: 0 });
 
-    const team = await repo.listResources(ids.team);
+    const team = await repo.listResources({ teamId: ids.team });
     expect(team.map(p => p.user_id)).toEqual([ids.user]);
+  });
+
+  it('keeps company teams by department, with people in more than one team', async () => {
+    const department = `Engineering ${suffix}`;
+    const eng = await drafting.createTeam({ name: `ASW engineering ${suffix}`, department, member_ids: [ids.user] }, ids.user);
+    ids.team2 = eng.id;
+    expect(eng.department).toBe(department);
+    // The drafting team keeps the Drafting department by default.
+    expect((await drafting.getTeam(ids.team))!.department).toBe('Drafting');
+    expect((await drafting.listTeams({ department: department.toUpperCase() })).map(t => t.id)).toEqual([eng.id]);
+    expect((await drafting.listTeams({ department: 'Drafting' })).map(t => t.id)).not.toContain(eng.id);
+
+    const people = await repo.listResources({ department });
+    expect(people.map(p => p.user_id)).toEqual([ids.user]);
+    expect(people[0]!.teams.map(t => t.name).sort()).toEqual([`ASW engineering ${suffix}`, `Planning team ${suffix}`].sort());
+
+    const [row] = await repo.getWorkload({ department, from: '2026-11-16', weeks: 1 });
+    expect(row!.teams).toHaveLength(2);
+    expect(row!.weeks[0]!.booked).toBe(10);
+
+    // Inactive teams drop out of the department.
+    await drafting.updateTeam(eng.id, { active: false }, ids.user);
+    expect(await repo.listResources({ department })).toEqual([]);
   });
 });

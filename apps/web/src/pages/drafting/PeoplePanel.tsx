@@ -1,20 +1,22 @@
 import { useState } from 'react';
 import { Palmtree, Plus, X } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { apiErrorMessage, useCanManageDrafting, useTeams } from './draftingApi';
-import { Leave, Resource, useAddLeave, useCalendars, useDeleteLeave, useLeave, useResources, useSaveResource, weekTotal } from './planningApi';
+import { apiErrorMessage } from './draftingApi';
+import {
+  Leave, Resource, useAddLeave, useCalendars, useCanManagePlanning, useDeleteLeave, useLeave, useResources, useSaveResource, weekTotal,
+} from './planningApi';
+import PeopleFilterSelect, { parsePeopleFilter } from './PeopleFilterSelect';
 import { todayIso } from './taskTiming';
 
 const fmt = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString(undefined, { day: 'numeric', month: 'short', timeZone: 'UTC' });
 
 /** People as planning resources: which calendar they work, at what capacity, and their leave. */
 export default function PeoplePanel() {
-  const teams = useTeams();
-  const [teamId, setTeamId] = useState('');
-  const people = useResources(teamId || undefined);
+  const [filter, setFilter] = useState('');
+  const people = useResources(parsePeopleFilter(filter));
   const calendars = useCalendars();
   const leave = useLeave(todayIso());
-  const canManage = useCanManageDrafting();
+  const canManage = useCanManagePlanning();
   const save = useSaveResource();
   const defaultCal = calendars.data?.find(c => c.is_default);
 
@@ -25,10 +27,7 @@ export default function PeoplePanel() {
 
   return <div>
     <div className="flex flex-wrap items-center gap-3 mb-4">
-      <select aria-label="Team" value={teamId} onChange={e => setTeamId(e.target.value)} className="border border-[#dce7e2] rounded-lg px-3 py-2 text-sm bg-white font-bold">
-        <option value="">Everyone</option>
-        {(teams.data ?? []).filter(t => t.active).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-      </select>
+      <PeopleFilterSelect value={filter} onChange={setFilter} />
       <p className="text-sm text-[#6f8082]">Each person works on a calendar (hours per day and holidays). Capacity below 100% is for part-time work. Leave is taken out of their available hours.</p>
     </div>
 

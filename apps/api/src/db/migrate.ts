@@ -8,6 +8,7 @@ import { migrateLegacyDocumentFiles } from './documentFileMigration';
 import { DRAFTING_SCHEMA } from '../modules/drafting/schema';
 import { PIM_SCHEMA } from '../modules/pim/schema';
 import { PLANNING_SCHEMA } from '../modules/planning/schema';
+import { loadHolidaySets } from '../modules/planning/holidays';
 dotenv.config();
 
 // Self-contained module schemas, applied in order after the core schema.
@@ -669,8 +670,13 @@ INSERT INTO roles (name, description, is_system, sort_order) VALUES
   ('engineer', 'Create and edit library data, projects and documents', true, 20),
   ('viewer', 'Read-only access to all platform data', true, 30),
   ('hq_manager', 'HQ management and approval access', true, 40),
-  ('pmo', 'Project management office access', true, 50)
+  ('pmo', 'Project management office access', true, 50),
+  ('manager', 'Manages people or work; edits like an engineer within its module access', true, 12),
+  ('user', 'Everyday user; edits like an engineer within its module access', true, 14)
 ON CONFLICT (name) DO NOTHING;
+
+-- Job position (e.g. "Drafting Supervisor"); separate from the access role.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS job_title VARCHAR(150);
 
 CREATE TABLE IF NOT EXISTS role_module_access (
   role_id UUID NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
@@ -3687,6 +3693,8 @@ async function migrate() {
       await client.query(sql);
       console.log(`Module schema ready: ${name}`);
     }
+    const holidaySets = await loadHolidaySets(client);
+    console.log(`Public holiday calendars ready (${holidaySets.length ? holidaySets.join(', ') : 'nothing new'}).`);
     await backfillLegacyBusinessDevelopment(client);
     await backfillClientContacts(client);
     const movedDocumentFiles = await migrateLegacyDocumentFiles(client);

@@ -10,6 +10,7 @@ import QueryError from '../../components/ui/QueryError';
 import { Plus, BookMarked, FolderOpen, X, ChevronRight, PackageCheck } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../../store/authStore';
+import { isEditorRole } from '../../lib/roles';
 
 const SEARCH_DEBOUNCE_MS = 300;
 
@@ -26,7 +27,7 @@ export default function DesignBooksList() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const user = useAuthStore(state => state.user);
-  const canCreate = user?.role === 'admin' || user?.role === 'engineer';
+  const canCreate = isEditorRole(user?.role);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [showNew, setShowNew] = useState(false);

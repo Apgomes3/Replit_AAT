@@ -5,9 +5,10 @@ import api from '../../lib/api';
 import PageHeader from '../../components/ui/PageHeader';
 import { useAuthStore } from '../../store/authStore';
 import { ThermalWallConstructionLibrary } from '../design-books/DesignBookDetail';
+import { isEditorRole } from '../../lib/roles';
 
 function canManageThermalWalls(user: ReturnType<typeof useAuthStore.getState>['user']) {
-  if (!user || !['admin', 'engineer'].includes(user.role)) return false;
+  if (!user || !isEditorRole(user.role)) return false;
   const access = user.moduleAccess?.design_books;
   return access !== 'view' && access !== 'hidden';
 }

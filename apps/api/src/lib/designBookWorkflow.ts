@@ -1,4 +1,6 @@
-export const DESIGN_BOOK_DESIGNER_ROLES = ['admin', 'engineer'] as const;
+import { EDITOR_ROLES } from './roles';
+
+export const DESIGN_BOOK_DESIGNER_ROLES = EDITOR_ROLES;
 export const DESIGN_BOOK_MANAGER_ROLES = ['admin', 'hq_manager', 'pmo'] as const;
 
 export type DesignBookWorkflowAction = 'submit-review' | 'approve' | 'release';

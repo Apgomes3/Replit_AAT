@@ -10,6 +10,7 @@ import {
   X, LayoutDashboard, Eye, GripVertical
 } from 'lucide-react';
 import EmptyState from '../components/ui/EmptyState';
+import { isEditorRole } from '../lib/roles';
 
 type CardState = 'visible' | 'minimized' | 'hidden';
 type Prefs = Record<string, CardState>;
@@ -180,7 +181,7 @@ export default function Dashboard() {
   const qc = useQueryClient();
   const [todoInput, setTodoInput] = useState('');
   const [showManage, setShowManage] = useState(false);
-  const isPrivileged = user?.role === 'admin' || user?.role === 'engineer';
+  const isPrivileged = isEditorRole(user?.role);
 
   const { prefs, state, update, setPrefs, order, setOrder } = useDashboardPrefs(user?.id);
 

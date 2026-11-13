@@ -19,6 +19,7 @@ import {
   MessageSquare, Paperclip, AlertTriangle, CalendarClock, Send, Download, History, CheckCheck, Ban, RotateCcw, Zap, Flag,
   Wrench, ClipboardCheck, ShoppingBag, Info, ExternalLink, Tag, Layers, Building2, Beaker
 } from 'lucide-react';
+import { isEditorRole } from '../../lib/roles';
 
 const STAGES = ['draft', 'pending_approval', 'purchase_order', 'po_review', 'engineering_review', 'released'];
 
@@ -435,7 +436,7 @@ export default function PurchaseOrderDetail() {
 
   const refetchAll = () => { refetch(); qc.invalidateQueries({ queryKey: ['purchase-orders'] }); };
 
-  const canManage = user?.role === 'admin' || user?.role === 'engineer' || user?.role === 'hq_manager'
+  const canManage = isEditorRole(user?.role) || user?.role === 'hq_manager'
     || (po?.designated_users || []).some((u: any) => u.user_id === user?.id);
   const canApprove = user?.role === 'hq_manager' || user?.role === 'admin';
   const isDraft = po?.status === 'draft';

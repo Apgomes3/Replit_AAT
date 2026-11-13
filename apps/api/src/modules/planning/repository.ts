@@ -126,32 +126,55 @@ async function loadDays(db: Db, calendarId: string): Promise<Record<string, numb
 
 // ---------- people (resources) and leave ----------
 
+/** A team a person belongs to (as a member or as its manager). */
+export type PersonTeam = { id: string; name: string; department: string; is_manager: boolean };
+
 export type Resource = {
   user_id: string; name: string; email: string; role: string;
   calendar_id: string | null; calendar_name: string; capacity_pct: number; notes: string | null;
-  team_names: string[]; week_hours: number[];
+  team_names: string[]; teams: PersonTeam[]; week_hours: number[];
 };
+
+/** Which people to include: one team, one department's teams, or (neither) every active user. */
+export type PeopleScope = { teamId?: string; department?: string };
 
 const PERSON_NAME = `COALESCE(NULLIF(TRIM(CONCAT_WS(' ', u.first_name, u.last_name)), ''), u.email)`;
 
-/** People with their planning settings. With teamId, only the team's manager and members. */
-export async function listResources(teamId?: string): Promise<Resource[]> {
+// Active teams a person is in, as a member or as the manager.
+const PERSON_TEAMS = `
+  SELECT t.id, t.name, t.department, (t.manager_user_id = u.id) AS is_manager
+  FROM drafting_teams t
+  WHERE t.active AND (t.manager_user_id = u.id
+    OR EXISTS (SELECT 1 FROM drafting_team_members m WHERE m.team_id = t.id AND m.user_id = u.id))`;
+
+/** People with their planning settings and teams, limited to a team or a department when asked. */
+export async function listResources(scope: PeopleScope = {}): Promise<Resource[]> {
+  const values: unknown[] = [];
+  let filter = '';
+  if (scope.teamId) {
+    values.push(scope.teamId);
+    filter = `AND (u.id IN (SELECT user_id FROM drafting_team_members WHERE team_id = $1)
+      OR u.id = (SELECT manager_user_id FROM drafting_teams WHERE id = $1))`;
+  } else if (scope.department) {
+    values.push(scope.department);
+    filter = `AND EXISTS (SELECT 1 FROM drafting_teams t
+      WHERE t.active AND LOWER(t.department) = LOWER($1) AND (t.manager_user_id = u.id
+        OR EXISTS (SELECT 1 FROM drafting_team_members m WHERE m.team_id = t.id AND m.user_id = u.id)))`;
+  }
   return (await query(
     `SELECT u.id AS user_id, ${PERSON_NAME} AS name, u.email, u.role,
        r.calendar_id, COALESCE(c.name, dc.name, 'Every day') AS calendar_name,
        COALESCE(c.week_hours, dc.week_hours, '{8,8,8,8,8,8,8}')::float8[] AS week_hours,
        COALESCE(r.capacity_pct, 100) AS capacity_pct, r.notes,
-       COALESCE((SELECT array_agg(DISTINCT t.name ORDER BY t.name) FROM drafting_teams t
-         LEFT JOIN drafting_team_members m ON m.team_id = t.id
-         WHERE t.manager_user_id = u.id OR m.user_id = u.id), '{}') AS team_names
+       COALESCE((SELECT array_agg(x.name ORDER BY x.name) FROM (${PERSON_TEAMS}) x), '{}') AS team_names,
+       COALESCE((SELECT json_agg(x ORDER BY LOWER(x.department), x.name) FROM (${PERSON_TEAMS}) x), '[]'::json) AS teams
      FROM users u
      LEFT JOIN planning_resources r ON r.user_id = u.id
      LEFT JOIN planning_calendars c ON c.id = r.calendar_id
      LEFT JOIN planning_calendars dc ON dc.is_default
-     WHERE u.is_active IS NOT FALSE ${teamId ? `AND (u.id IN (SELECT user_id FROM drafting_team_members WHERE team_id = $1)
-       OR u.id = (SELECT manager_user_id FROM drafting_teams WHERE id = $1))` : ''}
+     WHERE u.is_active IS NOT FALSE ${filter}
      ORDER BY u.first_name, u.last_name, u.email`,
-    teamId ? [teamId] : [],
+    values,
   )).rows;
 }
 
@@ -203,7 +226,9 @@ export async function deleteLeave(id: string): Promise<boolean> {
 
 export type WorkloadTask = { id: string; title: string; plan_id: string; plan_code: string; project_code: string; hours: number };
 export type WorkloadWeek = { week_start: string; capacity: number; booked: number; leave: number; tasks: WorkloadTask[] };
-export type WorkloadRow = { user_id: string; name: string; calendar_name: string; capacity_pct: number; weeks: WorkloadWeek[] };
+export type WorkloadRow = {
+  user_id: string; name: string; calendar_name: string; capacity_pct: number; teams: PersonTeam[]; weeks: WorkloadWeek[];
+};
 
 /**
  * Hours each person is booked for, per week, across every plan of every project, against the
@@ -211,8 +236,9 @@ export type WorkloadRow = { user_id: string; name: string; calendar_name: string
  * working day of its dates, at the assignment's allocation. Finished tasks and archived or
  * completed plans are left out.
  */
-export async function getWorkload(opts: { teamId?: string; userIds?: string[]; from: string; weeks: number }): Promise<WorkloadRow[]> {
-  const people = (await listResources(opts.teamId)).filter(p => !opts.userIds || opts.userIds.includes(p.user_id));
+export async function getWorkload(opts: PeopleScope & { userIds?: string[]; from: string; weeks: number }): Promise<WorkloadRow[]> {
+  const people = (await listResources({ teamId: opts.teamId, department: opts.department }))
+    .filter(p => !opts.userIds || opts.userIds.includes(p.user_id));
   if (!people.length) return [];
   const to = addDays(opts.from, opts.weeks * 7 - 1);
   const ids = people.map(p => p.user_id);
@@ -279,7 +305,7 @@ export async function getWorkload(opts: { teamId?: string; userIds?: string[]; f
       w.tasks.forEach(t => { t.hours = Math.round(t.hours * 10) / 10; });
       w.tasks.sort((a, b) => b.hours - a.hours);
     }
-    rows.push({ user_id: p.user_id, name: p.name, calendar_name: p.calendar_name, capacity_pct: p.capacity_pct, weeks });
+    rows.push({ user_id: p.user_id, name: p.name, calendar_name: p.calendar_name, capacity_pct: p.capacity_pct, teams: p.teams, weeks });
   }
   return rows;
 }

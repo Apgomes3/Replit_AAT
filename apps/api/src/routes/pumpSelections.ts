@@ -12,6 +12,7 @@ import { isRetiredSystem, systemLifecycleError } from '../lib/systemLifecycle';
 import { isLifeSupportSystem } from '../lib/lssSystems';
 import { reconcilePumpLinkedInstruments } from '../lib/lssControls';
 import { evaluateNpshSuitability } from '../lib/frictionLossCalculations';
+import { EDITOR_ROLES } from '../lib/roles';
 
 const router = Router();
 router.use(authenticate, requireModuleAccess('design_books'));
@@ -195,7 +196,7 @@ router.get('/systems/:id/pump-selections', async (req: AuthRequest, res: Respons
 // ---------------------------------------------------------------------------
 // PUT /systems/:id/pump-selections  — save / recalculate one pump line
 // ---------------------------------------------------------------------------
-router.put('/systems/:id/pump-selections', requireRole('admin', 'engineer'), requireModuleManage('design_books'), async (req: AuthRequest, res: Response) => {
+router.put('/systems/:id/pump-selections', requireRole(...EDITOR_ROLES), requireModuleManage('design_books'), async (req: AuthRequest, res: Response) => {
   const input = req.body || {};
   const bookResult = await query('SELECT * FROM design_books WHERE id=$1', [input.design_book_id]);
   const book = bookResult.rows[0];
@@ -336,7 +337,7 @@ router.put('/systems/:id/pump-selections', requireRole('admin', 'engineer'), req
 //   This creates a project_equipment_items record scoped to the current project
 //   and LSS system.  The pump selection itself is saved separately via PUT.
 // ---------------------------------------------------------------------------
-router.post('/systems/:id/pump-lines', requireRole('admin', 'engineer'), requireModuleManage('design_books'), async (req: AuthRequest, res: Response) => {
+router.post('/systems/:id/pump-lines', requireRole(...EDITOR_ROLES), requireModuleManage('design_books'), async (req: AuthRequest, res: Response) => {
   const input = req.body || {};
   const bookResult = await query('SELECT * FROM design_books WHERE id=$1', [input.design_book_id]);
   const book = bookResult.rows[0];
@@ -622,7 +623,7 @@ router.post('/systems/:id/pump-lines', requireRole('admin', 'engineer'), require
 //   The associated project_equipment_items record is NOT deleted here so the
 //   PEI remains visible in the project equipment view for audit purposes.
 // ---------------------------------------------------------------------------
-router.delete('/systems/:id/pump-lines', requireRole('admin', 'engineer'), requireModuleManage('design_books'), async (req: AuthRequest, res: Response) => {
+router.delete('/systems/:id/pump-lines', requireRole(...EDITOR_ROLES), requireModuleManage('design_books'), async (req: AuthRequest, res: Response) => {
   const designBookId = req.query.design_book_id as string;
   const circuitKey = req.query.circuit_key as string;
   const pumpRole = req.query.pump_role as string;

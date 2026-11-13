@@ -3,6 +3,7 @@ import pool, { query } from '../db';
 import { logAudit } from '../db/audit';
 import { authenticate, requireModuleAccess, requireModuleManage, requireRole, AuthRequest } from '../middleware/auth';
 import { emitNotification } from '../db/notifications';
+import { EDITOR_ROLES } from '../lib/roles';
 
 const adminRouter = Router();
 const consumerRouter = Router();
@@ -155,7 +156,7 @@ const catalogSelect = `SELECT c.*, pm.product_code, pm.product_name, pm.manufact
    ) compatibility ON true
   ${compatibilityOptionsJoin}`;
 
-adminRouter.use(authenticate, requireModuleManage('pim'), requireRole('admin', 'engineer'));
+adminRouter.use(authenticate, requireModuleManage('pim'), requireRole(...EDITOR_ROLES));
 
 adminRouter.get('/', async (req: AuthRequest, res: Response) => {
   const result = await query(`${catalogSelect} ORDER BY pm.product_code`);
@@ -167,7 +168,7 @@ adminRouter.get('/reviewers', async (req: AuthRequest, res: Response) => {
     FROM users u
     LEFT JOIN roles r ON r.name=u.role
     LEFT JOIN role_module_access access ON access.role_id=r.id AND access.module_key='pim'
-    WHERE u.is_active=true AND u.role IN ('admin', 'engineer')
+    WHERE u.is_active=true AND u.role IN ('admin', 'engineer', 'manager', 'user')
       AND (access.access_level IS NULL OR access.access_level='manage')
       AND u.id<>$1
     ORDER BY u.last_name NULLS LAST, u.first_name NULLS LAST, u.email`, [req.user!.id]);
@@ -402,7 +403,7 @@ adminRouter.patch('/revisions/:id/status', async (req: AuthRequest, res: Respons
          LEFT JOIN roles r ON r.name=u.role
          LEFT JOIN role_module_access access ON access.role_id=r.id AND access.module_key='pim'
          WHERE u.id::text=$1 AND u.is_active=true
-           AND u.role IN ('admin', 'engineer')
+           AND u.role IN ('admin', 'engineer', 'manager', 'user')
            AND (access.access_level IS NULL OR access.access_level='manage')`,
         [reviewerId],
       );

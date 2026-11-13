@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import { query } from '../db';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { ModuleAccessKey } from '../lib/moduleAccess';
+import { isEditorRole } from '../lib/roles';
 
 const router = Router();
 type RecordType = 'project' | 'system' | 'equipment' | 'product' | 'material' | 'document' | 'purchase_order' | 'client' | 'enquiry' | 'design_book' | 'notification' | 'audit_event';
@@ -117,14 +118,14 @@ async function listing(req: AuthRequest, res: Response, work: boolean) {
   try {
     const { hidden, readOnly, allPOs } = await access(req);
     const allowed = adapters.filter(a => !hidden.has(a.module) && (!work || !a.searchOnly) &&
-      (a.module !== 'admin' || ['admin', 'engineer'].includes(req.user!.role)));
+      (a.module !== 'admin' || isEditorRole(req.user!.role)));
     const { permitted, conditions, params, q } = filters(req, allowed, work);
     const page = pageNumber(req.query.page, 1, 1000000);
     const page_size = pageNumber(req.query.page_size, 25, 100);
     if (!work && q.length < 2) return res.json({ results: [], query: q, total: 0, page, page_size });
     const manage = (key: ModuleAccessKey) => !hidden.has(key) && !readOnly.has(key);
     const baseValues = [allPOs, req.user!.id, ...params];
-    const values = work ? [...baseValues, manage('orders') && ['admin','engineer','hq_manager'].includes(req.user!.role),
+    const values = work ? [...baseValues, manage('orders') && (isEditorRole(req.user!.role) || req.user!.role === 'hq_manager'),
       ['admin','hq_manager'].includes(req.user!.role), ['admin','hq_manager','pmo'].includes(req.user!.role),
       manage('business_development'), manage('documents')] : baseValues;
     // Work predicates reference the trailing role flags by position; search never uses them.

@@ -8,6 +8,7 @@ import {
 } from '../lib/biologicalMediaCalculations';
 import { CONTROLLED_VALUE_TAN_PROFILE_CODE } from '../db/biologicalMediaSeed';
 import { RETIRED_SYSTEM_STATUSES } from '../lib/systemLifecycle';
+import { EDITOR_ROLES } from '../lib/roles';
 
 const router = Router();
 router.use(authenticate, requireModuleAccess('design_books'));
@@ -854,7 +855,7 @@ router.get('/systems/:id/bio-degas-plenum', async (req: AuthRequest, res: Respon
   res.json(result.rows[0].layout ? result.rows[0] : { layout: null, source_crate_count: null });
 });
 
-router.put('/systems/:id/bio-degas-plenum', requireModuleManage('design_books'), requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
+router.put('/systems/:id/bio-degas-plenum', requireModuleManage('design_books'), requireRole(...EDITOR_ROLES), async (req: AuthRequest, res: Response) => {
   const designBookId = text(req.body.design_book_id);
   const layout = req.body.layout;
   if (!designBookId || !layout || typeof layout !== 'object' || Array.isArray(layout)) {
@@ -1042,7 +1043,7 @@ router.put('/systems/:id/bio-degas-plenum', requireModuleManage('design_books'),
   }
 });
 
-router.post('/systems/:id/bio-degas-plenum/promote-to-pim', requireModuleManage('pim'), requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
+router.post('/systems/:id/bio-degas-plenum/promote-to-pim', requireModuleManage('pim'), requireRole(...EDITOR_ROLES), async (req: AuthRequest, res: Response) => {
   const designBookId = text(req.body.design_book_id);
   const productCode = String(req.body.product_code || '').trim().toUpperCase();
   const productName = String(req.body.product_name || '').trim();
@@ -1130,7 +1131,7 @@ router.post('/systems/:id/bio-degas-plenum/promote-to-pim', requireModuleManage(
   }
 });
 
-router.put('/systems/:id/biological-media', requireModuleManage('design_books'), requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
+router.put('/systems/:id/biological-media', requireModuleManage('design_books'), requireRole(...EDITOR_ROLES), async (req: AuthRequest, res: Response) => {
   const designBookId = text(req.body.design_book_id);
   if (!designBookId) return res.status(400).json({ error: { code: 'VALIDATION', message: 'design_book_id is required.' } });
   const editable = await query(
@@ -1249,7 +1250,7 @@ router.put('/systems/:id/biological-media', requireModuleManage('design_books'),
   }
 });
 
-router.post('/systems/:id/biological-media/preview', requireModuleManage('design_books'), requireRole('admin', 'engineer'), async (req: AuthRequest, res: Response) => {
+router.post('/systems/:id/biological-media/preview', requireModuleManage('design_books'), requireRole(...EDITOR_ROLES), async (req: AuthRequest, res: Response) => {
   const designBookId = text(req.body.design_book_id);
   if (!designBookId) return res.status(400).json({ error: { code: 'VALIDATION', message: 'design_book_id is required.' } });
   const systemId = routeParam(req.params.id);
@@ -1471,7 +1472,7 @@ function sendBiologicalMediaApiError(error: any, res: Response) {
 router.post(
   '/systems/:id/biological-media/runs',
   requireModuleManage('design_books'),
-  requireRole('admin', 'engineer'),
+  requireRole(...EDITOR_ROLES),
   async (req: AuthRequest, res: Response) => {
     const systemId = routeParam(req.params.id);
     const designBookId = text(req.body.design_book_id);
@@ -1711,7 +1712,7 @@ router.get('/systems/:id/biological-media/runs/:runId', async (req: AuthRequest,
 router.post(
   '/systems/:id/biological-media/runs/:runId/acknowledge-warnings',
   requireModuleManage('design_books'),
-  requireRole('admin', 'engineer'),
+  requireRole(...EDITOR_ROLES),
   async (req: AuthRequest, res: Response) => {
     const designBookId = text(req.body.design_book_id);
     if (!designBookId) return res.status(400).json({ error: { code: 'VALIDATION', message: 'design_book_id is required.' } });
@@ -1757,7 +1758,7 @@ router.post(
 router.post(
   '/systems/:id/biological-media/runs/:runId/approve',
   requireModuleManage('design_books'),
-  requireRole('admin', 'engineer'),
+  requireRole(...EDITOR_ROLES),
   async (req: AuthRequest, res: Response) => {
     const designBookId = text(req.body.design_book_id);
     if (!designBookId) return res.status(400).json({ error: { code: 'VALIDATION', message: 'design_book_id is required.' } });
@@ -1814,7 +1815,7 @@ router.post(
 router.post(
   '/systems/:id/biological-media/runs/:runId/reject',
   requireModuleManage('design_books'),
-  requireRole('admin', 'engineer'),
+  requireRole(...EDITOR_ROLES),
   async (req: AuthRequest, res: Response) => {
     const designBookId = text(req.body.design_book_id);
     const reason = text(req.body.reason);

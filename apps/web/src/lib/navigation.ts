@@ -7,7 +7,8 @@ export type ModuleKey =
   | 'documents'
   | 'knowledge'
   | 'graph'
-  | 'drafting';
+  | 'drafting'
+  | 'resources';
 
 export type RouteGroup = 'operational' | 'engineering' | 'commercial' | 'reference' | 'administration';
 
@@ -32,6 +33,7 @@ export const ROUTES = {
   clients: '/clients',
   enquiries: '/enquiries',
   drafting: '/drafting',
+  resources: '/resources',
   documents: '/documents',
   materials: '/knowledge/materials',
   specifications: '/knowledge/specifications',
@@ -83,6 +85,7 @@ export function moduleForPath(path: string): ModuleKey | null {
   if (path.startsWith('/knowledge')) return 'knowledge';
   if (path.startsWith('/graph')) return 'graph';
   if (path.startsWith(ROUTES.drafting)) return 'drafting';
+  if (path.startsWith(ROUTES.resources)) return 'resources';
   return null;
 }
 

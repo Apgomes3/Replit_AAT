@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import api from '../../lib/api';
 import PageHeader from '../../components/ui/PageHeader';
 import { useAuthStore } from '../../store/authStore';
+import { isEditorRole } from '../../lib/roles';
 
 const WATER_TYPES = ['Marine', 'Freshwater', 'Brackish', 'Universal'];
 const EMPTY = {
@@ -16,7 +17,7 @@ const inputCls = 'w-full rounded-lg border border-stone-200 bg-white px-3 py-2 t
 export default function SpeciesCatalog() {
   const qc = useQueryClient();
   const user = useAuthStore(state => state.user);
-  const canManage = (user?.role === 'admin' || user?.role === 'engineer')
+  const canManage = (isEditorRole(user?.role))
     && user?.moduleAccess?.design_books !== 'view'
     && user?.moduleAccess?.design_books !== 'hidden';
   const [search, setSearch] = useState('');

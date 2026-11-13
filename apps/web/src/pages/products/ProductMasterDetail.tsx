@@ -21,6 +21,7 @@ import { useAuthStore } from '../../store/authStore';
 import { calculateVendorComparison, MostCompetitiveBadge, VendorComparisonNotice } from './VendorPriceComparison';
 import { SUPPORTED_CURRENCIES } from '../../lib/currencies';
 import ItemAttributesPanel from './ItemAttributesPanel';
+import { isEditorRole } from '../../lib/roles';
 
 type Tab = 'bom' | 'attributes' | 'variants' | 'vendors' | 'related' | 'drawings' | 'documents' | 'projects' | 'activity';
 
@@ -136,12 +137,12 @@ export default function ProductMasterDetail() {
   const queryClient = useQueryClient();
   const { confirm, dialog } = useConfirm();
   const { user } = useAuthStore();
-  const canGenerateTds = (user?.role === 'admin' || user?.role === 'engineer')
+  const canGenerateTds = (isEditorRole(user?.role))
     && user?.moduleAccess?.pim !== 'view'
     && user?.moduleAccess?.pim !== 'hidden'
     && user?.moduleAccess?.documents !== 'view'
     && user?.moduleAccess?.documents !== 'hidden';
-  const canManagePim = (user?.role === 'admin' || user?.role === 'engineer')
+  const canManagePim = (isEditorRole(user?.role))
     && user?.moduleAccess?.pim !== 'view'
     && user?.moduleAccess?.pim !== 'hidden';
   const [tab, setTab] = useState<Tab>('bom');

@@ -12,9 +12,10 @@ import CreatePOModal from '../procurement/CreatePOModal';
 import { useAuthStore } from '../../store/authStore';
 import toast from 'react-hot-toast';
 import { currentReturnContext } from '../../lib/navigation';
+import { EDITOR_ROLES } from '../../lib/roles';
 
 const TRANSITIONABLE = new Set(['purchase_order', 'po_review', 'engineering_review']);
-const CAN_MANAGE_ROLES = new Set(['admin', 'engineer', 'hq_manager']);
+const CAN_MANAGE_ROLES = new Set<string>([...EDITOR_ROLES, 'hq_manager']);
 const CAN_APPROVE_ROLES = new Set(['admin', 'hq_manager']);
 
 const PIPELINE_STAGES = [
