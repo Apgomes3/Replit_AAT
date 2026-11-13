@@ -107,9 +107,9 @@ overwriting it (price history for free). Cost source per item is explicit: *pref
 Markup can be a family rule (the price list has markup per row; we dropped it for now).
 
 ### 4.8 Completeness and lifecycle
-Item lifecycle **Draft → Released → Obsolete** (with *Superseded by*), mirroring Design Books. An item can only be
-released when its family's required attributes are filled — shown as a **completeness %** on lists and as a
-"what's missing" panel (UnoPim/Plytix). A data-quality page lists incomplete, unpriced, and duplicate-looking items.
+Item lifecycle **Draft → Released → Obsolete** (with *Superseded by*), mirroring Design Books. Missing required
+attributes show as a **completeness %** on lists and as a "what's missing" panel (UnoPim/Plytix); release warns
+when an item is incomplete, and a family can be switched to block release once its data is clean (decision 4). A data-quality page lists incomplete, unpriced, and duplicate-looking items.
 
 ### 4.9 Documents and history
 Datasheets, drawings, images and generated TDS are linked from the document register with a link type, instead of
@@ -154,16 +154,17 @@ The calculators read these fields hundreds of times, so this is a **strangler** 
 
 Each step is its own commit with tests (`npm run check`), like Phase 0.
 
-## 7. Decisions for you
+## 7. Decisions (agreed 2026-11-13)
 
-1. **One item catalogue** (products + components merged), or keep two catalogues?
-2. **Variants:** should GPO/PLC skid versions be variants of one UV item (recommended), or separate items?
-3. **Price history:** keep every price-list price as a dated supplier offer (recommended)?
-4. **Release rules:** should "Released" require completeness (blocking), or only warn?
-5. **Languages:** English only, or English + Chinese names/descriptions?
-6. **Standards:** is ETIM (or eCl@ss) relevant to your suppliers/customers?
-7. **Timing of the ASW import:** apply it now into today's structure (recommended — it migrates with everything
-   else), or wait for the new structure so the UV variants land as variants directly?
+| # | Question | Decision |
+|---|---|---|
+| 1 | One item catalogue, or keep products and components apart? | **One catalogue** (§4.1). Components keep their own filtered list screen. |
+| 2 | GPO/PLC skid versions: variants of one UV item? | **Yes, variants** of one parent (§4.5). |
+| 3 | Keep every price-list price as a dated supplier offer? | **Yes, price history** (§4.7). |
+| 4 | Does "Released" require completeness? | **Warn only, for now.** Release is allowed with a visible "incomplete" warning and the completeness %. Each family gets a switch to make it blocking later, once its data is clean (expected first for items used in quotes and TDS). |
+| 5 | Languages | **English only now; full translation later.** Translatable text (names, descriptions, attribute and family labels) is kept in one place so a translations table can be added later without remodelling. Numbers and units need no translation. |
+| 6 | ETIM / eCl@ss | **Not now.** Revisit if a supplier sends ETIM/BMEcat data or a customer's procurement asks for eCl@ss codes. The attribute library (§4.3) uses units and measures that would map onto either standard. |
+| 7 | Timing of the ASW import | **Done** into today's structure (2026-11-12); it migrates with everything else. |
 
 ## Sources
 
