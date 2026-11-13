@@ -154,6 +154,14 @@ The calculators read these fields hundreds of times, so this is a **strangler** 
 
 Each step is its own commit with tests (`npm run check`), like Phase 0.
 
+**Progress**
+- *Step 1, 2026-11-13:* attribute library in `apps/api/src/modules/pim/` — measures and units with conversion
+  (`units.ts`), the 34 engineering facts registered as typed attributes (`engineeringAttributes.ts`, read from their
+  existing columns), attribute groups, family templates (required / variant axis), sparse item values stored in base
+  units, and warn-only completeness. Screens: PIM › Attributes (library, family templates, units) and an
+  Attributes tab on each product. The old Drum Filters "Voltage" classifier was carried over to its template.
+  Still to do in step 1: move the PIM routes out of the 2,169-line `routes/products.ts` into the module.
+
 ## 7. Decisions (agreed 2026-11-13)
 
 | # | Question | Decision |

@@ -15,6 +15,7 @@ import SystemDetail from './pages/projects/SystemDetail';
 import ProductFamiliesList from './pages/products/ProductFamiliesList';
 import ProductMastersList from './pages/products/ProductMastersList';
 import ProductMasterDetail from './pages/products/ProductMasterDetail';
+import AttributeLibrary from './pages/pim/attributes/AttributeLibrary';
 import ComponentsList from './pages/products/ComponentsList';
 import ComponentDetail from './pages/products/ComponentDetail';
 import PipingList from './pages/products/PipingList';
@@ -131,7 +132,8 @@ const router = createBrowserRouter(createRoutesFromElements(
             <Route path="products/components/:id" element={<ModuleGuard moduleKey="pim"><ComponentDetail /></ModuleGuard>} />
             <Route path="products/piping" element={<ModuleGuard moduleKey="pim"><PipingList /></ModuleGuard>} />
             <Route path="products/tanks" element={<ModuleGuard moduleKey="pim"><TanksList /></ModuleGuard>} />
-            <Route path="products/drawings" element={<ModuleGuard moduleKey="pim"><DrawingsLibrary /></ModuleGuard>} />
+            <Route path="products/attributes" element={<ModuleGuard moduleKey="pim"><AttributeLibrary /></ModuleGuard>} />
+            <Route path="products/drawings"element={<ModuleGuard moduleKey="pim"><DrawingsLibrary /></ModuleGuard>} />
             <Route path="knowledge/materials" element={<ModuleGuard moduleKey="knowledge"><MaterialsList /></ModuleGuard>} />
              <Route path="knowledge/materials/:id" element={<ModuleGuard moduleKey="knowledge"><MaterialDetail /></ModuleGuard>} />
             <Route path="knowledge/specifications" element={<ModuleGuard moduleKey="knowledge"><SpecificationsList /></ModuleGuard>} />

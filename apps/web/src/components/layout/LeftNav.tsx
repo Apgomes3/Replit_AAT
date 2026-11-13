@@ -14,6 +14,7 @@ const PIM_ITEMS: NavItemDef[] = [
   { id: 'components', to: '/products/components', icon: Boxes, label: 'Components' },
   { id: 'piping', to: '/products/piping', icon: Pipette, label: 'Pipes & Fittings' },
   { id: 'tanks', to: '/products/tanks', icon: Container, label: 'Tanks' },
+  { id: 'attributes', to: '/products/attributes', icon: SlidersHorizontal, label: 'Attributes' },
 ];
 
 const SECTIONS: NavSection[] = [

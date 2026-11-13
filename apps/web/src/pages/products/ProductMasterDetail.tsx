@@ -20,8 +20,9 @@ import { useConfirm } from '../../hooks/useConfirm';
 import { useAuthStore } from '../../store/authStore';
 import { calculateVendorComparison, MostCompetitiveBadge, VendorComparisonNotice } from './VendorPriceComparison';
 import { SUPPORTED_CURRENCIES } from '../../lib/currencies';
+import ItemAttributesPanel from './ItemAttributesPanel';
 
-type Tab = 'bom' | 'variants' | 'vendors' | 'related' | 'drawings' | 'documents' | 'projects' | 'activity';
+type Tab = 'bom' | 'attributes' | 'variants' | 'vendors' | 'related' | 'drawings' | 'documents' | 'projects' | 'activity';
 
 const DRAWING_TYPE_VALUES = new Set(['Drawing', 'GA Drawing', 'Assembly Drawing', 'Fabrication Drawing', 'As-Built Drawing', '3D Model', 'P&ID', 'Wiring Diagram']);
 
@@ -1166,6 +1167,7 @@ export default function ProductMasterDetail() {
 
   const tabs: { key: Tab; label: string }[] = [
     ...(!isPiping ? [{ key: 'bom' as Tab, label: `BOM (${bom ? bom.revision_code : '—'})` }] : []),
+    { key: 'attributes', label: 'Attributes' },
     { key: 'variants', label: 'Variants' },
     { key: 'vendors', label: 'Vendors' },
     { key: 'related', label: `Related (${rels.length})` },
@@ -2212,6 +2214,8 @@ export default function ProductMasterDetail() {
               )}
             </div>
           )}
+
+          {activeTab === 'attributes' && <ItemAttributesPanel productId={product.id} />}
 
           {activeTab === 'variants' && (
             <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">

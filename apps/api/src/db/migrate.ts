@@ -6,12 +6,14 @@ import { seedThermalCorrelations } from './thermalCorrelationSeed';
 import { seedThermalWallConstructions } from './thermalWallConstructionSeed';
 import { migrateLegacyDocumentFiles } from './documentFileMigration';
 import { DRAFTING_SCHEMA } from '../modules/drafting/schema';
+import { PIM_SCHEMA } from '../modules/pim/schema';
 dotenv.config();
 
 // Self-contained module schemas, applied in order after the core schema.
 // New modules add their tables here instead of growing the core schema string.
 const MODULE_SCHEMAS: Array<[name: string, sql: string]> = [
   ['drafting', DRAFTING_SCHEMA],
+  ['pim', PIM_SCHEMA],
 ];
 
 const schema = `

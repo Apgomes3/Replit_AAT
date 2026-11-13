@@ -18,6 +18,7 @@ const ROUTE_TITLES: { path: string; title: string }[] = [
   { path: '/products/piping', title: 'Piping' },
   { path: '/products/tanks', title: 'Tanks' },
   { path: '/products/drawings', title: 'Drawings' },
+  { path: '/products/attributes', title: 'Attributes' },
   { path: '/products', title: 'Products' },
   { path: '/knowledge/materials', title: 'Materials' },
   { path: '/knowledge/specifications', title: 'Specifications' },
