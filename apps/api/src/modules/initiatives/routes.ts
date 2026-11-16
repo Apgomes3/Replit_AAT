@@ -36,7 +36,10 @@ const COST_TOTAL = `(SELECT COALESCE(SUM(CASE WHEN c.currency = i.currency THEN 
     WHEN ${CONVERTIBLE} THEN c.amount / rc.rate_per_usd * ri.rate_per_usd ELSE 0 END), 0)::float8 ${COST_FROM}) AS cost_total,
   (SELECT COUNT(*) FILTER (WHERE NOT ${CONVERTIBLE})::int ${COST_FROM}) AS cost_unconverted`;
 const SUMMARY = `
-  SELECT i.*, ${NAME('o')} AS owner_name, ${NAME('s')} AS sponsor_name, t.name AS team_name, t.department,
+  SELECT i.*,
+    -- Plain dates as text: as Date objects they would shift a day in time zones ahead of UTC.
+    to_char(i.start_date, 'YYYY-MM-DD') AS start_date, to_char(i.target_date, 'YYYY-MM-DD') AS target_date,
+    ${NAME('o')} AS owner_name, ${NAME('s')} AS sponsor_name, t.name AS team_name, t.department,
     (SELECT COALESCE(SUM(hours), 0)::float8 FROM initiative_time_entries te WHERE te.initiative_id = i.id) AS logged_hours,
     (SELECT COALESCE(SUM(planned_hours), 0)::float8 FROM planning_personal_tasks pt WHERE pt.initiative_id = i.id) AS task_hours,
     (SELECT COUNT(*) FROM planning_personal_tasks pt WHERE pt.initiative_id = i.id)::int AS task_count,

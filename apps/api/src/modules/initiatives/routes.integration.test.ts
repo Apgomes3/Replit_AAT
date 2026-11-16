@@ -64,8 +64,9 @@ describe.skipIf(!process.env.DATABASE_URL)('initiatives (PostgreSQL)', () => {
     // Anyone can propose; it starts as an idea owned by them, with its own INT code.
     const made = await call('staff', 'POST', '/initiatives', {
       title: `Compact UV skid ${tag}`, type: 'product_development', sponsor_user_id: users.boss.id,
-      estimated_hours: 80, budget_amount: 10000, currency: 'USD', stage: 'in_progress',
+      estimated_hours: 80, budget_amount: 10000, currency: 'USD', stage: 'in_progress', target_date: '2027-03-31',
     });
+    expect(made.body.target_date).toBe('2027-03-31'); // the same day, whatever the server's time zone
     expect(made.status).toBe(201);
     expect(made.body).toMatchObject({ stage: 'idea', owner_user_id: users.staff.id, sponsor_name: 'boss Test' });
     expect(made.body.code).toMatch(/^INT-\d{4}-\d{3}$/);
