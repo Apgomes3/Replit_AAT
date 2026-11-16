@@ -61,6 +61,7 @@ import SpeciesCatalog from './pages/design-books/SpeciesCatalog';
 import CommercialOverview from './pages/business-development/CommercialOverview';
 import ClientsList from './pages/clients/ClientsList';
 import ClientDetail from './pages/clients/ClientDetail';
+import PersonCard from './pages/people/PersonCard';
 import MaterialDetail from './pages/knowledge/MaterialDetail';
 import EnquiriesList from './pages/business-development/EnquiriesList';
 import EnquiryDetail from './pages/business-development/EnquiryDetail';
@@ -176,6 +177,7 @@ const router = createBrowserRouter(createRoutesFromElements(
               <Route path="business-development" element={<ModuleGuard moduleKey="business_development"><CommercialOverview /></ModuleGuard>} />
               <Route path="clients" element={<ModuleGuard moduleKey="clients"><ClientsList /></ModuleGuard>} />
               <Route path="clients/:id" element={<ModuleGuard moduleKey="clients"><ClientDetail /></ModuleGuard>} />
+              <Route path="people/:id" element={<PersonCard />} />
               <Route path="enquiries" element={<ModuleGuard moduleKey="business_development"><EnquiriesList /></ModuleGuard>} />
               <Route path="enquiries/:id" element={<ModuleGuard moduleKey="business_development"><EnquiryDetail /></ModuleGuard>} />
             <Route path="drafting" element={<ModuleGuard moduleKey="drafting"><DraftingSetup /></ModuleGuard>} />

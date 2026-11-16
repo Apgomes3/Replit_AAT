@@ -172,7 +172,7 @@ router.get('/:id', async (req, res, next) => {
     if (!isUuid(id)) return fail(res, 400, 'VALIDATION', 'id must be a company id');
     const company = (await query(`${LIST_SQL} WHERE c.id=$1`, [id])).rows[0];
     if (!company) return fail(res, 404, 'NOT_FOUND', 'Company not found');
-    const [contacts, children, enquiries, projects, designBooks] = await Promise.all([
+    const [contacts, children, enquiries, projects, designBooks, involvements] = await Promise.all([
       query(`SELECT * FROM client_contacts WHERE client_id=$1 ORDER BY (left_on IS NOT NULL), is_primary DESC, name, id`, [id]),
       query(`SELECT id, name, client_code, kinds, country, city, active FROM clients WHERE parent_client_id=$1 ORDER BY name`, [id]),
       query(`SELECT e.id, e.enquiry_number, e.title, e.status, e.received_date, e.due_date, p.project_code
@@ -181,10 +181,14 @@ router.get('/:id', async (req, res, next) => {
              FROM projects WHERE client_id=$1 ORDER BY project_code`, [id]),
       query(`SELECT d.id, d.book_code, d.book_title, d.status, d.revision, p.project_code
              FROM design_books d JOIN projects p ON p.id=d.project_id WHERE p.client_id=$1 ORDER BY p.project_code, d.book_code`, [id]),
+      // Projects where this company or its people have a role (consultant, site contact…).
+      query(`SELECT pp.id, pp.role, pp.contact_id, cc.name AS contact_name, p.id AS project_id, p.project_code, p.project_name, p.client_name
+             FROM project_parties pp JOIN projects p ON p.id=pp.project_id LEFT JOIN client_contacts cc ON cc.id=pp.contact_id
+             WHERE pp.client_id=$1 ORDER BY p.project_code, cc.name NULLS FIRST, pp.role`, [id]),
     ]);
     res.json({
       ...companyOut(company), contacts: contacts.rows, children: children.rows, enquiries: enquiries.rows,
-      projects: projects.rows, design_books: designBooks.rows,
+      projects: projects.rows, design_books: designBooks.rows, involvements: involvements.rows,
     });
   } catch (e) { next(e); }
 });

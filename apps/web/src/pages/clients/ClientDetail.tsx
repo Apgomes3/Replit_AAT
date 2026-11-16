@@ -108,6 +108,14 @@ export default function ClientDetail() {
             </li>)}</ul>}
         </section>
 
+        {c.involvements.length > 0 && <section className={`${card} p-5`} aria-labelledby="company-involvements">
+          <h2 id="company-involvements" className={h2}>Involved in other work <span className="font-normal text-[#8a9b9a]">({c.involvements.length})</span></h2>
+          <ul className="mt-3 divide-y divide-[#edf2ef] text-sm">{c.involvements.map(i => <li key={i.id} className="py-2 flex flex-wrap items-center justify-between gap-2">
+            <Link to={`/projects/${i.project_id}`} className="font-semibold hover:text-[#087f73]"><span className="font-mono text-xs text-[#6f8082] mr-2">{i.project_code}</span>{i.project_name}</Link>
+            <span className="text-xs text-[#6f8082]">{i.contact_name ? `${i.contact_name}: ` : ''}{i.role}{i.client_name ? ` · for ${i.client_name}` : ''}</span>
+          </li>)}</ul>
+        </section>}
+
         {c.design_books.length > 0 && <section className={`${card} p-5`} aria-labelledby="company-books">
           <h2 id="company-books" className={h2}>Design books <span className="font-normal text-[#8a9b9a]">({c.design_books.length})</span></h2>
           <ul className="mt-3 divide-y divide-[#edf2ef] text-sm">{c.design_books.map(b => <li key={b.id} className="py-2 flex flex-wrap items-center justify-between gap-2">

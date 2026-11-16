@@ -71,7 +71,7 @@ function href(row: any): string {
   return row.type === 'equipment' ? row.system_id?.startsWith('project:') ? `/projects/${row.system_id.slice(8)}?equipment=${row.id}` : `/systems/${row.system_id}?equipment=${row.id}` :
     row.type === 'notification' ? `/purchase-orders/${row.system_id}` :
     row.type === 'contact' ? `/clients/${row.system_id}` :
-    row.type === 'person' ? `/admin/users?q=${encodeURIComponent(row.code || '')}` :
+    row.type === 'person' ? `/people/${row.id}` :
     row.type === 'audit_event' ? `/admin/audit-log?entity_type=${encodeURIComponent(row.system_id || '')}&entity_id=${encodeURIComponent(row.code || '')}` :
     `${roots[row.type as RecordType]}/${row.id}`;
 }

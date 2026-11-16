@@ -82,6 +82,13 @@ async function record(db: any, enquiryId: string | string[], actor: string, acti
   );
   return result.rows[0]?.id;
 }
+/** The directory person an enquiry came from, as the contact snapshot; they must work for the client. */
+async function contactSnapshot(db: any, contactId: string, clientId: string) {
+  if (!UUID.test(String(contactId))) throw Object.assign(new Error('contact_id must be a valid UUID.'), { status: 400, code: 'VALIDATION', field: 'contact_id' });
+  const c = (await db.query('SELECT name, email, phone, mobile FROM client_contacts WHERE id=$1 AND client_id=$2', [contactId, clientId])).rows[0];
+  if (!c) throw Object.assign(new Error('That person does not work for this client.'), { status: 400, code: 'VALIDATION', field: 'contact_id' });
+  return { name: c.name, email: c.email ?? '', phone: c.phone || c.mobile || '' };
+}
 async function references(db: any, projectId: string | null, designBookId: string | null) {
   if (projectId && !(await db.query('SELECT id FROM projects WHERE id=$1', [projectId])).rows[0]) throw Object.assign(new Error('Project not found.'), { status: 404, code: 'NOT_FOUND' });
   if (designBookId) {
@@ -126,10 +133,11 @@ router.post('/', requireModuleManage('business_development'), referenceModuleAcc
       if (dateProblem) validation(dateProblem);
       if (!(await db.query('SELECT id FROM clients WHERE id=$1', [b.client_id])).rows[0]) throw Object.assign(new Error('Client not found.'), { status: 404, code: 'NOT_FOUND' });
       await references(db, b.project_id || null, b.design_book_id || null);
+      const contact = b.contact_id ? { ...flatContact(b), ...(await contactSnapshot(db, b.contact_id, b.client_id)) } : flatContact(b);
       const number = await nextNumber(db, `enquiry:${new Date().getUTCFullYear()}`, `ENQ-${new Date().getUTCFullYear()}-`);
-      const inserted = await db.query(`INSERT INTO enquiries(enquiry_number,client_id,title,description,status,contact_details,received_date,due_date,project_id,design_book_id,source_metadata,created_by,updated_by,idempotency_key)
-        VALUES($1,$2,$3,$4,$5,$6,COALESCE($7,CURRENT_DATE),$8,$9,$10,$11,$12,$12,$13) RETURNING *`,
-        [number,b.client_id,b.title.trim(),b.description || null,b.status || 'new',flatContact(b),b.received_date || null,b.due_date || null,b.project_id || null,b.design_book_id || null,flatSource(b),req.user!.id,b.idempotency_key || null]);
+      const inserted = await db.query(`INSERT INTO enquiries(enquiry_number,client_id,title,description,status,contact_details,received_date,due_date,project_id,design_book_id,source_metadata,created_by,updated_by,idempotency_key,contact_id)
+        VALUES($1,$2,$3,$4,$5,$6,COALESCE($7,CURRENT_DATE),$8,$9,$10,$11,$12,$12,$13,$14) RETURNING *`,
+        [number,b.client_id,b.title.trim(),b.description || null,b.status || 'new',contact,b.received_date || null,b.due_date || null,b.project_id || null,b.design_book_id || null,flatSource(b),req.user!.id,b.idempotency_key || null,b.contact_id || null]);
       const activityId = await record(db, inserted.rows[0].id, req.user!.id, 'created', { project_id: b.project_id || null, design_book_id: b.design_book_id || null });
       const recipients = (await enquiryStakeholders(db, inserted.rows[0])).filter(id => id !== req.user!.id);
       if (recipients.length) {
@@ -181,9 +189,10 @@ router.patch('/:id', requireModuleManage('business_development'), referenceModul
     for (const f of ['client_id','title','description','status','received_date','due_date','project_id','design_book_id']) if (b[f] !== undefined) {
       vals.push(f==='title'?String(b[f]).trim():b[f]); set.push(`${f}=$${vals.length}`);
     }
-    if (b.contact_details !== undefined || b.contact_name !== undefined || b.contact_email !== undefined || b.contact_phone !== undefined) { vals.push(flatContact(b)); set.push(`contact_details=$${vals.length}`); }
+    // With a directory person (contact_id), the contact details are taken from them inside the transaction.
+    if (!b.contact_id && (b.contact_details !== undefined || b.contact_name !== undefined || b.contact_email !== undefined || b.contact_phone !== undefined)) { vals.push(flatContact(b)); set.push(`contact_details=$${vals.length}`); }
     if (b.source_metadata !== undefined || b.source !== undefined) { vals.push(flatSource(b)); set.push(`source_metadata=$${vals.length}`); }
-    if (!set.length) return res.status(400).json({error:{code:'VALIDATION',message:'At least one enquiry field is required.'}});
+    if (!set.length && b.contact_id === undefined) return res.status(400).json({error:{code:'VALIDATION',message:'At least one enquiry field is required.'}});
     vals.push(req.user!.id); set.push(`updated_by=$${vals.length}`,'updated_at=NOW()');
       const updated=await withTransaction(async db=>{
         const current=(await db.query('SELECT *, xmin::text AS version FROM enquiries WHERE id=$1 FOR UPDATE', [req.params.id])).rows[0];
@@ -197,6 +206,15 @@ router.patch('/:id', requireModuleManage('business_development'), referenceModul
         const effectiveDue = b.due_date !== undefined ? b.due_date : current.due_date;
         if (effectiveDue && dateOrderError(effectiveReceived, effectiveDue)) throw Object.assign(new Error(dateOrderError(effectiveReceived, effectiveDue)!),{status:400,code:'VALIDATION'});
         await references(db,effectiveProject,effectiveDesign);
+        const effectiveClient = b.client_id !== undefined ? b.client_id : current.client_id;
+        if (b.contact_id !== undefined) {
+          if (b.contact_id) {
+            vals.push(b.contact_id); set.push(`contact_id=$${vals.length}`);
+            vals.push({ ...current.contact_details, ...flatContact(b), ...(await contactSnapshot(db, b.contact_id, effectiveClient)) }); set.push(`contact_details=$${vals.length}`);
+          } else set.push('contact_id=NULL');
+        } else if (b.client_id !== undefined && b.client_id !== current.client_id && current.contact_id) {
+          set.push('contact_id=NULL'); // the person worked for the previous client
+        }
         const r=await db.query(`UPDATE enquiries SET ${set.join(',')} WHERE id=$1 RETURNING *, xmin::text AS version`,vals);
         const updatedRow = r.rows[0];
         const activityId = await record(db,req.params.id,req.user!.id,'updated',{changes:b});

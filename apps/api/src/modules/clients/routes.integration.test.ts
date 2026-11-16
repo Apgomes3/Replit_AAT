@@ -8,6 +8,9 @@ import { query } from '../../db';
 import { JWT_SECRET } from '../../middleware/auth';
 import { errorHandler } from '../../middleware/errors';
 import clientRoutes from './routes';
+import partyRoutes from './partiesRoutes';
+import enquiryRoutes from '../../routes/enquiries';
+import peopleRoutes from '../people/routes';
 
 const tag = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 let server: http.Server;
@@ -17,7 +20,7 @@ const userIds: string[] = [];
 const roleIds: string[] = [];
 
 async function call(method: string, path: string, who: 'editor' | 'reader', body?: unknown) {
-  const res = await fetch(`${base}/api/v1/clients${path}`, {
+  const res = await fetch(`${base}${path.startsWith('/api/') ? '' : '/api/v1/clients'}${path}`, {
     method,
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens[who]}` },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -32,7 +35,7 @@ describe.skipIf(!process.env.DATABASE_URL)('client directory API (PostgreSQL)', 
       const role = `t_${who}_${tag}`;
       const roleId = (await query(`INSERT INTO roles (name, description) VALUES ($1, 'test role') RETURNING id`, [role])).rows[0].id;
       roleIds.push(roleId);
-      await query(`INSERT INTO role_module_access (role_id, module_key, access_level) VALUES ($1, 'clients', $2)`, [roleId, level]);
+      await query(`INSERT INTO role_module_access (role_id, module_key, access_level) VALUES ($1, 'clients', $2), ($1, 'projects', $2)`, [roleId, level]);
       const id = (await query(`INSERT INTO users (email, password_hash, first_name, role) VALUES ($1, 'x', $2, $3) RETURNING id`,
         [`${who}-${tag}@example.test`, who, role])).rows[0].id;
       userIds.push(id);
@@ -41,6 +44,9 @@ describe.skipIf(!process.env.DATABASE_URL)('client directory API (PostgreSQL)', 
     const app = express();
     app.use(express.json());
     app.use('/api/v1/clients', clientRoutes);
+    app.use('/api/v1', partyRoutes);
+    app.use('/api/v1/enquiries', enquiryRoutes);
+    app.use('/api/v1/people', peopleRoutes);
     app.use(errorHandler);
     server = app.listen(0);
     base = `http://127.0.0.1:${(server.address() as any).port}`;
@@ -104,6 +110,60 @@ describe.skipIf(!process.env.DATABASE_URL)('client directory API (PostgreSQL)', 
     } finally {
       await query(`DELETE FROM projects WHERE id = $1`, [projectId]);
     }
+  });
+
+  it('puts companies and their people on a project with roles, and shows it on the company', async () => {
+    const owner = (await call('POST', '/', 'editor', { name: `Owner Zoo ${tag}`, notes: tag })).body;
+    const consultant = (await call('POST', '/', 'editor', { name: `Consult Partners ${tag}`, notes: tag, kinds: ['consultant'] })).body;
+    const eng = (await call('POST', `/${consultant.id}/contacts`, 'editor', { name: 'Eve Engineer', email: 'eve@consult.test' })).body;
+    const outsider = (await call('POST', `/${owner.id}/contacts`, 'editor', { name: 'Olly Owner', email: 'olly@owner.test' })).body;
+    const projectId = (await query(`INSERT INTO projects (project_code, project_name, client_id, client_name) VALUES ($1, 'Parties', $2, $3) RETURNING id`,
+      [`PP-${tag}`, owner.id, owner.name])).rows[0].id;
+    try {
+      const firm = await call('POST', `/api/v1/projects/${projectId}/parties`, 'editor', { client_id: consultant.id, role: 'Consultant' });
+      expect(firm.status).toBe(201);
+      const person = await call('POST', `/api/v1/projects/${projectId}/parties`, 'editor', { client_id: consultant.id, contact_id: eng.id, role: 'Consultant engineer' });
+      expect(person.body).toMatchObject({ contact_name: 'Eve Engineer', client_name: consultant.name, role: 'Consultant engineer' });
+      // Same role twice, a person from another company, and readers are refused.
+      expect((await call('POST', `/api/v1/projects/${projectId}/parties`, 'editor', { client_id: consultant.id, role: 'consultant' })).status).toBe(409);
+      expect((await call('POST', `/api/v1/projects/${projectId}/parties`, 'editor', { client_id: consultant.id, contact_id: outsider.id, role: 'Site contact' })).status).toBe(400);
+      expect((await call('POST', `/api/v1/projects/${projectId}/parties`, 'reader', { client_id: consultant.id, role: 'Partner' })).status).toBe(403);
+
+      const listed = await call('GET', `/api/v1/projects/${projectId}/parties`, 'reader');
+      expect(listed.body.data.map((p: any) => [p.contact_name, p.role])).toEqual([[null, 'Consultant'], ['Eve Engineer', 'Consultant engineer']]);
+      const company = await call('GET', `/${consultant.id}`, 'reader');
+      expect(company.body.involvements.map((i: any) => [i.project_code, i.contact_name, i.role])).toEqual([[`PP-${tag}`, null, 'Consultant'], [`PP-${tag}`, 'Eve Engineer', 'Consultant engineer']]);
+      expect((await call('DELETE', `/api/v1/projects/${projectId}/parties/${firm.body.id}`, 'editor')).status).toBe(204);
+    } finally {
+      await query(`DELETE FROM projects WHERE id = $1`, [projectId]);
+    }
+  });
+
+  it('records the client person an enquiry came from, only from that client', async () => {
+    const company = (await call('POST', '/', 'editor', { name: `Enquiring Aquarium ${tag}`, notes: tag })).body;
+    const other = (await call('POST', '/', 'editor', { name: `Other Place ${tag}`, notes: tag })).body;
+    const curator = (await call('POST', `/${company.id}/contacts`, 'editor', { name: 'Cora Curator', email: 'cora@aq.test', phone: '+61 7 0000' })).body;
+    const stranger = (await call('POST', `/${other.id}/contacts`, 'editor', { name: 'Stan', email: 'stan@other.test' })).body;
+    const made = await call('POST', '/api/v1/enquiries', 'editor', { client_id: company.id, title: `UV upgrade ${tag}`, contact_id: curator.id });
+    expect(made.status).toBe(201);
+    expect(made.body).toMatchObject({ contact_id: curator.id, contact_name: 'Cora Curator', contact_email: 'cora@aq.test', contact_phone: '+61 7 0000' });
+    expect((await call('POST', '/api/v1/enquiries', 'editor', { client_id: company.id, title: 'x', contact_id: stranger.id })).status).toBe(400);
+    // Moving the enquiry to another client drops the person, who worked for the first one.
+    const moved = await call('PATCH', `/api/v1/enquiries/${made.body.id}`, 'editor', { client_id: other.id });
+    expect(moved.body.contact_id ?? null).toBeNull();
+    await query(`DELETE FROM enquiries WHERE id = $1`, [made.body.id]);
+  });
+
+  it('shows a person card with their manager, chain, reports and teams', async () => {
+    const [editor, reader] = userIds;
+    await query(`UPDATE users SET reports_to_user_id = $1, job_title = 'Drafter' WHERE id = $2`, [editor, reader]);
+    const card = await call('GET', `/api/v1/people/${editor}`, 'reader');
+    expect(card.status).toBe(200);
+    expect(card.body.direct_reports.map((r: any) => r.id)).toEqual([reader]);
+    const theirs = await call('GET', `/api/v1/people/${reader}`, 'reader');
+    expect(theirs.body).toMatchObject({ job_title: 'Drafter', reports_to: { id: editor }, chain: [{ id: editor }] });
+    expect(theirs.body).not.toHaveProperty('password_hash');
+    await query(`UPDATE users SET reports_to_user_id = NULL WHERE id = $1`, [reader]);
   });
 
   it('keeps people with stable ids: primary, phone-only, left and back', async () => {

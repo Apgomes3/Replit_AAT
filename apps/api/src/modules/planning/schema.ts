@@ -125,6 +125,34 @@ CREATE TABLE IF NOT EXISTS planning_commitments (
 );
 CREATE INDEX IF NOT EXISTS idx_planning_commitments_user ON planning_commitments (user_id);
 
+-- Global plans: anyone can make a plan. drafting_plans holds every plan in the company; a plan
+-- may be linked to a project, a design book or an enquiry, or stand alone, and may have no team.
+--   visibility: private  = owner, shared members and task assignees
+--               team     = also everyone in the plan's team
+--               everyone = every signed-in user
+-- Plans that existed before this were Drafting team plans: visibility 'team', owner = creator.
+ALTER TABLE drafting_plans ALTER COLUMN project_id DROP NOT NULL;
+ALTER TABLE drafting_plans ALTER COLUMN team_id DROP NOT NULL;
+ALTER TABLE drafting_plans ADD COLUMN IF NOT EXISTS owner_user_id UUID REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE drafting_plans ADD COLUMN IF NOT EXISTS visibility VARCHAR(10) NOT NULL DEFAULT 'team'
+  CHECK (visibility IN ('private', 'team', 'everyone'));
+ALTER TABLE drafting_plans ADD COLUMN IF NOT EXISTS design_book_id UUID REFERENCES design_books(id) ON DELETE SET NULL;
+ALTER TABLE drafting_plans ADD COLUMN IF NOT EXISTS enquiry_id UUID REFERENCES enquiries(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_drafting_plans_owner ON drafting_plans (owner_user_id);
+CREATE INDEX IF NOT EXISTS idx_drafting_plans_design_book ON drafting_plans (design_book_id) WHERE design_book_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_drafting_plans_enquiry ON drafting_plans (enquiry_id) WHERE enquiry_id IS NOT NULL;
+UPDATE drafting_plans SET owner_user_id = created_by WHERE owner_user_id IS NULL AND created_by IS NOT NULL;
+
+-- People a plan is shared with (they can see and edit it whatever its visibility).
+CREATE TABLE IF NOT EXISTS planning_plan_members (
+  plan_id UUID NOT NULL REFERENCES drafting_plans(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  added_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (plan_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_planning_plan_members_user ON planning_plan_members (user_id);
+CREATE SEQUENCE IF NOT EXISTS planning_plan_code_seq START 1;
+
 -- Finished tasks are 100% complete.
 UPDATE drafting_tasks SET progress_pct = 100 WHERE status = 'done' AND progress_pct <> 100;
 

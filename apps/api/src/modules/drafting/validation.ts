@@ -27,10 +27,20 @@ export type TeamInput = {
   department?: string;
 };
 
+export const PLAN_VISIBILITIES = ['private', 'team', 'everyone'] as const;
+export type PlanVisibility = typeof PLAN_VISIBILITIES[number];
+
 export type PlanInput = {
   name?: string;
-  project_id?: string;
-  team_id?: string;
+  /** null = not linked to a project. */
+  project_id?: string | null;
+  /** null = no team (a personal plan). */
+  team_id?: string | null;
+  design_book_id?: string | null;
+  enquiry_id?: string | null;
+  visibility?: PlanVisibility;
+  /** People the plan is shared with (replaces the list). */
+  member_ids?: string[];
   status?: PlanStatus;
   start_date?: string | null;
   target_date?: string | null;
@@ -232,16 +242,35 @@ export function validateLinkInput(body: any, { creating }: { creating: boolean }
   return { value: out };
 }
 
-export function validatePlanInput(body: any, { creating }: { creating: boolean }): Result<PlanInput> {
+/**
+ * Plan create/update. `required` (Drafting) keeps project and team mandatory; global plans
+ * (required = false) may have neither. A new plan with a team defaults to 'team' visibility,
+ * one without to 'private'.
+ */
+export function validatePlanInput(body: any, { creating, required = true }: { creating: boolean; required?: boolean }): Result<PlanInput> {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return { error: 'Request body must be an object.' };
   const out: PlanInput & Record<string, unknown> = {};
   let error = requiredName(body, creating, 255, out) || optionalText(body, 'description', 4000, out);
   if (error) return { error };
 
-  for (const key of ['project_id', 'team_id'] as const) {
-    if (!has(body, key)) { if (creating) return { error: `${key} is required.` }; continue; }
+  for (const key of ['project_id', 'team_id', 'design_book_id', 'enquiry_id'] as const) {
+    const mandatory = required && (key === 'project_id' || key === 'team_id');
+    if (!has(body, key)) { if (creating && mandatory) return { error: `${key} is required.` }; continue; }
+    if ((body[key] === null || body[key] === '') && !mandatory) { out[key] = null; continue; }
     if (!isUuid(body[key])) return { error: `${key} must be a valid id.` };
     out[key] = body[key];
+  }
+  if (out.design_book_id && out.enquiry_id) return { error: 'A plan can be linked to a design book or an enquiry, not both.' };
+  if (has(body, 'visibility')) {
+    if (!PLAN_VISIBILITIES.includes(body.visibility)) return { error: `visibility must be one of: ${PLAN_VISIBILITIES.join(', ')}.` };
+    out.visibility = body.visibility;
+  } else if (creating) {
+    out.visibility = out.team_id ? 'team' : 'private';
+  }
+  if (creating && out.visibility === 'team' && !out.team_id) return { error: 'Pick a team for a team plan, or make it private.' };
+  if (has(body, 'member_ids')) {
+    if (!Array.isArray(body.member_ids) || body.member_ids.length > 200 || !body.member_ids.every(isUuid)) return { error: 'member_ids must be a list of user ids.' };
+    out.member_ids = [...new Set<string>(body.member_ids)];
   }
   if (has(body, 'status')) {
     if (!PLAN_STATUSES.includes(body.status)) return { error: `status must be one of: ${PLAN_STATUSES.join(', ')}.` };

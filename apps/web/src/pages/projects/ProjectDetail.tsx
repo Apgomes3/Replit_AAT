@@ -8,6 +8,7 @@ import QueryError from '../../components/ui/QueryError';
 import MetadataPanel from '../../components/ui/MetadataPanel';
 import ClientPicker from '../../components/clients/ClientPicker';
 import ClientLink from '../../components/clients/ClientLink';
+import ProjectPartiesPanel from '../../components/clients/ProjectPartiesPanel';
 import StatusBadge from '../../components/ui/StatusBadge';
 import EntityCode from '../../components/ui/EntityCode';
 import DataTable, { Column } from '../../components/ui/DataTable';
@@ -1219,6 +1220,8 @@ export default function ProjectDetail() {
                 {isPrivileged && <span className="text-[11px] text-slate-400 shrink-0">Click to toggle</span>}
               </div>
             )}
+
+            {!editingProject && <ProjectPartiesPanel projectId={project.id} clientId={project.client_id} clientName={project.client_name} />}
 
             {editingProject && (
               <div className="bg-white border border-slate-200 rounded-lg p-5 mt-3">

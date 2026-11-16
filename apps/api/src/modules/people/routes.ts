@@ -1,0 +1,57 @@
+// Person card (/api/v1/people/:id): a colleague's position, access role, line manager, direct
+// reports, teams and working calendar. Open to everyone signed in; no private data (no login times,
+// no leave reasons, no access settings beyond the role name).
+import { Router } from 'express';
+import { authenticate } from '../../middleware/auth';
+import { query } from '../../db';
+
+const router = Router();
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const NAME = `COALESCE(NULLIF(TRIM(CONCAT_WS(' ', u.first_name, u.last_name)), ''), u.email)`;
+
+router.get('/:id', authenticate, async (req, res, next) => {
+  try {
+    const id = String(req.params.id);
+    if (!UUID.test(id)) return res.status(400).json({ error: { code: 'VALIDATION', message: 'Not a valid person' } });
+    const person = (await query(
+      `SELECT u.id, u.email, u.first_name, u.last_name, ${NAME} AS name, u.job_title, u.role, u.is_active,
+         u.reports_to_user_id
+       FROM users u WHERE u.id = $1`, [id])).rows[0];
+    if (!person) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Person not found' } });
+
+    const [manager, reports, teams, calendar] = await Promise.all([
+      person.reports_to_user_id
+        ? query(`SELECT u.id, ${NAME} AS name, u.job_title, u.email FROM users u WHERE u.id = $1`, [person.reports_to_user_id])
+        : Promise.resolve({ rows: [] as any[] }),
+      query(`SELECT u.id, ${NAME} AS name, u.job_title, u.email,
+               (SELECT COUNT(*) FROM users r WHERE r.reports_to_user_id = u.id AND r.is_active IS NOT FALSE)::int AS report_count
+             FROM users u WHERE u.reports_to_user_id = $1 AND u.is_active IS NOT FALSE ORDER BY 2`, [id]),
+      query(`SELECT t.id, t.name, t.department, (t.manager_user_id = $1) AS is_manager,
+               m.id AS manager_id, NULLIF(TRIM(CONCAT_WS(' ', m.first_name, m.last_name)), '') AS manager_name
+             FROM drafting_teams t
+             LEFT JOIN users m ON m.id = t.manager_user_id
+             WHERE t.active AND (t.manager_user_id = $1 OR EXISTS (SELECT 1 FROM drafting_team_members tm WHERE tm.team_id = t.id AND tm.user_id = $1))
+             ORDER BY t.department, t.name`, [id]),
+      query(`SELECT c.name FROM planning_calendars c
+             WHERE c.id = COALESCE((SELECT calendar_id FROM planning_resources WHERE user_id = $1), (SELECT id FROM planning_calendars WHERE is_default LIMIT 1))`, [id]),
+    ]);
+    // The chain above them, up to the top (for "CEO › COO › Engineering Director").
+    const chain = (await query(
+      `WITH RECURSIVE up(id, depth) AS (
+         SELECT reports_to_user_id, 1 FROM users WHERE id = $1
+         UNION ALL SELECT u.reports_to_user_id, up.depth + 1 FROM users u JOIN up ON u.id = up.id
+         WHERE up.id IS NOT NULL AND up.depth < 20)
+       SELECT u.id, ${NAME} AS name, u.job_title FROM up JOIN users u ON u.id = up.id ORDER BY up.depth DESC`, [id])).rows;
+
+    res.json({
+      ...person,
+      reports_to: manager.rows[0] ?? null,
+      direct_reports: reports.rows,
+      chain,
+      teams: teams.rows,
+      calendar: calendar.rows[0]?.name ?? null,
+    });
+  } catch (e) { next(e); }
+});
+
+export default router;

@@ -30,6 +30,7 @@ const ROUTE_TITLES: { path: string; title: string }[] = [
   { path: '/my-work', title: 'My Work' },
   { path: '/clients/:id', title: 'Client' },
   { path: '/clients', title: 'Clients & Contacts' },
+  { path: '/people/:id', title: 'Person' },
   { path: '/enquiries/:id', title: 'Enquiry' },
   { path: '/enquiries', title: 'Enquiries' },
   { path: '/knowledge/materials/:id', title: 'Material' },

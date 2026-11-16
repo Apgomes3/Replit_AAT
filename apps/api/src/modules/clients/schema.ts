@@ -40,6 +40,28 @@ END $$;
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS client_id UUID REFERENCES clients(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_projects_client ON projects(client_id);
 
+-- Other companies and people on a project, each with a role ("Consultant", "Client project manager",
+-- "Site contact"…). A row without contact_id is the company as a whole; with one, that person.
+CREATE TABLE IF NOT EXISTS project_parties (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  contact_id UUID REFERENCES client_contacts(id) ON DELETE CASCADE,
+  role VARCHAR(80) NOT NULL CHECK (BTRIM(role) <> ''),
+  notes TEXT,
+  created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_project_parties_project ON project_parties(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_parties_client ON project_parties(client_id);
+CREATE INDEX IF NOT EXISTS idx_project_parties_contact ON project_parties(contact_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_project_parties_unique ON project_parties
+  (project_id, client_id, COALESCE(contact_id, '00000000-0000-0000-0000-000000000000'::uuid), LOWER(role));
+
+-- The person an enquiry came from, as a directory contact (contact_details keeps what was received).
+ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS contact_id UUID REFERENCES client_contacts(id) ON DELETE SET NULL;
+
 -- Clients & contacts module: everyone can look; admins, managers, HQ managers and the PMO edit.
 INSERT INTO role_module_access (role_id, module_key, access_level)
 SELECT r.id, 'clients', CASE WHEN r.name IN ('admin', 'manager', 'hq_manager', 'pmo') THEN 'manage' ELSE 'view' END

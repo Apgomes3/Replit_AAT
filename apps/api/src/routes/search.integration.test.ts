@@ -51,7 +51,7 @@ describe.skipIf(!process.env.DATABASE_URL)('search (PostgreSQL)', () => {
     expect(res.status).toBe(200);
     const found = Object.fromEntries(res.body.results.map((r: any) => [r.type, r]));
     expect(found.person).toMatchObject({ code: `${tag}@example.test`, name: `Searchy ${tag} · Test Engineer` });
-    expect(found.person.href).toBe(`/admin/users?q=${encodeURIComponent(`${tag}@example.test`)}`);
+    expect(found.person.href).toBe(`/people/${ids.user}`);
     expect(found.client.href).toBe(`/clients/${ids.client}`);
     expect(found.contact).toMatchObject({ name: `Curator ${tag} · Aquarium ${tag}`, href: `/clients/${ids.client}` });
     expect(found.project).toMatchObject({ name: `Search test · Aquarium ${tag}`, href: `/projects/${ids.project}` });

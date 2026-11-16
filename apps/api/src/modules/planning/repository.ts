@@ -266,7 +266,7 @@ export async function getWorkload(opts: PeopleScope & { userIds?: string[]; from
      FROM drafting_task_assignees a
      JOIN drafting_tasks t ON t.id = a.task_id
      JOIN drafting_plans p ON p.id = t.plan_id
-     JOIN projects pr ON pr.id = p.project_id
+     LEFT JOIN projects pr ON pr.id = p.project_id
      WHERE a.user_id = ANY($1::uuid[]) AND t.status <> 'done' AND p.status NOT IN ('archived', 'completed')
        AND COALESCE(t.start_date, t.due_date) <= $3 AND COALESCE(t.due_date, t.start_date) >= $2`,
     [ids, opts.from, to],

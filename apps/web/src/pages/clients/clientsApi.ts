@@ -52,6 +52,7 @@ export interface CompanyDetail extends Company {
   enquiries: Array<{ id: string; enquiry_number: string; title: string; status: string; received_date: string | null; due_date: string | null; project_code: string | null }>;
   projects: Array<{ id: string; project_code: string; project_name: string; project_status: string | null; country: string | null; city: string | null; project_manager: string | null; target_completion_date: string | null }>;
   design_books: Array<{ id: string; book_code: string; book_title: string | null; status: string | null; revision: string | null; project_code: string }>;
+  involvements: Array<{ id: string; role: string; contact_id: string | null; contact_name: string | null; project_id: string; project_code: string; project_name: string; client_name: string | null }>;
 }
 
 export interface CompanyFilter { search?: string; kind?: ClientKind | ''; status?: 'all' | 'active' | 'inactive'; pageSize?: number }
@@ -121,7 +122,56 @@ export function useContactActions(clientId: string) {
   return { save, remove };
 }
 
-export const apiError = (err: any, fallback: string): string => err?.response?.data?.error?.message || fallback;
+export interface ProjectParty {
+  id: string;
+  project_id: string;
+  client_id: string;
+  client_name: string;
+  client_code: string;
+  kinds: ClientKind[];
+  contact_id: string | null;
+  contact_name: string | null;
+  email: string | null;
+  phone: string | null;
+  job_title: string | null;
+  left_on: string | null;
+  role: string;
+  notes: string | null;
+}
+
+export function useProjectParties(projectId: string | undefined) {
+  return useQuery({
+    queryKey: ['project-parties', projectId],
+    queryFn: () => api.get(`/projects/${projectId}/parties`).then(r => r.data as { data: ProjectParty[]; company_roles: string[]; person_roles: string[] }),
+    enabled: !!projectId,
+  });
+}
+
+export function useProjectPartyActions(projectId: string) {
+  const qc = useQueryClient();
+  const done = () => { qc.invalidateQueries({ queryKey: ['project-parties', projectId] }); qc.invalidateQueries({ queryKey: ['clients'] }); };
+  const add = useMutation({
+    mutationFn: (input: { client_id: string; contact_id?: string | null; role: string; notes?: string }) =>
+      api.post(`/projects/${projectId}/parties`, input).then(r => r.data as ProjectParty),
+    onSuccess: done,
+  });
+  const remove = useMutation({
+    mutationFn: (partyId: string) => api.delete(`/projects/${projectId}/parties/${partyId}`),
+    onSuccess: done,
+  });
+  return { add, remove };
+}
+
+/** Projects or Clients & contacts "manage" lets someone change who is on a project. */
+export function useCanManageProjectParties(): boolean {
+  const user = useAuthStore(s => s.user);
+  if (!user) return false;
+  if (user.role === 'admin') return true;
+  const access = (user as any).moduleAccess ?? {};
+  return (access.projects ?? 'manage') === 'manage' || (access.clients ?? 'manage') === 'manage';
+}
+
+export const apiError =(err: any, fallback: string): string => err?.response?.data?.error?.message || fallback;
 
 /** "Brisbane, Australia" style location. */
 export const placeOf = (c: Pick<Company, 'city' | 'country'>) => [c.city, c.country].filter(Boolean).join(', ');
