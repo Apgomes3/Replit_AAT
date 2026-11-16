@@ -1,7 +1,9 @@
 # One client directory for the whole of Shark OS
 
-Status, 16 Nov 2026: **step 1 built** (directory, people, Clients & Contacts in the navigation, client picker
-with duplicate warning, enquiries use the picker and link to the client). Steps 2–4 to do.
+Status, 16 Nov 2026: **steps 1 and 2 built**. Step 1: directory, people, Clients & Contacts in the navigation,
+client picker with duplicate warning, enquiries use the picker and link to the client. Step 2: `projects.client_id`,
+picker on new/edit project, client links on the project list and page, Projects and Design books on the client page,
+the 11 typed client names moved into 10 companies. Steps 3–4 to do.
 
 ## What we have today
 

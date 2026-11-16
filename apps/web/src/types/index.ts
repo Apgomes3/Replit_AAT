@@ -15,6 +15,7 @@ export interface Project {
   project_code: string;
   project_name: string;
   client_name?: string;
+  client_id?: string | null;
   site_name?: string;
   country?: string;
   city?: string;

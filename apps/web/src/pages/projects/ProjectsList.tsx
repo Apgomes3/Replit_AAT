@@ -16,10 +16,12 @@ import toast from 'react-hot-toast';
 import QueryError from '../../components/ui/QueryError';
 import EmptyState from '../../components/ui/EmptyState';
 import { isEditorRole } from '../../lib/roles';
+import ClientPicker from '../../components/clients/ClientPicker';
+import ClientLink from '../../components/clients/ClientLink';
 
 const ProjectsMap = lazy(() => import('../../components/ui/ProjectsMap'));
 
-const EMPTY_FORM = { project_code: '', project_name: '', client_name: '', country: '', city: '', project_manager: '' };
+const EMPTY_FORM = { project_code: '', project_name: '', client_id: '', client_name: '', country: '', city: '', project_manager: '' };
 
 const ALL_SCOPES = [
   { key: 'LSS', label: 'LSS', description: 'Life Support Systems' },
@@ -108,7 +110,7 @@ export default function ProjectsList() {
     },
     { key: 'project_code', header: 'Code', sortable: true, render: r => <EntityCode code={r.project_code} /> },
     { key: 'project_name', header: 'Project Name', sortable: true, filterable: true, render: r => <span className="font-medium">{r.project_name}</span> },
-    { key: 'client_name', header: 'Client', sortable: true, filterable: true },
+    { key: 'client_name', header: 'Client', sortable: true, filterable: true, render: r => <ClientLink id={(r as any).client_id} name={r.client_name} /> },
     { key: 'country', header: 'Country or Region', sortable: true, filterable: true },
     { key: 'project_status', header: 'Status', sortable: true, filterable: true, filterValue: r => r.project_status ?? '', render: r => <StatusBadge status={r.project_status} /> },
     { key: 'project_manager', header: 'PM', sortable: true, filterable: true },
@@ -123,7 +125,8 @@ export default function ProjectsList() {
     if (!form.project_code.trim() || !form.project_name.trim()) return;
     setSaving(true);
     try {
-      const res = await api.post('/projects', { ...form, scopes: selectedScopes });
+      const { client_id, client_name, ...rest } = form;
+      const res = await api.post('/projects', { ...rest, ...(client_id ? { client_id } : { client_name: null }), scopes: selectedScopes });
       const newProject = res.data;
       if (logoFile) {
         const fd = new FormData();
@@ -229,9 +232,9 @@ export default function ProjectsList() {
                   className="w-full border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-600" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">Client</label>
-                <input value={form.client_name} onChange={e => setForm(f => ({ ...f, client_name: e.target.value }))}
-                  className="w-full border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-600" />
+                <label htmlFor="new-project-client" className="block text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">Client</label>
+                <ClientPicker id="new-project-client" value={form.client_id || null} valueLabel={form.client_name || null} placeholder="Search or add a company…"
+                  onChange={c => setForm(f => ({ ...f, client_id: c?.id ?? '', client_name: c?.name ?? '', country: f.country || c?.country || '', city: f.city || c?.city || '' }))} />
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">Country or Region</label>

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { Building2, Mail, Pencil, Phone, Plus, Star, Trash2, UserMinus, UserPlus, X } from 'lucide-react';
+import { Mail, Pencil, Phone, Plus, Star, Trash2, UserMinus, UserPlus, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PageHeader from '../../components/ui/PageHeader';
 import ClientFormModal from '../../components/clients/ClientFormModal';
@@ -99,10 +99,22 @@ export default function ClientDetail() {
             </li>)}</ul>}
         </section>
 
-        <section className="rounded-xl border border-dashed border-[#c9d9d2] p-5 text-sm text-[#6f8082]">
-          <Building2 className="w-4 h-4 inline mr-1.5 text-[#8da09d]" />
-          Projects, design books and quotes will show here once projects are linked to the directory (next step).
+        <section className={`${card} p-5`} aria-labelledby="company-projects">
+          <h2 id="company-projects" className={h2}>Projects <span className="font-normal text-[#8a9b9a]">({c.projects.length})</span></h2>
+          {c.projects.length === 0 ? <p className="mt-2 text-sm text-[#6f8082]">No projects yet.</p>
+            : <ul className="mt-3 divide-y divide-[#edf2ef] text-sm">{c.projects.map(p => <li key={p.id} className="py-2 flex flex-wrap items-center justify-between gap-2">
+              <Link to={`/projects/${p.id}`} className="font-semibold hover:text-[#087f73]"><span className="font-mono text-xs text-[#6f8082] mr-2">{p.project_code}</span>{p.project_name}</Link>
+              <span className="text-xs text-[#6f8082]">{[placeOf(p), p.project_manager, p.project_status].filter(Boolean).join(' · ')}</span>
+            </li>)}</ul>}
         </section>
+
+        {c.design_books.length > 0 && <section className={`${card} p-5`} aria-labelledby="company-books">
+          <h2 id="company-books" className={h2}>Design books <span className="font-normal text-[#8a9b9a]">({c.design_books.length})</span></h2>
+          <ul className="mt-3 divide-y divide-[#edf2ef] text-sm">{c.design_books.map(b => <li key={b.id} className="py-2 flex flex-wrap items-center justify-between gap-2">
+            <Link to={`/design-books/${b.id}`} className="font-semibold hover:text-[#087f73]"><span className="font-mono text-xs text-[#6f8082] mr-2">{b.book_code}</span>{b.book_title}</Link>
+            <span className="text-xs text-[#6f8082]">{[b.project_code, b.revision ? `rev ${b.revision}` : null, b.status].filter(Boolean).join(' · ')}</span>
+          </li>)}</ul>
+        </section>}
       </div>
     </div>
 

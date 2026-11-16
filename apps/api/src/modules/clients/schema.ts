@@ -35,6 +35,11 @@ DO $$ BEGIN
   END IF;
 END $$;
 
+-- Projects point at their client company. client_name stays as the company's name (kept in step by
+-- the API) for older screens and for projects whose client is not in the directory yet.
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS client_id UUID REFERENCES clients(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_projects_client ON projects(client_id);
+
 -- Clients & contacts module: everyone can look; admins, managers, HQ managers and the PMO edit.
 INSERT INTO role_module_access (role_id, module_key, access_level)
 SELECT r.id, 'clients', CASE WHEN r.name IN ('admin', 'manager', 'hq_manager', 'pmo') THEN 'manage' ELSE 'view' END

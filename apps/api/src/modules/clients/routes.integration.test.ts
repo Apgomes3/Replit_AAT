@@ -89,6 +89,23 @@ describe.skipIf(!process.env.DATABASE_URL)('client directory API (PostgreSQL)', 
     expect(suppliers.body.data.map((c: any) => c.name)).toEqual([`Pumps Unlimited ${tag}`]);
   });
 
+  it('lists the company projects and renames them with the company', async () => {
+    const company = (await call('POST', '/', 'editor', { name: `Pairi Daiza ${tag}`, notes: tag, country: 'Belgium' })).body;
+    const projectId = (await query(
+      `INSERT INTO projects (project_code, project_name, client_id, client_name) VALUES ($1, 'Test project', $2, $3) RETURNING id`,
+      [`T-${tag}`, company.id, company.name])).rows[0].id;
+    try {
+      const detail = await call('GET', `/${company.id}`, 'reader');
+      expect(detail.body.projects.map((p: any) => p.project_code)).toEqual([`T-${tag}`]);
+      expect(detail.body.project_count).toBe(1);
+      await call('PATCH', `/${company.id}`, 'editor', { name: `Pairi Daiza Zoo ${tag}`, allow_duplicate: true });
+      const project = (await query(`SELECT client_name FROM projects WHERE id = $1`, [projectId])).rows[0];
+      expect(project.client_name).toBe(`Pairi Daiza Zoo ${tag}`);
+    } finally {
+      await query(`DELETE FROM projects WHERE id = $1`, [projectId]);
+    }
+  });
+
   it('keeps people with stable ids: primary, phone-only, left and back', async () => {
     const company = (await call('POST', '/', 'editor', { name: `Aquarium of Guam ${tag}`, notes: tag })).body;
     const ana = await call('POST', `/${company.id}/contacts`, 'editor', { name: 'Ana', email: 'ana@guam.test', job_title: 'Curator' });

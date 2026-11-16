@@ -6,6 +6,8 @@ import PageHeader from '../../components/ui/PageHeader';
 import FollowRecordButton from '../../components/ui/FollowRecordButton';
 import QueryError from '../../components/ui/QueryError';
 import MetadataPanel from '../../components/ui/MetadataPanel';
+import ClientPicker from '../../components/clients/ClientPicker';
+import ClientLink from '../../components/clients/ClientLink';
 import StatusBadge from '../../components/ui/StatusBadge';
 import EntityCode from '../../components/ui/EntityCode';
 import DataTable, { Column } from '../../components/ui/DataTable';
@@ -388,6 +390,7 @@ export default function ProjectDetail() {
     setProjectForm({
       project_code: project.project_code || '',
       project_name: project.project_name || '',
+      client_id: project.client_id || '',
       client_name: project.client_name || '',
       site_name: project.site_name || '',
       country: project.country || '',
@@ -412,7 +415,10 @@ export default function ProjectDetail() {
     if (codeChanged && !window.confirm(`Change the project code from ${project.project_code} to ${newCode}?\n\nPlans, tasks and documents stay linked. Codes already issued from the old number (such as BOM release numbers) keep it.`)) return;
     setProjectSaving(true);
     try {
-      await api.put(`/projects/${project.id}`, { ...projectForm, project_code: newCode });
+      await api.put(`/projects/${project.id}`, {
+        ...projectForm, project_code: newCode,
+        client_id: projectForm.client_id || null, client_name: projectForm.client_name || null,
+      });
       toast.success(codeChanged ? `Project code changed to ${newCode}` : 'Project saved');
       qc.invalidateQueries({ queryKey: ['projects'] });
       setEditingProject(false);
@@ -1176,7 +1182,7 @@ export default function ProjectDetail() {
           <div className="col-span-2">
             {!editingProject ? (
               <MetadataPanel fields={[
-                { label: 'Client', value: project.client_name },
+                { label: 'Client', value: project.client_name ? <ClientLink id={project.client_id} name={project.client_name} /> : null },
                 { label: 'Site', value: project.site_name },
                 { label: 'Location', value: [project.city, project.country].filter(Boolean).join(', ') },
                 { label: 'Coordinates', value: project.latitude != null && project.longitude != null ? `${project.latitude}, ${project.longitude}` : null },
@@ -1234,9 +1240,16 @@ export default function ProjectDetail() {
                       className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/30" />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Client</label>
-                    <input value={projectForm.client_name} onChange={e => setProjectForm((f: any) => ({ ...f, client_name: e.target.value }))}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/30" />
+                    <label htmlFor="project-client-input" className="block text-xs font-medium text-slate-600 mb-1">Client</label>
+                    <ClientPicker id="project-client-input" value={projectForm.client_id || null} valueLabel={projectForm.client_id ? projectForm.client_name : null}
+                      placeholder="Search or add a company…"
+                      onChange={c => setProjectForm((f: any) => ({ ...f, client_id: c?.id ?? '', client_name: c?.name ?? '' }))} />
+                    {!projectForm.client_id && projectForm.client_name && (
+                      <p className="text-[11px] text-amber-700 mt-1">
+                        Typed as “{projectForm.client_name}”, not linked to the directory. Choose the company above, or{' '}
+                        <button type="button" className="underline" onClick={() => setProjectForm((f: any) => ({ ...f, client_name: '' }))}>remove it</button>.
+                      </p>
+                    )}
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">Site Name</label>

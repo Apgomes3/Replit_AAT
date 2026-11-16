@@ -26,6 +26,7 @@ export interface Company {
   active: boolean;
   contact_count?: number;
   enquiry_count?: number;
+  project_count?: number;
   primary_contact_id?: string | null;
   primary_contact_name?: string | null;
   primary_contact_email?: string | null;
@@ -49,6 +50,8 @@ export interface CompanyDetail extends Company {
   contacts: Contact[];
   children: Array<Pick<Company, 'id' | 'name' | 'client_code' | 'kinds' | 'country' | 'city' | 'active'>>;
   enquiries: Array<{ id: string; enquiry_number: string; title: string; status: string; received_date: string | null; due_date: string | null; project_code: string | null }>;
+  projects: Array<{ id: string; project_code: string; project_name: string; project_status: string | null; country: string | null; city: string | null; project_manager: string | null; target_completion_date: string | null }>;
+  design_books: Array<{ id: string; book_code: string; book_title: string | null; status: string | null; revision: string | null; project_code: string }>;
 }
 
 export interface CompanyFilter { search?: string; kind?: ClientKind | ''; status?: 'all' | 'active' | 'inactive'; pageSize?: number }

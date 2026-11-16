@@ -53,7 +53,7 @@ export default function ClientsList() {
         : rows.length === 0 ? <div className="p-16 text-center"><Building2 className="mx-auto w-9 h-9 text-[#b8d9d0] mb-3" /><p className="font-bold">No companies found</p></div>
         : <div className="overflow-x-auto"><table className="w-full text-sm">
           <thead className="bg-[#f2f7f4] border-b border-[#dce7e2]"><tr>
-            {['Company', 'Kind', 'Main contact', 'Location', 'People', 'Enquiries'].map(h => <th key={h} className="text-left px-5 py-3 text-[10px] uppercase tracking-[.13em] text-[#6f8082] font-extrabold">{h}</th>)}
+            {['Company', 'Kind', 'Main contact', 'Location', 'People', 'Projects', 'Enquiries'].map(h => <th key={h} className="text-left px-5 py-3 text-[10px] uppercase tracking-[.13em] text-[#6f8082] font-extrabold">{h}</th>)}
           </tr></thead>
           <tbody>{rows.map(c => <tr key={c.id} className="border-b border-[#edf2ef] last:border-0 hover:bg-[#f4faf7]">
             <td className="px-5 py-3.5">
@@ -64,6 +64,7 @@ export default function ClientsList() {
             <td className="px-5 py-3.5 text-[#53686b]">{c.primary_contact_name ?? '—'}<div className="text-xs text-[#8a9b9a]">{c.primary_contact_email ?? c.primary_contact_phone ?? ''}</div></td>
             <td className="px-5 py-3.5 text-[#53686b]">{placeOf(c) || '—'}</td>
             <td className="px-5 py-3.5 text-[#53686b]">{c.contact_count ?? 0}</td>
+            <td className="px-5 py-3.5 text-[#53686b]">{c.project_count ?? 0}</td>
             <td className="px-5 py-3.5 text-[#53686b]">{c.enquiry_count ?? 0}</td>
           </tr>)}</tbody>
         </table></div>}

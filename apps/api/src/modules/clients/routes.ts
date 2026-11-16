@@ -81,6 +81,7 @@ const LIST_SQL = `
   SELECT c.*, p.name AS parent_name,
     (SELECT COUNT(*) FROM client_contacts cc WHERE cc.client_id=c.id AND cc.left_on IS NULL)::int AS contact_count,
     (SELECT COUNT(*) FROM enquiries e WHERE e.client_id=c.id)::int AS enquiry_count,
+    (SELECT COUNT(*) FROM projects pr WHERE pr.client_id=c.id)::int AS project_count,
     pc.id AS primary_contact_id, pc.name AS primary_contact_name, pc.email AS primary_contact_email,
     COALESCE(pc.phone, pc.mobile) AS primary_contact_phone
   FROM clients c
@@ -171,13 +172,20 @@ router.get('/:id', async (req, res, next) => {
     if (!isUuid(id)) return fail(res, 400, 'VALIDATION', 'id must be a company id');
     const company = (await query(`${LIST_SQL} WHERE c.id=$1`, [id])).rows[0];
     if (!company) return fail(res, 404, 'NOT_FOUND', 'Company not found');
-    const [contacts, children, enquiries] = await Promise.all([
+    const [contacts, children, enquiries, projects, designBooks] = await Promise.all([
       query(`SELECT * FROM client_contacts WHERE client_id=$1 ORDER BY (left_on IS NOT NULL), is_primary DESC, name, id`, [id]),
       query(`SELECT id, name, client_code, kinds, country, city, active FROM clients WHERE parent_client_id=$1 ORDER BY name`, [id]),
       query(`SELECT e.id, e.enquiry_number, e.title, e.status, e.received_date, e.due_date, p.project_code
              FROM enquiries e LEFT JOIN projects p ON p.id=e.project_id WHERE e.client_id=$1 ORDER BY e.updated_at DESC`, [id]),
+      query(`SELECT id, project_code, project_name, project_status, country, city, project_manager, target_completion_date
+             FROM projects WHERE client_id=$1 ORDER BY project_code`, [id]),
+      query(`SELECT d.id, d.book_code, d.book_title, d.status, d.revision, p.project_code
+             FROM design_books d JOIN projects p ON p.id=d.project_id WHERE p.client_id=$1 ORDER BY p.project_code, d.book_code`, [id]),
     ]);
-    res.json({ ...companyOut(company), contacts: contacts.rows, children: children.rows, enquiries: enquiries.rows });
+    res.json({
+      ...companyOut(company), contacts: contacts.rows, children: children.rows, enquiries: enquiries.rows,
+      projects: projects.rows, design_books: designBooks.rows,
+    });
   } catch (e) { next(e); }
 });
 
@@ -208,7 +216,10 @@ router.patch('/:id', manage, async (req: AuthRequest, res, next) => {
       if (c.address !== undefined) put('address', c.address ? { display_name: c.address } : {});
       if (c.active !== undefined) { put('active', c.active); put('status', c.active ? 'active' : 'inactive'); }
       put('updated_by', req.user!.id);
-      return (await db.query(`UPDATE clients SET ${set.join(', ')}, updated_at=NOW() WHERE id=$1 RETURNING *`, values)).rows[0];
+      const row = (await db.query(`UPDATE clients SET ${set.join(', ')}, updated_at=NOW() WHERE id=$1 RETURNING *`, values)).rows[0];
+      // Projects keep the company's current name as their client_name.
+      if (c.name && c.name !== before.name) await db.query('UPDATE projects SET client_name=$2 WHERE client_id=$1', [id, c.name]);
+      return row;
     });
     await logAudit(req.user!.id, 'client', id, 'UPDATE', { summary: `Company ${updated.name} updated`, fields: Object.keys(c) });
     res.json(companyOut(updated));

@@ -82,6 +82,25 @@ describe.skipIf(!process.env.DATABASE_URL)('changing a project code (PostgreSQL)
     expect(after.rows[0].project_code).toBe(`T-${suffix}-123`);
   });
 
+  it('links a project to a directory company and keeps its name in client_name', async () => {
+    const [placeholder] = projectIds;
+    const company = (await query(`INSERT INTO clients (client_code, name, notes) VALUES ($1, $2, 'test') RETURNING id`,
+      [`T-${suffix}`, `Aquarium of Guam ${suffix}`])).rows[0].id;
+    try {
+      const linked = await put(placeholder, { project_name: 'NZ Underwater UV', project_status: 'Concept', client_id: company, client_name: 'ignored text' });
+      expect(linked.body).toMatchObject({ client_id: company, client_name: `Aquarium of Guam ${suffix}` });
+      // A save that does not mention the client leaves it alone.
+      expect((await put(placeholder, { project_name: 'NZ Underwater UV', project_status: 'Concept' })).body.client_id).toBe(company);
+      // Unlinking keeps typed text, and an unknown company is refused.
+      const unlinked = await put(placeholder, { project_name: 'NZ Underwater UV', project_status: 'Concept', client_id: null, client_name: 'Someone' });
+      expect(unlinked.body).toMatchObject({ client_id: null, client_name: 'Someone' });
+      expect((await put(placeholder, { project_name: 'X', project_status: 'Concept', client_id: '00000000-0000-4000-8000-000000000000' })).status).toBe(400);
+    } finally {
+      await query(`UPDATE projects SET client_id = NULL WHERE client_id = $1`, [company]);
+      await query(`DELETE FROM clients WHERE id = $1`, [company]);
+    }
+  });
+
   it('leaves the code alone when the body has none, and refuses an empty one', async () => {
     const [placeholder] = projectIds;
     expect((await put(placeholder, { project_name: 'Renamed', project_status: 'Concept' })).body.project_code).toBe(`T-${suffix}-123`);

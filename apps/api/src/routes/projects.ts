@@ -410,7 +410,8 @@ router.get('/projects', authenticate, async (req: AuthRequest, res: Response) =>
   const params: any[] = [];
 
   if (req.query.status) { params.push(req.query.status); filters.push(`project_status = $${params.length}`); }
-  if (req.query.q) { params.push(`%${req.query.q}%`); filters.push(`(project_name ILIKE $${params.length} OR project_code ILIKE $${params.length})`); }
+  if (req.query.q) { params.push(`%${req.query.q}%`); filters.push(`(project_name ILIKE $${params.length} OR project_code ILIKE $${params.length} OR client_name ILIKE $${params.length})`); }
+  if (typeof req.query.client_id === 'string' && /^[0-9a-f-]{36}$/i.test(req.query.client_id)) { params.push(req.query.client_id); filters.push(`client_id = $${params.length}`); }
 
   const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
   const sort = buildSort(req.query.sort as string);
@@ -430,16 +431,36 @@ router.get('/projects/:id', authenticate, async (req: AuthRequest, res: Response
   res.json(result.rows[0]);
 });
 
+/**
+ * The client a project body asks for: `client_id` (a directory company, whose name becomes
+ * client_name) wins over free-text `client_name`. `present` is false when the body names neither.
+ */
+export async function resolveProjectClient(body: any): Promise<{ present: boolean; client_id: string | null; client_name: string | null } | { error: string }> {
+  const hasId = Object.prototype.hasOwnProperty.call(body ?? {}, 'client_id');
+  const hasName = Object.prototype.hasOwnProperty.call(body ?? {}, 'client_name');
+  const text = typeof body?.client_name === 'string' && body.client_name.trim() ? body.client_name.trim() : null;
+  if (hasId && body.client_id) {
+    if (typeof body.client_id !== 'string' || !/^[0-9a-f-]{36}$/i.test(body.client_id)) return { error: 'client_id must be a company id' };
+    const company = (await query('SELECT id, name FROM clients WHERE id=$1', [body.client_id])).rows[0];
+    if (!company) return { error: 'That client is not in the directory' };
+    return { present: true, client_id: company.id, client_name: company.name };
+  }
+  if (hasId || hasName) return { present: true, client_id: null, client_name: text };
+  return { present: false, client_id: null, client_name: null };
+}
+
 router.post('/projects', authenticate, async (req: AuthRequest, res: Response) => {
-  const { project_code, project_name, client_name, site_name, country, city, timezone, project_status, start_date, target_completion_date, project_manager, engineering_manager, qa_owner, notes, scopes } = req.body;
+  const { project_code, project_name, site_name, country, city, timezone, project_status, start_date, target_completion_date, project_manager, engineering_manager, qa_owner, notes, scopes } = req.body;
   if (!project_code || !project_name) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'project_code and project_name required' } });
   const toDate = (v: any) => (v === '' || v == null) ? null : v;
   const toStr  = (v: any) => (v === '' || v == null) ? null : String(v);
+  const client = await resolveProjectClient(req.body);
+  if ('error' in client) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: client.error } });
   const resolvedScopes = (Array.isArray(scopes) && scopes.length > 0) ? scopes : ['LSS', 'Tanks', 'Waterproofing', 'Theming', 'Acrylic'];
   const result = await query(
-    `INSERT INTO projects (project_code, project_name, client_name, site_name, country, city, timezone, project_status, start_date, target_completion_date, project_manager, engineering_manager, qa_owner, notes, project_scopes, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
-    [project_code, project_name, toStr(client_name), toStr(site_name), toStr(country), toStr(city), toStr(timezone), project_status || 'Concept', toDate(start_date), toDate(target_completion_date), toStr(project_manager), toStr(engineering_manager), toStr(qa_owner), toStr(notes), resolvedScopes, req.user!.id]
+    `INSERT INTO projects (project_code, project_name, client_name, site_name, country, city, timezone, project_status, start_date, target_completion_date, project_manager, engineering_manager, qa_owner, notes, project_scopes, created_by, client_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *`,
+    [project_code, project_name, client.client_name, toStr(site_name), toStr(country), toStr(city), toStr(timezone), project_status || 'Concept', toDate(start_date), toDate(target_completion_date), toStr(project_manager), toStr(engineering_manager), toStr(qa_owner), toStr(notes), resolvedScopes, req.user!.id, client.client_id]
   );
   res.status(201).json(result.rows[0]);
 });
@@ -465,6 +486,8 @@ router.put('/projects/:id', authenticate, async (req: AuthRequest, res: Response
     if ('error' in cleaned) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: cleaned.error } });
     newCode = cleaned.code;
   }
+  const client = await resolveProjectClient(req.body);
+  if ('error' in client) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: client.error } });
   const before = await query('SELECT project_code FROM projects WHERE id=$1', [req.params.id]);
   if (!before.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Project not found' } });
   const oldCode: string = before.rows[0].project_code;
@@ -478,10 +501,10 @@ router.put('/projects/:id', authenticate, async (req: AuthRequest, res: Response
   try {
     result = await withTransaction(async db => {
     const updated = await db.query(
-    `UPDATE projects SET project_name=$1, client_name=$2, site_name=$3, country=$4, city=$5, latitude=$6, longitude=$7, project_status=$8, start_date=$9, target_completion_date=$10, project_manager=$11, engineering_manager=$12, qa_owner=$13, notes=$14, project_scopes=COALESCE($15, project_scopes),
-       project_code=COALESCE($17, project_code), updated_at=NOW()
+    `UPDATE projects SET project_name=$1, client_name=CASE WHEN $18 THEN $2 ELSE client_name END, site_name=$3, country=$4, city=$5, latitude=$6, longitude=$7, project_status=$8, start_date=$9, target_completion_date=$10, project_manager=$11, engineering_manager=$12, qa_owner=$13, notes=$14, project_scopes=COALESCE($15, project_scopes),
+       project_code=COALESCE($17, project_code), client_id=CASE WHEN $18 THEN $19::uuid ELSE client_id END, updated_at=NOW()
      WHERE id=$16 RETURNING *`,
-    [toStr(project_name), toStr(client_name), toStr(site_name), toStr(country), toStr(city), toNum(latitude), toNum(longitude), project_status, toDate(start_date), toDate(target_completion_date), toStr(project_manager), toStr(engineering_manager), toStr(qa_owner), toStr(notes), Array.isArray(project_scopes) ? project_scopes : null, req.params.id, newCode]
+    [toStr(project_name), client.client_name, toStr(site_name), toStr(country), toStr(city), toNum(latitude), toNum(longitude), project_status, toDate(start_date), toDate(target_completion_date), toStr(project_manager), toStr(engineering_manager), toStr(qa_owner), toStr(notes), Array.isArray(project_scopes) ? project_scopes : null, req.params.id, newCode, client.present, client.client_id]
     );
     if (updated.rows[0]) {
       await emitNotification(db, {
