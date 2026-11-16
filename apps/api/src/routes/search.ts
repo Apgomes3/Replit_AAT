@@ -5,25 +5,32 @@ import { ModuleAccessKey } from '../lib/moduleAccess';
 import { isEditorRole } from '../lib/roles';
 
 const router = Router();
-type RecordType = 'project' | 'system' | 'equipment' | 'product' | 'material' | 'document' | 'purchase_order' | 'client' | 'enquiry' | 'design_book' | 'notification' | 'audit_event';
-type Adapter = { type: RecordType; module: ModuleAccessKey | 'admin'; sql: string; searchOnly?: boolean };
+type RecordType = 'project' | 'system' | 'equipment' | 'product' | 'component' | 'material' | 'document' | 'purchase_order' | 'client' | 'contact' | 'enquiry' | 'design_book' | 'drafting_plan' | 'person' | 'notification' | 'audit_event';
+// 'people' (colleagues) is open to everyone signed in; 'admin' records only to editor roles.
+type Adapter = { type: RecordType; module: ModuleAccessKey | 'admin' | 'people'; sql: string; searchOnly?: boolean };
 
 // Each adapter returns the same columns. Keep predicates here (not in the browser):
 // both the page and its count must operate on the same authorized set.
 const adapters: Adapter[] = [
-  { type: 'project', module: 'projects', sql: `SELECT p.id::text id, p.project_code::text code, p.project_name::text name, p.project_status::text status, NULL::text project_code, NULL::text system_id, p.created_by::text owner_id, NULL::date due_date, p.updated_at FROM projects p` },
+  { type: 'project', module: 'projects', sql: `SELECT p.id::text id, p.project_code::text code, CONCAT_WS(' · ', p.project_name, NULLIF(p.client_name, p.project_name))::text name, p.project_status::text status, NULL::text project_code, NULL::text system_id, p.created_by::text owner_id, NULL::date due_date, p.updated_at FROM projects p` },
   { type: 'system', module: 'projects', sql: `SELECT s.id::text, s.system_code::text, s.system_name::text, s.status::text, p.project_code::text, s.id::text, NULL::text, NULL::date, s.updated_at FROM systems s JOIN projects p ON p.id=s.project_id` },
   { type: 'equipment', module: 'projects', sql: `SELECT pei.id::text, pei.equip_code::text, COALESCE(pei.description,pm.product_name,pei.equip_code)::text, pei.status::text, p.project_code::text, COALESCE(pei.system_id::text,'project:' || pei.project_id::text), NULL::text, NULL::date, pei.updated_at FROM project_equipment_items pei JOIN projects p ON p.id=pei.project_id LEFT JOIN product_masters pm ON pm.id=pei.product_master_id` },
-  { type: 'product', module: 'pim', sql: `SELECT pm.id::text, pm.product_code::text, pm.product_name::text, pm.standard_status::text, NULL::text, NULL::text, NULL::text, NULL::date, pm.updated_at FROM product_masters pm` },
+  { type: 'product', module: 'pim', sql: `SELECT pm.id::text, pm.product_code::text, CONCAT_WS(' · ', pm.product_name, NULLIF(CONCAT_WS(' ', pm.manufacturer, pm.model), ''))::text, pm.standard_status::text, NULL::text, NULL::text, NULL::text, NULL::date, pm.updated_at FROM product_masters pm` },
+  { type: 'component', module: 'pim', sql: `SELECT co.id::text, co.component_code::text, CONCAT_WS(' · ', co.component_name, NULLIF(CONCAT_WS(' ', co.manufacturer, co.model), ''))::text, co.status::text, NULL::text, NULL::text, co.created_by::text, NULL::date, co.updated_at FROM components co` },
   { type: 'material', module: 'knowledge', sql: `SELECT m.id::text, m.material_code::text, m.material_name::text, m.status::text, NULL::text, NULL::text, NULL::text, NULL::date, m.updated_at FROM materials m` },
   { type: 'document', module: 'documents', sql: `SELECT d.id::text, d.document_code::text, d.document_title::text, d.status::text, NULL::text, NULL::text, d.created_by::text, NULL::date, d.updated_at FROM documents d` },
   { type: 'purchase_order', module: 'orders', sql: `SELECT po.id::text, po.po_code::text, COALESCE(proj.project_name,po.po_code)::text, po.status::text, proj.project_code::text, NULL::text, po.created_by::text, COALESCE(po.stage_due_date,po.required_by_date)::date, po.updated_at FROM purchase_orders po LEFT JOIN projects proj ON proj.id=po.project_id WHERE ($1::boolean OR po.created_by=$2::uuid OR EXISTS (SELECT 1 FROM po_designated_users pd WHERE pd.po_id=po.id AND pd.user_id=$2::uuid) OR EXISTS (SELECT 1 FROM po_stage_assignees psa WHERE psa.stage=po.status AND psa.user_id=$2::uuid))` },
-  { type: 'client', module: 'clients', sql: `SELECT c.id::text, c.client_code::text, c.name::text, c.status::text, NULL::text, NULL::text, c.created_by::text, NULL::date, c.updated_at FROM clients c` },
+  { type: 'client', module: 'clients', sql: `SELECT c.id::text, c.client_code::text, CONCAT_WS(' · ', c.name, NULLIF(c.legal_name, c.name), NULLIF(CONCAT_WS(', ', c.city, c.country), ''))::text, c.status::text, NULL::text, NULL::text, c.created_by::text, NULL::date, c.updated_at FROM clients c` },
+  // A client's person: code is their email, name reads "Name · Job title · Company"; system_id carries the company id for the link.
+  { type: 'contact', module: 'clients', sql: `SELECT cc.id::text, cc.email::text, CONCAT_WS(' · ', cc.name, cc.job_title, c.name)::text, CASE WHEN cc.left_on IS NULL THEN NULL ELSE 'left' END::text, NULL::text, cc.client_id::text, cc.created_by::text, NULL::date, cc.updated_at FROM client_contacts cc JOIN clients c ON c.id=cc.client_id` },
+  // Colleagues: active users. code is the email, name reads "Name · Job position".
+  { type: 'person', module: 'people', sql: `SELECT u.id::text, u.email::text, CONCAT_WS(' · ', NULLIF(TRIM(CONCAT_WS(' ', u.first_name, u.last_name)), ''), u.job_title)::text, NULL::text, NULL::text, NULL::text, NULL::text, NULL::date, u.updated_at FROM users u WHERE u.is_active IS NOT FALSE` },
+  { type: 'drafting_plan', module: 'drafting', sql: `SELECT dp.id::text, dp.plan_code::text, dp.name::text, dp.status::text, p.project_code::text, NULL::text, dp.created_by::text, dp.target_date::date, dp.updated_at FROM drafting_plans dp LEFT JOIN projects p ON p.id=dp.project_id` },
   { type: 'enquiry', module: 'business_development', sql: `SELECT e.id::text, e.enquiry_number::text, e.title::text, e.status::text, NULL::text, NULL::text, e.created_by::text, e.due_date::date, e.updated_at FROM enquiries e` },
   { type: 'design_book', module: 'design_books', sql: `SELECT db.id::text, db.book_code::text, db.book_title::text, db.status::text, p.project_code::text, NULL::text, db.created_by::text, NULL::date, db.updated_at FROM design_books db LEFT JOIN projects p ON p.id=db.project_id` },
   // Only PO notifications whose target is still visible are searchable. A deleted or
   // subsequently restricted PO must not leak its old notification title.
-  { type: 'notification', module: 'orders', searchOnly: true, sql: `SELECT n.id::text, po.po_code::text, n.title::text, CASE WHEN n.is_read THEN 'read' ELSE 'unread' END::text, NULL::text, po.id::text, n.user_id::text, NULL::date, n.created_at FROM notifications n JOIN purchase_orders po ON n.entity_type='purchase_order' AND n.entity_id=po.id WHERE n.user_id=$2::uuid AND ($1::boolean OR po.created_by=$2::uuid OR EXISTS (SELECT 1 FROM po_designated_users pd WHERE pd.po_id=po.id AND pd.user_id=$2::uuid) OR EXISTS (SELECT 1 FROM po_stage_assignees psa WHERE psa.stage=po.status AND psa.user_id=$2::uuid))` },
+  { type: 'notification', module: 'orders', searchOnly: true, sql: `SELECT n.id::text, po.po_code::text, n.title::text, CASE WHEN n.is_read THEN 'read' ELSE 'unread' END::text, NULL::text, po.id::text, n.user_id::text, NULL::date, n.created_at FROM notifications n JOIN purchase_orders po ON n.entity_type='purchase_order' AND n.entity_id=po.id::text WHERE n.user_id=$2::uuid AND ($1::boolean OR po.created_by=$2::uuid OR EXISTS (SELECT 1 FROM po_designated_users pd WHERE pd.po_id=po.id AND pd.user_id=$2::uuid) OR EXISTS (SELECT 1 FROM po_stage_assignees psa WHERE psa.stage=po.status AND psa.user_id=$2::uuid))` },
   { type: 'audit_event', module: 'admin', searchOnly: true, sql: `SELECT al.id::text, al.entity_id::text, al.action::text, al.action::text, NULL::text, al.entity_type::text, al.actor_id::text, NULL::date, al.created_at FROM audit_logs al` },
 ];
 
@@ -56,12 +63,15 @@ function source(available: Adapter[]) {
 function href(row: any): string {
   const roots: Record<RecordType, string> = {
     project: '/projects', system: '/systems', equipment: '/systems', product: '/products/masters',
-    material: '/knowledge/materials', document: '/documents', purchase_order: '/purchase-orders',
-    client: '/clients', enquiry: '/enquiries', design_book: '/design-books',
+    component: '/products/components', material: '/knowledge/materials', document: '/documents',
+    purchase_order: '/purchase-orders', client: '/clients', contact: '/clients', enquiry: '/enquiries',
+    design_book: '/design-books', drafting_plan: '/drafting/plans', person: '/admin/users',
     notification: '/purchase-orders', audit_event: '/admin/audit-log',
   };
   return row.type === 'equipment' ? row.system_id?.startsWith('project:') ? `/projects/${row.system_id.slice(8)}?equipment=${row.id}` : `/systems/${row.system_id}?equipment=${row.id}` :
     row.type === 'notification' ? `/purchase-orders/${row.system_id}` :
+    row.type === 'contact' ? `/clients/${row.system_id}` :
+    row.type === 'person' ? `/admin/users?q=${encodeURIComponent(row.code || '')}` :
     row.type === 'audit_event' ? `/admin/audit-log?entity_type=${encodeURIComponent(row.system_id || '')}&entity_id=${encodeURIComponent(row.code || '')}` :
     `${roots[row.type as RecordType]}/${row.id}`;
 }

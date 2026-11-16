@@ -10,15 +10,15 @@ import QueryError from '../../components/ui/QueryError';
 import { supportError } from '../../lib/supportError';
 
 const labels: Record<string, string> = {
-  project: 'Project', system: 'System', equipment: 'Equipment', product: 'Product',
-  material: 'Material', document: 'Document', purchase_order: 'Purchase Order',
-  client: 'Client', enquiry: 'Enquiry', design_book: 'Design Book',
-  notification: 'Notification', audit_event: 'Audit event',
+  person: 'Person', project: 'Project', system: 'System', equipment: 'Equipment', product: 'Product',
+  component: 'Component', material: 'Material', document: 'Document', purchase_order: 'Purchase Order',
+  client: 'Client', contact: 'Client contact', enquiry: 'Enquiry', design_book: 'Design Book',
+  drafting_plan: 'Drafting plan', notification: 'Notification', audit_event: 'Audit event',
 };
 const modules = [
-  ['projects', 'Projects'], ['orders', 'Orders'], ['design_books', 'Design Books'],
-  ['pim', 'Products'], ['business_development', 'Business Development'],
-  ['documents', 'Documents'], ['knowledge', 'Knowledge'],
+  ['people', 'People'], ['projects', 'Projects'], ['clients', 'Clients & contacts'], ['orders', 'Orders'],
+  ['design_books', 'Design Books'], ['drafting', 'Drafting'], ['pim', 'Products'],
+  ['business_development', 'Business Development'], ['documents', 'Documents'], ['knowledge', 'Knowledge'],
   ['admin', 'Audit'],
 ];
 
@@ -51,7 +51,7 @@ export default function SearchPage({ work = false }: { work?: boolean }) {
       </div>
       <form onSubmit={e => { e.preventDefault(); update('q', draft.trim()); }} className="flex gap-2 mb-4">
         <input aria-label="Search records" value={draft} onChange={e => setDraft(e.target.value)}
-          placeholder={work ? 'Filter your work' : 'Search records by name or code'}
+          placeholder={work ? 'Filter your work' : 'Search people, projects, clients, products… by name or code'}
           className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm" />
         <button className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm">Search</button>
       </form>

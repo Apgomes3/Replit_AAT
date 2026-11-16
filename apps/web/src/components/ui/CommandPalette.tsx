@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   Search, X, ArrowRight, Package, FolderOpen, Network,
-  Wrench, BookOpen, FileText, Clock, Hash, ExternalLink,
+  Wrench, BookOpen, FileText, Clock, Hash, ExternalLink, User, Building2, Contact,
+  ClipboardCheck, BookMarked, PencilRuler, Boxes, ShoppingCart, Bell,
 } from 'lucide-react';
 import clsx from 'clsx';
 import api from '../../lib/api';
@@ -29,13 +30,25 @@ type SearchResult = {
 type RecentItem = { href: string; label: string; code?: string; type: string };
 
 const TYPE_CONFIG: Record<string, { label: string; icon: any; color: string; dot: string }> = {
-  project:   { label: 'Project',   icon: FolderOpen, color: 'text-blue-600',   dot: 'bg-blue-500'   },
-  system:    { label: 'System',    icon: Network,    color: 'text-sky-600',    dot: 'bg-sky-500'    },
-  equipment: { label: 'Equipment', icon: Wrench,     color: 'text-indigo-600', dot: 'bg-indigo-500' },
-  product:   { label: 'Product',   icon: Package,    color: 'text-blue-600',   dot: 'bg-blue-500'   },
-  material:  { label: 'Material',  icon: BookOpen,   color: 'text-stone-500',  dot: 'bg-stone-400'  },
-  document:  { label: 'Document',  icon: FileText,   color: 'text-blue-600',   dot: 'bg-blue-500'   },
+  person:         { label: 'Person',         icon: User,          color: 'text-emerald-600', dot: 'bg-emerald-500' },
+  project:        { label: 'Project',        icon: FolderOpen,    color: 'text-blue-600',    dot: 'bg-blue-500'    },
+  client:         { label: 'Client',         icon: Building2,     color: 'text-teal-700',    dot: 'bg-teal-600'    },
+  contact:        { label: 'Client contact', icon: Contact,       color: 'text-teal-700',    dot: 'bg-teal-500'    },
+  enquiry:        { label: 'Enquiry',        icon: ClipboardCheck,color: 'text-teal-700',    dot: 'bg-teal-500'    },
+  design_book:    { label: 'Design Book',    icon: BookMarked,    color: 'text-violet-600',  dot: 'bg-violet-500'  },
+  drafting_plan:  { label: 'Drafting plan',  icon: PencilRuler,   color: 'text-amber-700',   dot: 'bg-amber-500'   },
+  system:         { label: 'System',         icon: Network,       color: 'text-sky-600',     dot: 'bg-sky-500'     },
+  equipment:      { label: 'Equipment',      icon: Wrench,        color: 'text-indigo-600',  dot: 'bg-indigo-500'  },
+  product:        { label: 'Product',        icon: Package,       color: 'text-blue-600',    dot: 'bg-blue-500'    },
+  component:      { label: 'Component',      icon: Boxes,         color: 'text-blue-600',    dot: 'bg-blue-400'    },
+  purchase_order: { label: 'Purchase Order', icon: ShoppingCart,  color: 'text-orange-600',  dot: 'bg-orange-500'  },
+  material:       { label: 'Material',       icon: BookOpen,      color: 'text-stone-500',   dot: 'bg-stone-400'   },
+  document:       { label: 'Document',       icon: FileText,      color: 'text-blue-600',    dot: 'bg-blue-500'    },
+  notification:   { label: 'Notification',   icon: Bell,          color: 'text-stone-500',   dot: 'bg-stone-400'   },
+  audit_event:    { label: 'Audit event',    icon: Hash,          color: 'text-stone-500',   dot: 'bg-stone-400'   },
 };
+const OTHER_TYPE = { label: 'Record', icon: Hash, color: 'text-stone-500', dot: 'bg-stone-400' };
+const pluralLabel = (label: string) => label === 'Person' ? 'People' : label.endsWith('y') ? `${label.slice(0, -1)}ies` : `${label}s`;
 
 function loadRecent(): RecentItem[] {
   try { return JSON.parse(localStorage.getItem(RECENT_KEY) || '[]'); } catch { return []; }
@@ -73,7 +86,7 @@ export default function CommandPalette() {
 
   const { data, isFetching } = useQuery({
     queryKey: ['cmd-search', debouncedQ],
-    queryFn: () => api.get(`/search?q=${encodeURIComponent(debouncedQ)}`).then(r => r.data),
+    queryFn: () => api.get(`/search?q=${encodeURIComponent(debouncedQ)}&page_size=40`).then(r => r.data),
     enabled: debouncedQ.trim().length >= 2,
     staleTime: 10000,
   });
@@ -202,7 +215,7 @@ export default function CommandPalette() {
                     </button>
                   </div>
                   {recent.map(item => {
-                    const cfg = TYPE_CONFIG[item.type] ?? TYPE_CONFIG['product'];
+                    const cfg = TYPE_CONFIG[item.type] ?? OTHER_TYPE;
                     const Icon = cfg.icon;
                     return (
                       <button key={item.href} onClick={() => navigate_(item.href, item)}
@@ -219,7 +232,7 @@ export default function CommandPalette() {
               ) : (
                 <div className="px-4 py-8 text-center">
                   <Search className="w-8 h-8 text-stone-200 mx-auto mb-2" />
-                  <p className="text-sm text-stone-400">Search across products, projects, documents and more</p>
+                  <p className="text-sm text-stone-400">Search people, projects, clients, products, documents and more</p>
                   <p className="text-xs text-stone-300 mt-1">Type at least 2 characters to start</p>
                 </div>
               )}
@@ -269,14 +282,14 @@ export default function CommandPalette() {
           )}
 
           {showResults && Object.entries(grouped).map(([type, items]) => {
-            const cfg = TYPE_CONFIG[type] ?? TYPE_CONFIG['product'];
+            const cfg = TYPE_CONFIG[type] ?? OTHER_TYPE;
             const Icon = cfg.icon;
             return (
               <div key={type}>
                 <div className="flex items-center gap-2 px-4 pt-3 pb-1">
                   <span className={clsx('w-1.5 h-1.5 rounded-full shrink-0', cfg.dot)} />
                   <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">
-                    {cfg.label}s
+                    {pluralLabel(cfg.label)}
                   </span>
                   <span className="text-[10px] text-stone-300 ml-auto">{items.length}</span>
                 </div>

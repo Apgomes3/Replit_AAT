@@ -705,7 +705,8 @@ export default function AdminUsers() {
   const isAdmin = currentUser?.role === 'admin';
 
   // Filters / pagination / sort
-  const [searchQ, setSearchQ] = useState('');
+  // A search result for a person opens this page with ?q=<their email>.
+  const [searchQ, setSearchQ] = useState(() => new URLSearchParams(window.location.search).get('q') ?? '');
   const [roleFilter, setRoleFilter] = useState('');
   const [page, setPage] = useState(1);
   const [sortKey, setSortKey] = useState<SortKey>('created');
