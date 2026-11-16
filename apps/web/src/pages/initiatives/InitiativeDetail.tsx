@@ -6,6 +6,7 @@ import toast from 'react-hot-toast';
 import api from '../../lib/api';
 import { useAuthStore } from '../../store/authStore';
 import InitiativeFormModal from './InitiativeFormModal';
+import { LinkedPlans } from '../plans/MyPlansPage';
 import {
   apiError, COST_CATEGORIES, CURRENCIES, hours, InitiativeDetail as Detail, LINK_TYPES, money, NEXT_STAGES, Stage, STAGES, STAGE_TONES, TYPES,
   useAddCost, useAddLink, useDeleteCost, useDeleteLink, useDeleteTime, useInitiative, useLogTime, useMoveStage,
@@ -93,6 +94,11 @@ export default function InitiativeDetail() {
           {i.description && <div><h2 className={h2}>Description</h2><p className="mt-2 text-sm text-stone-700 whitespace-pre-line">{i.description}</p></div>}
           {i.outcome && <div><h2 className={h2}>Outcome</h2><p className="mt-2 text-sm text-stone-700 whitespace-pre-line">{i.outcome}</p></div>}
         </section>}
+        <section className={`${card} p-5`} aria-labelledby="ini-plans">
+          <h2 id="ini-plans" className={h2}>Plans</h2>
+          <p className="mt-1 mb-3 text-xs text-stone-500">Task plans with dates, dependencies and people (Gantt); their tasks count in everyone's workload.</p>
+          <LinkedPlans initiativeId={i.id} />
+        </section>
         <TimePanel i={i} />
         <CostsPanel i={i} />
         <TasksPanel i={i} />

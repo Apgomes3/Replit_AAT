@@ -1,7 +1,7 @@
 // All SQL for the drafting module lives here; routes never build queries.
 import type { PoolClient } from 'pg';
 import { query, withTransaction } from '../../db';
-import type { GroupInput, LinkInput, PlanInput, PlanStatus, TaskInput, TaskPriority, TaskStatus, TeamInput } from './validation';
+import type { GroupInput, LinkInput, PlanInput, PlanStatus, PlanVisibility, TaskInput, TaskPriority, TaskStatus, TeamInput } from './validation';
 import { computeFloat, DateChange, LinkType, pushSchedule, shortfallDays } from './schedule';
 import { loadPlanCalendar } from '../planning/repository';
 import { workingDaysBetween, workingDayShift } from '../planning/calendar';
@@ -31,8 +31,15 @@ export type Plan = {
   start_date: string | null;
   target_date: string | null;
   description: string | null;
-  project: { id: string; code: string; name: string };
-  team: { id: string; name: string; manager_name: string | null };
+  project: { id: string; code: string; name: string } | null;
+  team: { id: string; name: string; department: string; manager_name: string | null } | null;
+  design_book: { id: string; code: string; title: string } | null;
+  enquiry: { id: string; number: string; title: string } | null;
+  /** Internal work this plan is for (initiatives module). */
+  initiative: { id: string; code: string; title: string } | null;
+  owner: { id: string; name: string } | null;
+  visibility: PlanVisibility;
+  members: Array<{ id: string; name: string }>;
   task_count: number;
   done_count: number;
   late_count: number;
@@ -121,18 +128,30 @@ const PLAN_SELECT = `
   SELECT p.id, p.plan_code, p.name, p.status, p.description, p.created_at, p.updated_at,
     to_char(p.start_date, 'YYYY-MM-DD') AS start_date,
     to_char(p.target_date, 'YYYY-MM-DD') AS target_date,
-    json_build_object('id', pr.id, 'code', pr.project_code, 'name', pr.project_name) AS project,
-    json_build_object('id', t.id, 'name', t.name,
-      'manager_name', COALESCE(NULLIF(TRIM(CONCAT_WS(' ', m.first_name, m.last_name)), ''), m.email)) AS team,
+    CASE WHEN pr.id IS NULL THEN NULL ELSE json_build_object('id', pr.id, 'code', pr.project_code, 'name', pr.project_name) END AS project,
+    CASE WHEN t.id IS NULL THEN NULL ELSE json_build_object('id', t.id, 'name', t.name, 'department', t.department,
+      'manager_name', COALESCE(NULLIF(TRIM(CONCAT_WS(' ', m.first_name, m.last_name)), ''), m.email)) END AS team,
+    CASE WHEN db.id IS NULL THEN NULL ELSE json_build_object('id', db.id, 'code', db.book_code, 'title', db.book_title) END AS design_book,
+    CASE WHEN e.id IS NULL THEN NULL ELSE json_build_object('id', e.id, 'number', e.enquiry_number, 'title', e.title) END AS enquiry,
+    CASE WHEN ini.id IS NULL THEN NULL ELSE json_build_object('id', ini.id, 'code', ini.code, 'title', ini.title) END AS initiative,
+    CASE WHEN o.id IS NULL THEN NULL ELSE json_build_object('id', o.id,
+      'name', COALESCE(NULLIF(TRIM(CONCAT_WS(' ', o.first_name, o.last_name)), ''), o.email)) END AS owner,
+    p.visibility,
+    COALESCE((SELECT json_agg(json_build_object('id', u.id, 'name', ${PERSON_NAME}) ORDER BY u.first_name, u.last_name)
+      FROM planning_plan_members pm JOIN users u ON u.id = pm.user_id WHERE pm.plan_id = p.id), '[]'::json) AS members,
     (SELECT COUNT(*)::int FROM drafting_tasks dt WHERE dt.plan_id = p.id) AS task_count,
     (SELECT COUNT(*)::int FROM drafting_tasks dt WHERE dt.plan_id = p.id AND dt.status = 'done') AS done_count,
     (SELECT COUNT(*)::int FROM drafting_tasks dt
       WHERE dt.plan_id = p.id AND dt.status <> 'done' AND dt.due_date < CURRENT_DATE) AS late_count,
     p.calendar_id, COALESCE(pc.name, dc.name) AS calendar_name, p.auto_schedule, p.baseline_set_at
   FROM drafting_plans p
-  JOIN projects pr ON pr.id = p.project_id
-  JOIN drafting_teams t ON t.id = p.team_id
+  LEFT JOIN projects pr ON pr.id = p.project_id
+  LEFT JOIN drafting_teams t ON t.id = p.team_id
   LEFT JOIN users m ON m.id = t.manager_user_id
+  LEFT JOIN design_books db ON db.id = p.design_book_id
+  LEFT JOIN enquiries e ON e.id = p.enquiry_id
+  LEFT JOIN initiatives ini ON ini.id = p.initiative_id
+  LEFT JOIN users o ON o.id = p.owner_user_id
   LEFT JOIN planning_calendars pc ON pc.id = p.calendar_id
   LEFT JOIN planning_calendars dc ON dc.is_default`;
 
@@ -221,37 +240,144 @@ export async function updateTeam(id: string, input: TeamInput, actorId: string):
 
 // ---------- plans ----------
 
-export type PlanFilters = { team_id?: string; project_id?: string; status?: string };
+export type PlanFilters = {
+  team_id?: string; project_id?: string; design_book_id?: string; enquiry_id?: string; initiative_id?: string; status?: string;
+  /** Only plans in this team department (Drafting's screen). */
+  department?: string;
+  /** Only plans this user may see (see planAccess.ts); omitted = no visibility filter. */
+  visibleTo?: string;
+  /** Only plans this user owns, is shared on or has tasks in. */
+  involving?: string;
+};
+
+/** SQL condition: user $n is the owner, a shared member or assigned to a task of plan p. */
+const involves = (n: number) => `(p.owner_user_id = $${n}
+  OR EXISTS (SELECT 1 FROM planning_plan_members pm WHERE pm.plan_id = p.id AND pm.user_id = $${n})
+  OR EXISTS (SELECT 1 FROM drafting_task_assignees a JOIN drafting_tasks dt ON dt.id = a.task_id
+             WHERE dt.plan_id = p.id AND a.user_id = $${n}))`;
+
+/** SQL condition matching canViewPlan in ../planning/planAccess.ts (admins are not filtered). */
+const visibleTo = (n: number) => `(p.visibility = 'everyone' OR ${involves(n)}
+  OR (p.visibility = 'team' AND (t.manager_user_id = $${n}
+      OR EXISTS (SELECT 1 FROM drafting_team_members tm WHERE tm.team_id = p.team_id AND tm.user_id = $${n}))))`;
 
 export async function listPlans(filters: PlanFilters = {}): Promise<Plan[]> {
   const where: string[] = [];
   const values: unknown[] = [];
-  for (const [key, column] of [['team_id', 'p.team_id'], ['project_id', 'p.project_id'], ['status', 'p.status']] as const) {
+  for (const [key, column] of [
+    ['team_id', 'p.team_id'], ['project_id', 'p.project_id'], ['design_book_id', 'p.design_book_id'],
+    ['enquiry_id', 'p.enquiry_id'], ['initiative_id', 'p.initiative_id'], ['status', 'p.status'],
+  ] as const) {
     if (filters[key]) { values.push(filters[key]); where.push(`${column} = $${values.length}`); }
   }
+  if (filters.department) { values.push(filters.department); where.push(`LOWER(t.department) = LOWER($${values.length})`); }
+  if (filters.visibleTo) { values.push(filters.visibleTo); where.push(visibleTo(values.length)); }
+  if (filters.involving) { values.push(filters.involving); where.push(involves(values.length)); }
   const r = await query(
     `${PLAN_SELECT} ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-     ORDER BY (p.status = 'archived'), pr.project_code, p.name`,
+     ORDER BY (p.status = 'archived'), pr.project_code NULLS LAST, p.name`,
     values,
   );
   return r.rows;
+}
+
+/** What a user is to a plan, for planAccess.ts. null when the plan does not exist. */
+export type PlanAccessFacts = {
+  visibility: PlanVisibility;
+  department: string | null;
+  is_owner: boolean;
+  is_member: boolean;
+  is_assignee: boolean;
+  is_team_member: boolean;
+  is_team_manager: boolean;
+};
+
+export async function getPlanAccessFacts(planId: string, userId: string): Promise<PlanAccessFacts | null> {
+  return (await query(
+    `SELECT p.visibility, t.department,
+       (p.owner_user_id = $2) AS is_owner,
+       EXISTS (SELECT 1 FROM planning_plan_members pm WHERE pm.plan_id = p.id AND pm.user_id = $2) AS is_member,
+       EXISTS (SELECT 1 FROM drafting_task_assignees a JOIN drafting_tasks dt ON dt.id = a.task_id
+               WHERE dt.plan_id = p.id AND a.user_id = $2) AS is_assignee,
+       EXISTS (SELECT 1 FROM drafting_team_members tm WHERE tm.team_id = p.team_id AND tm.user_id = $2) AS is_team_member,
+       COALESCE(t.manager_user_id = $2, false) AS is_team_manager
+     FROM drafting_plans p LEFT JOIN drafting_teams t ON t.id = p.team_id
+     WHERE p.id = $1`,
+    [planId, userId],
+  )).rows[0] ?? null;
+}
+
+/** Plan of a task group, or null. */
+export async function getGroupPlanId(id: string): Promise<string | null> {
+  return (await query(`SELECT plan_id FROM drafting_task_groups WHERE id = $1`, [id])).rows[0]?.plan_id ?? null;
+}
+
+/** Successor plan of a link (the side that owns it), or null. */
+export async function getLinkSuccessorPlanId(id: string): Promise<string | null> {
+  return (await query(
+    `SELECT s.plan_id FROM drafting_task_links l JOIN drafting_tasks s ON s.id = l.successor_id WHERE l.id = $1`, [id],
+  )).rows[0]?.plan_id ?? null;
+}
+
+/** Pickers for plan links. */
+export async function listDesignBookOptions(): Promise<Array<{ id: string; code: string; title: string; project_id: string | null }>> {
+  return (await query(`SELECT id, book_code AS code, book_title AS title, project_id FROM design_books ORDER BY book_code`)).rows;
+}
+
+export async function listEnquiryOptions(): Promise<Array<{ id: string; number: string; title: string }>> {
+  return (await query(
+    `SELECT id, enquiry_number AS number, title FROM enquiries ORDER BY created_at DESC LIMIT 500`,
+  )).rows;
+}
+
+/** Initiatives a plan can be for: not dropped, newest code first. */
+export async function listInitiativeOptions(): Promise<Array<{ id: string; code: string; title: string; stage: string }>> {
+  return (await query(
+    `SELECT id, code, title, stage FROM initiatives WHERE stage <> 'dropped' ORDER BY code DESC LIMIT 500`,
+  )).rows;
+}
+
+async function replacePlanMembers(db: Db, planId: string, userIds: string[]) {
+  await db.query(`DELETE FROM planning_plan_members WHERE plan_id = $1 AND NOT (user_id = ANY($2::uuid[]))`, [planId, userIds]);
+  if (userIds.length) {
+    await db.query(
+      `INSERT INTO planning_plan_members (plan_id, user_id) SELECT $1, unnest($2::uuid[]) ON CONFLICT DO NOTHING`,
+      [planId, userIds],
+    );
+  }
+}
+
+/** A plan linked to a design book is on that book's project unless a project was chosen. */
+async function bookProject(db: Db, input: PlanInput): Promise<string | null | undefined> {
+  if (input.project_id || !input.design_book_id) return input.project_id;
+  return (await db.query(`SELECT project_id FROM design_books WHERE id = $1`, [input.design_book_id])).rows[0]?.project_id ?? input.project_id;
 }
 
 export async function getPlan(id: string, db: Db = { query } as Db): Promise<Plan | null> {
   return (await db.query(`${PLAN_SELECT} WHERE p.id = $1`, [id])).rows[0] ?? null;
 }
 
-export async function createPlan(input: PlanInput, actorId: string): Promise<Plan> {
+/**
+ * Drafting plans keep their DP- codes; plans made with the global tool get PL- codes.
+ * The creator owns the plan.
+ */
+export async function createPlan(input: PlanInput, actorId: string, opts: { codePrefix?: 'DP' | 'PL' } = {}): Promise<Plan> {
+  const prefix = opts.codePrefix ?? 'DP';
   return withTransaction(async db => {
-    const seq = await db.query(`SELECT to_char(NOW(), 'YYYY') AS year, nextval('drafting_plan_code_seq') AS n`);
-    const code = `DP-${seq.rows[0].year}-${String(seq.rows[0].n).padStart(4, '0')}`;
+    const sequence = prefix === 'DP' ? 'drafting_plan_code_seq' : 'planning_plan_code_seq';
+    const seq = await db.query(`SELECT to_char(NOW(), 'YYYY') AS year, nextval('${sequence}') AS n`);
+    const code = `${prefix}-${seq.rows[0].year}-${String(seq.rows[0].n).padStart(4, '0')}`;
     const inserted = await db.query(
       `INSERT INTO drafting_plans
-         (plan_code, name, project_id, team_id, status, start_date, target_date, description, created_by, updated_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9) RETURNING id`,
-      [code, input.name, input.project_id, input.team_id, input.status ?? 'active',
-        input.start_date ?? null, input.target_date ?? null, input.description ?? null, actorId],
+         (plan_code, name, project_id, team_id, design_book_id, enquiry_id, visibility, owner_user_id,
+          status, start_date, target_date, description, created_by, updated_by, initiative_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $8, $8, $13) RETURNING id`,
+      [code, input.name, await bookProject(db, input) ?? null, input.team_id ?? null, input.design_book_id ?? null,
+        input.enquiry_id ?? null, input.visibility ?? (input.team_id ? 'team' : 'private'), actorId,
+        input.status ?? 'active', input.start_date ?? null, input.target_date ?? null, input.description ?? null,
+        input.initiative_id ?? null],
     );
+    if (input.member_ids?.length) await replacePlanMembers(db, inserted.rows[0].id, input.member_ids);
     return (await getPlan(inserted.rows[0].id, db))!;
   });
 }
@@ -643,16 +769,33 @@ export async function updatePlan(id: string, input: PlanInput, actorId: string):
   return withTransaction(async db => {
     const set: string[] = [];
     const values: unknown[] = [id];
-    for (const key of ['name', 'project_id', 'team_id', 'status', 'start_date', 'target_date', 'description', 'calendar_id', 'auto_schedule'] as const) {
-      if (input[key] !== undefined) { values.push(input[key]); set.push(`${key} = $${values.length}`); }
+    const fields = { ...input, project_id: await bookProject(db, input) };
+    for (const key of [
+      'name', 'project_id', 'team_id', 'design_book_id', 'enquiry_id', 'initiative_id', 'visibility',
+      'status', 'start_date', 'target_date', 'description', 'calendar_id', 'auto_schedule',
+    ] as const) {
+      if (fields[key] !== undefined) { values.push(fields[key]); set.push(`${key} = $${values.length}`); }
+    }
+    // A link to a design book replaces a link to an enquiry and the other way round; a link to an
+    // initiative (internal work) replaces any client-side link, and a client-side link replaces it.
+    if (input.design_book_id && input.enquiry_id === undefined) set.push('enquiry_id = NULL');
+    if (input.enquiry_id && input.design_book_id === undefined) set.push('design_book_id = NULL');
+    if (input.initiative_id) {
+      for (const key of ['project_id', 'design_book_id', 'enquiry_id'] as const) if (fields[key] === undefined) set.push(`${key} = NULL`);
+    } else if ((fields.project_id || input.design_book_id || input.enquiry_id) && input.initiative_id === undefined) {
+      set.push('initiative_id = NULL');
     }
     values.push(actorId);
     const updated = await db.query(
       `UPDATE drafting_plans SET ${[...set, `updated_by = $${values.length}`, 'updated_at = NOW()'].join(', ')}
-       WHERE id = $1 RETURNING id`,
+       WHERE id = $1 RETURNING id, visibility, team_id`,
       values,
     );
     if (!updated.rows[0]) return null;
+    if (updated.rows[0].visibility === 'team' && !updated.rows[0].team_id) {
+      throw new DraftingRuleError('A team plan needs a team. Pick a team or make the plan private.');
+    }
+    if (input.member_ids) await replacePlanMembers(db, id, input.member_ids);
     return getPlan(id, db);
   });
 }

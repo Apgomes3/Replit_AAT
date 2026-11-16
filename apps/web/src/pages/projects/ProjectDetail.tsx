@@ -9,6 +9,7 @@ import MetadataPanel from '../../components/ui/MetadataPanel';
 import ClientPicker from '../../components/clients/ClientPicker';
 import ClientLink from '../../components/clients/ClientLink';
 import ProjectPartiesPanel from '../../components/clients/ProjectPartiesPanel';
+import { LinkedPlans } from '../plans/MyPlansPage';
 import StatusBadge from '../../components/ui/StatusBadge';
 import EntityCode from '../../components/ui/EntityCode';
 import DataTable, { Column } from '../../components/ui/DataTable';
@@ -1222,6 +1223,11 @@ export default function ProjectDetail() {
             )}
 
             {!editingProject && <ProjectPartiesPanel projectId={project.id} clientId={project.client_id} clientName={project.client_name} />}
+
+            {!editingProject && <div className="mt-3">
+              <h3 className="text-sm font-semibold text-slate-700 mb-1">Plans</h3>
+              <LinkedPlans projectId={project.id} />
+            </div>}
 
             {editingProject && (
               <div className="bg-white border border-slate-200 rounded-lg p-5 mt-3">

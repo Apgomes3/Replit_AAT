@@ -84,6 +84,10 @@ CREATE TABLE IF NOT EXISTS initiative_links (
   UNIQUE (initiative_id, entity_type, entity_id)
 );
 
+-- A plan (the global planner) can be for an initiative, as it can be for a project or enquiry.
+ALTER TABLE drafting_plans ADD COLUMN IF NOT EXISTS initiative_id UUID REFERENCES initiatives(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_drafting_plans_initiative ON drafting_plans (initiative_id) WHERE initiative_id IS NOT NULL;
+
 -- A person's own task can belong to an initiative (as it can to a project).
 ALTER TABLE planning_personal_tasks ADD COLUMN IF NOT EXISTS initiative_id UUID REFERENCES initiatives(id) ON DELETE SET NULL;
 

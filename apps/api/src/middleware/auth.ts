@@ -90,6 +90,12 @@ async function accessLevels(userId: string, keys: ModuleAccessKey[]): Promise<Ar
   return result.rows.map(row => row.access_level ?? null);
 }
 
+/** The user's access to one module: 'manage', 'view' or 'hidden' (a missing row counts as manage). */
+export async function getModuleAccessLevel(userId: string, key: ModuleAccessKey): Promise<'manage' | 'view' | 'hidden'> {
+  const [level] = await accessLevels(userId, [key]);
+  return level === 'view' || level === 'hidden' ? level : 'manage';
+}
+
 /** Passes when any of the modules is visible to the user's role (a missing row counts as visible). */
 export const requireAnyModuleAccess = (...keys: ModuleAccessKey[]) => async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {

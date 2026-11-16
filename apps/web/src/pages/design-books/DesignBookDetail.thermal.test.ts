@@ -205,6 +205,7 @@ describe('Design Book Thermal navigation', () => {
       'equipment-breakdown',
       'review',
       'versions',
+      'plans',
     ]);
   });
 

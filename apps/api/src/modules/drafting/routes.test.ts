@@ -7,6 +7,7 @@ const access = vi.hoisted(() => ({ manage: true }));
 vi.mock('../../middleware/auth', () => ({
   authenticate: (req: any, _res: any, next: any) => { req.user = { id: 'actor-1', role: 'engineer' }; next(); },
   requireModuleAccess: () => (_req: any, _res: any, next: any) => next(),
+  getModuleAccessLevel: async () => (access.manage ? 'manage' : 'view'),
   requireModuleManage: () => (_req: any, res: any, next: any) =>
     access.manage ? next() : res.status(403).json({ error: { code: 'MODULE_READ_ONLY', message: 'Manage access is required for this module.' } }),
 }));
@@ -20,6 +21,7 @@ vi.mock('./repository', () => ({
   createTask: vi.fn(), updateTask: vi.fn(), deleteTask: vi.fn(), getTaskPlanId: vi.fn(),
   createLinkAndSchedule: vi.fn(), updateLink: vi.fn(), deleteLink: vi.fn(), getLinkPlanIds: vi.fn(), reschedulePlan: vi.fn(),
   setTaskDates: vi.fn(), setBaseline: vi.fn(),
+  getPlanAccessFacts: vi.fn(), getGroupPlanId: vi.fn(), getLinkSuccessorPlanId: vi.fn(),
   DRAFTING_DEPARTMENT: 'Drafting',
 }));
 
@@ -55,6 +57,14 @@ describe('drafting routes', () => {
     vi.clearAllMocks();
     access.manage = true;
     mocked.findUnknownUsers.mockResolvedValue([]);
+    // A Drafting team plan the actor is not personally on: access comes from the Drafting module role.
+    mocked.getPlanAccessFacts.mockResolvedValue({
+      visibility: 'team', department: 'Drafting', is_owner: false, is_member: false, is_assignee: false,
+      is_team_member: false, is_team_manager: false,
+    });
+    mocked.getTaskPlanId.mockResolvedValue(PROJECT);
+    mocked.getLinkSuccessorPlanId.mockResolvedValue(PROJECT);
+    mocked.getTeam.mockResolvedValue({ id: TEAM, department: 'Drafting' });
   });
 
   it('creates a team with a manager and members and records an audit entry', async () => {
@@ -107,12 +117,12 @@ describe('drafting routes', () => {
     const r = await call('POST', '/plans', { name: 'Fabrication drawings', project_id: PROJECT, team_id: TEAM, start_date: '2026-02-13' });
     expect(r.status).toBe(201);
     expect(mocked.createPlan).toHaveBeenCalledWith(
-      { name: 'Fabrication drawings', project_id: PROJECT, team_id: TEAM, start_date: '2026-02-13' }, 'actor-1');
+      { name: 'Fabrication drawings', project_id: PROJECT, team_id: TEAM, visibility: 'team', start_date: '2026-02-13' }, 'actor-1');
   });
 
   it('returns 400 for a plan without a project and 404 for an unknown plan', async () => {
     expect((await call('POST', '/plans', { name: 'P', team_id: TEAM })).status).toBe(400);
-    mocked.updatePlan.mockResolvedValue(null);
+    mocked.getPlanAccessFacts.mockResolvedValueOnce(null);
     expect((await call('PATCH', `/plans/${PROJECT}`, { status: 'on_hold' })).status).toBe(404);
   });
 
@@ -130,7 +140,7 @@ describe('drafting routes', () => {
   });
 
   it('returns 404 when adding a task to a missing plan', async () => {
-    mocked.getPlan.mockResolvedValue(null);
+    mocked.getPlanAccessFacts.mockResolvedValueOnce(null);
     expect((await call('POST', `/plans/${PROJECT}/tasks`, { title: 'x' })).status).toBe(404);
     expect(mocked.createTask).not.toHaveBeenCalled();
   });
@@ -152,7 +162,6 @@ describe('drafting routes', () => {
   });
 
   it('deletes a task and returns 404 for an unknown one', async () => {
-    mocked.getTaskPlanId.mockResolvedValueOnce(PROJECT);
     mocked.deleteTask.mockResolvedValueOnce(true);
     expect((await call('DELETE', `/tasks/${TEAM}`)).status).toBe(200);
     mocked.getTaskPlanId.mockResolvedValueOnce(null);
@@ -164,7 +173,7 @@ describe('drafting routes', () => {
     mocked.listPlans.mockResolvedValue([]);
     const ok = await call('GET', `/plans?team_id=${TEAM}&status=active`);
     expect(ok.status).toBe(200);
-    expect(mocked.listPlans).toHaveBeenCalledWith({ team_id: TEAM, project_id: undefined, status: 'active' });
+    expect(mocked.listPlans).toHaveBeenCalledWith({ team_id: TEAM, project_id: undefined, status: 'active', department: 'Drafting' });
   });
 
   it('links two tasks, validating the type and lag, and turns a loop into a 400', async () => {
@@ -194,6 +203,12 @@ describe('drafting routes', () => {
     await call('POST', `/plans/${PROJECT}/reschedule`, { apply: true });
     expect(mocked.reschedulePlan).toHaveBeenLastCalledWith(PROJECT, true, 'actor-1');
     expect(logAudit).toHaveBeenCalledWith('actor-1', 'drafting_plan', PROJECT, 'RESCHEDULE', expect.anything());
+  });
+
+  it('refuses a plan for a team outside Drafting', async () => {
+    mocked.getTeam.mockResolvedValue({ id: TEAM, department: 'Engineering' });
+    expect((await call('POST', '/plans', { name: 'P', project_id: PROJECT, team_id: TEAM })).status).toBe(400);
+    expect(mocked.createPlan).not.toHaveBeenCalled();
   });
 
   it('refuses link changes without manage access', async () => {

@@ -145,4 +145,33 @@ describe.skipIf(!process.env.DATABASE_URL)('drafting repository (PostgreSQL)', (
     await expect(repo.createTask(ids.plan, { title: 'Bad dates', start_date: '2026-03-10', due_date: '2026-03-01' }, ids.user))
       .rejects.toMatchObject({ code: '23514' });
   });
+
+  it('makes standalone private plans that only their owner and shared people see', async () => {
+    const other = (await query(
+      `INSERT INTO users (email, password_hash, first_name, role) VALUES ($1, 'x', 'Other', 'engineer') RETURNING id`,
+      [`drafting-other-${suffix}@example.test`],
+    )).rows[0].id;
+    try {
+      const plan = await repo.createPlan({ name: 'Personal list', visibility: 'private' }, ids.user, { codePrefix: 'PL' });
+      expect(plan).toMatchObject({ project: null, team: null, visibility: 'private', owner: { id: ids.user }, members: [] });
+      expect(plan.plan_code).toMatch(/^PL-\d{4}-\d{4}$/);
+      const seen = async (userId: string) => (await repo.listPlans({ visibleTo: userId })).some(p => p.id === plan.id);
+      expect(await seen(ids.user)).toBe(true);
+      expect(await seen(other)).toBe(false);
+      expect(await repo.getPlanAccessFacts(plan.id, other)).toMatchObject({ is_owner: false, is_member: false });
+
+      await repo.updatePlan(plan.id, { member_ids: [other] }, ids.user);
+      expect(await seen(other)).toBe(true);
+      expect((await repo.listPlans({ involving: other })).map(p => p.id)).toContain(plan.id);
+      await expect(repo.updatePlan(plan.id, { visibility: 'team' }, ids.user)).rejects.toThrow(/team plan needs a team/);
+      await query('DELETE FROM drafting_plans WHERE id = $1', [plan.id]);
+    } finally {
+      await query('DELETE FROM users WHERE id = $1', [other]);
+    }
+  });
+
+  it('shows team plans to team members', async () => {
+    expect((await repo.listPlans({ visibleTo: ids.user, team_id: ids.team })).length).toBeGreaterThan(0);
+    expect(await repo.getPlan(ids.plan)).toMatchObject({ visibility: 'team', owner: { id: ids.user }, team: { department: 'Drafting' } });
+  });
 });

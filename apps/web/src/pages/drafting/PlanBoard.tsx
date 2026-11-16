@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import {
   AlertTriangle, ArrowDown, ArrowLeft, ArrowUp, Check, Diamond, FolderPlus, ChartGantt, Link2, List, Pencil, Plus, Trash2, X,
 } from 'lucide-react';
@@ -9,7 +9,7 @@ import { StatusBadge } from './PlansPanel';
 import TaskModal from './TaskModal';
 import GanttView from './GanttView';
 import {
-  apiErrorMessage, Task, TaskPayload, TaskPriority, TaskStatus, TASK_PRIORITY_LABELS, TASK_STATUSES, TASK_STATUS_LABELS,
+  apiErrorMessage, Plan, Task, TaskPayload, TaskPriority, TaskStatus, TASK_PRIORITY_LABELS, TASK_STATUSES, TASK_STATUS_LABELS,
   useBoard, useCanManageDrafting, useDeleteGroup, useReschedule, useSaveGroup, useSaveTask, useTeams,
 } from './draftingApi';
 import { buildSections, GroupBy, GROUP_BY, GROUP_BY_LABELS, Section, Sort, SortKey } from './planViews';
@@ -40,12 +40,26 @@ type View = 'list' | 'gantt';
 /** Per task: how many tasks it waits for, and how many days too early it starts (0 = in order). */
 export type LinkInfo = Map<string, { waitsFor: number; earlyBy: number }>;
 
+/** "001-033 · Aquarium · DB-12 … · Team (manager: …)", or "Standalone plan" with no links. */
+function planContext(plan: Plan): string {
+  const parts = [
+    plan.project && `${plan.project.code} · ${plan.project.name}`,
+    plan.design_book && `Design book ${plan.design_book.code}`,
+    plan.enquiry && `Enquiry ${plan.enquiry.number} · ${plan.enquiry.title}`,
+    plan.team ? `${plan.team.name}${plan.team.manager_name ? ` (manager: ${plan.team.manager_name})` : ''}` : plan.owner && `Owner: ${plan.owner.name}`,
+  ].filter(Boolean);
+  return parts.length ? parts.join(' · ') : 'Standalone plan';
+}
+
 export default function PlanBoard() {
+  const location = useLocation();
   const { id = '' } = useParams();
   const [params, setParams] = useSearchParams();
   const board = useBoard(id);
   const teams = useTeams();
-  const canManage = useCanManageDrafting();
+  const canManageDrafting = useCanManageDrafting();
+  // The server decides per plan (owner, shared people, team manager, Drafting managers, admins).
+  const canManage = board.data?.can_edit ?? canManageDrafting;
   const reschedule = useReschedule(id);
   const { confirm, dialog } = useConfirm();
   const [personFilter, setPersonFilter] = useState('');
@@ -70,9 +84,9 @@ export default function PlanBoard() {
   const externalTasks = board.data?.external_tasks ?? [];
 
   const teamPeopleIds = useMemo(() => {
-    const team = teams.data?.find(t => t.id === plan?.team.id);
+    const team = teams.data?.find(t => t.id === plan?.team?.id);
     return team ? [...(team.manager ? [team.manager.id] : []), ...team.members.map(m => m.id)] : [];
-  }, [teams.data, plan?.team.id]);
+  }, [teams.data, plan?.team?.id]);
 
   const people = useMemo(() => {
     const map = new Map<string, string>();
@@ -123,13 +137,15 @@ export default function PlanBoard() {
   };
 
   return <div className={`p-6 mx-auto ${view === 'gantt' ? 'max-w-[1600px]' : 'max-w-7xl'}`}>
-    <Link to="/drafting" className="inline-flex items-center gap-1 text-xs font-bold text-[#087f73]"><ArrowLeft className="w-3.5 h-3.5" /> Drafting plans</Link>
+    {plan.team?.department.toLowerCase() === 'drafting' && location.pathname.startsWith('/drafting')
+      ? <Link to="/drafting" className="inline-flex items-center gap-1 text-xs font-bold text-[#087f73]"><ArrowLeft className="w-3.5 h-3.5" /> Drafting plans</Link>
+      : <Link to="/plans" className="inline-flex items-center gap-1 text-xs font-bold text-[#087f73]"><ArrowLeft className="w-3.5 h-3.5" /> My plans</Link>}
     <header className="mt-3 mb-5 flex flex-wrap items-start justify-between gap-4">
       <div>
         <div className="flex items-center gap-2 text-xs text-[#6f8082]"><span className="font-mono">{plan.plan_code}</span><StatusBadge status={plan.status} /></div>
         <h1 className="text-2xl font-extrabold mt-1">{plan.name}</h1>
         <p className="text-sm text-[#6f8082] mt-1">
-          <span className="font-mono">{plan.project.code}</span> · {plan.project.name} · {plan.team.name}{plan.team.manager_name ? ` (manager: ${plan.team.manager_name})` : ''}
+          {planContext(plan)}
         </p>
       </div>
       {canManage && <div className="flex gap-2">

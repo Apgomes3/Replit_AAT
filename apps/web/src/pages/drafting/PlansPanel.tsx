@@ -37,25 +37,27 @@ export default function PlansPanel({ onGoToTeams }: { onGoToTeams: () => void })
   const activeTeams = (teams.data ?? []).filter(t => t.active);
 
   const filtered = useMemo(() => (plans.data ?? []).filter(p =>
-    (!projectFilter || p.project.id === projectFilter)
-    && (!teamFilter || p.team.id === teamFilter)
+    (!projectFilter || p.project?.id === projectFilter)
+    && (!teamFilter || p.team?.id === teamFilter)
     && (statusFilter === 'all' || (statusFilter === 'open' ? p.status !== 'archived' && p.status !== 'completed' : p.status === statusFilter)),
   ), [plans.data, projectFilter, teamFilter, statusFilter]);
 
   // Group by project, like the project rows in Planner.
   const groups = useMemo(() => {
-    const map = new Map<string, { project: Plan['project']; plans: Plan[] }>();
+    const map = new Map<string, { project: NonNullable<Plan['project']>; plans: Plan[] }>();
     for (const plan of filtered) {
-      const g = map.get(plan.project.id) ?? { project: plan.project, plans: [] };
+      // Plans made in My plans can have a Drafting team but no project.
+      const project = plan.project ?? { id: '', code: '—', name: 'No project' };
+      const g = map.get(project.id) ?? { project, plans: [] };
       g.plans.push(plan);
-      map.set(plan.project.id, g);
+      map.set(project.id, g);
     }
     return [...map.values()];
   }, [filtered]);
 
   const projectsInUse = useMemo(() => {
-    const map = new Map<string, Plan['project']>();
-    (plans.data ?? []).forEach(p => map.set(p.project.id, p.project));
+    const map = new Map<string, NonNullable<Plan['project']>>();
+    (plans.data ?? []).forEach(p => { if (p.project) map.set(p.project.id, p.project); });
     return [...map.values()].sort((a, b) => a.code.localeCompare(b.code));
   }, [plans.data]);
 
@@ -64,7 +66,7 @@ export default function PlansPanel({ onGoToTeams }: { onGoToTeams: () => void })
     status: 'active', start_date: null, target_date: null, description: '',
   });
   const openEdit = (p: Plan) => setForm({
-    id: p.id, plan_code: p.plan_code, name: p.name, project_id: p.project.id, team_id: p.team.id,
+    id: p.id, plan_code: p.plan_code, name: p.name, project_id: p.project?.id ?? '', team_id: p.team?.id ?? '',
     status: p.status, start_date: p.start_date, target_date: p.target_date, description: p.description ?? '',
   });
 
@@ -105,7 +107,7 @@ export default function PlansPanel({ onGoToTeams }: { onGoToTeams: () => void })
         <p className="font-bold">{plans.data?.length ? 'No plans match these filters' : 'No drafting plans yet'}</p>
         {!plans.data?.length && <p className="text-sm text-[#6f8082] mt-1">Create a plan for a project and assign it to a team.</p>}
       </div>
-      : <div className="space-y-4">{groups.map(group => <section key={group.project.id} className="bg-white rounded-xl border border-[#dce7e2] overflow-hidden shadow-sm">
+      : <div className="space-y-4">{groups.map(group => <section key={group.project.id || 'none'} className="bg-white rounded-xl border border-[#dce7e2] overflow-hidden shadow-sm">
         <header className="px-5 py-3 bg-[#f2f7f4] border-b border-[#dce7e2] flex items-center gap-2">
           <FolderOpen className="w-4 h-4 text-[#087f73]" />
           <span className="font-mono text-xs text-[#6f8082]">{group.project.code}</span>
@@ -116,7 +118,7 @@ export default function PlansPanel({ onGoToTeams }: { onGoToTeams: () => void })
           <thead><tr className="border-b border-[#edf2ef]">{['Plan', 'Team', 'Status', 'Progress', 'Start', 'Target', ''].map(h => <th key={h} className="text-left px-5 py-2 text-[10px] uppercase tracking-[.13em] text-[#6f8082] font-extrabold">{h}</th>)}</tr></thead>
           <tbody>{group.plans.map(p => <tr key={p.id} className="border-b border-[#edf2ef] last:border-0 hover:bg-[#f4faf7]">
             <td className="px-5 py-3"><Link to={`/drafting/plans/${p.id}`} className="font-bold hover:text-[#087f73] hover:underline">{p.name}</Link><div className="text-xs text-[#6f8082] font-mono mt-0.5">{p.plan_code}</div></td>
-            <td className="px-5 py-3 text-[#53686b]">{p.team.name}<div className="text-xs text-[#8a9b9a]">{p.team.manager_name ? `Manager: ${p.team.manager_name}` : 'No manager'}</div></td>
+            <td className="px-5 py-3 text-[#53686b]">{p.team?.name ?? '—'}<div className="text-xs text-[#8a9b9a]">{p.team?.manager_name ? `Manager: ${p.team.manager_name}` : 'No manager'}</div></td>
             <td className="px-5 py-3"><StatusBadge status={p.status} /></td>
             <td className="px-5 py-3 whitespace-nowrap">{p.task_count
               ? <div className="text-xs text-[#53686b]"><b className="text-[#20333a]">{p.done_count}/{p.task_count}</b> done

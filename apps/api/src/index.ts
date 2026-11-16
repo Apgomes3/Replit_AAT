@@ -36,6 +36,7 @@ import uvEngineeringRoutes, { uvEngineeringConsumerRoutes } from './routes/uvEng
 import draftingRoutes from './modules/drafting/routes';
 import planningRoutes from './modules/planning/routes';
 import myWorkRoutes from './modules/planning/myWorkRoutes';
+import plansRoutes from './modules/planning/plansRoutes';
 import pimRoutes from './modules/pim/routes';
 import { errorHandler, notFound } from './middleware/errors';
 import { observe, summary } from './lib/telemetry';
@@ -87,6 +88,7 @@ app.use('/api/v1/enquiries', enquiryRoutes);
 app.use('/api/v1/drafting', draftingRoutes);
 app.use('/api/v1/planning', planningRoutes);
 app.use('/api/v1/my-work', myWorkRoutes);
+app.use('/api/v1/planner', plansRoutes);
 app.use('/api/v1/pim', pimRoutes);
 
 app.get('/api/live', (_, res) => res.json({ status: 'alive' }));

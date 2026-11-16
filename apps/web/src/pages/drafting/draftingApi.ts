@@ -15,6 +15,14 @@ export const PLAN_STATUS_LABELS: Record<PlanStatus, string> = {
   archived: 'Archived',
 };
 
+export const PLAN_VISIBILITIES = ['private', 'team', 'everyone'] as const;
+export type PlanVisibility = typeof PLAN_VISIBILITIES[number];
+export const PLAN_VISIBILITY_LABELS: Record<PlanVisibility, string> = {
+  private: 'Private – me, people I share with and assignees',
+  team: 'Team – everyone in the team',
+  everyone: 'Everyone in the company',
+};
+
 export type Person = { id: string; name: string; email: string; role: string };
 export type ProjectOption = { id: string; code: string; name: string };
 
@@ -38,8 +46,15 @@ export type Plan = {
   start_date: string | null;
   target_date: string | null;
   description: string | null;
-  project: ProjectOption;
-  team: { id: string; name: string; manager_name: string | null };
+  /** Links: a plan may be on a project, a design book (and its project) or an enquiry, or stand alone. */
+  project: ProjectOption | null;
+  team: { id: string; name: string; department: string; manager_name: string | null } | null;
+  design_book: { id: string; code: string; title: string } | null;
+  enquiry: { id: string; number: string; title: string } | null;
+  initiative?: { id: string; code: string; title: string } | null;
+  owner: { id: string; name: string } | null;
+  visibility: PlanVisibility;
+  members: Array<{ id: string; name: string }>;
   task_count: number;
   done_count: number;
   late_count: number;
@@ -121,6 +136,8 @@ export type ExternalTask = {
 
 export type Board = {
   plan: Plan; groups: TaskGroup[]; tasks: Task[]; links: TaskLink[]; external_tasks: ExternalTask[]; calendar: BoardCalendar;
+  /** Whether this user may change the plan (owner, shared people, team manager, Drafting managers, admins). */
+  can_edit?: boolean;
 };
 
 export type RescheduleChange = {
@@ -176,7 +193,8 @@ export const useTeams = () => useQuery({ queryKey: keys.teams, queryFn: list<Tea
 export const usePlans = () => useQuery({ queryKey: keys.plans, queryFn: list<Plan>('/drafting/plans') });
 // Pickers refetch every time a form opens: users and projects are created elsewhere
 // (Admin › Users, Projects), so a cached list would hide newly added people/projects.
-export const usePeople = () => useQuery({ queryKey: keys.people, queryFn: list<Person>('/drafting/people'), staleTime: 0, refetchOnMount: 'always' });
+// Active people from the global planner (open to everyone, so non-Drafting plans can assign too).
+export const usePeople = () => useQuery({ queryKey: keys.people, queryFn: () => api.get('/planner/options').then(r => r.data.people as Person[]), staleTime: 0, refetchOnMount: 'always' });
 export const useProjectOptions = () => useQuery({ queryKey: keys.projects, queryFn: list<ProjectOption>('/drafting/projects'), staleTime: 0, refetchOnMount: 'always' });
 
 export function useSaveTeam() {
@@ -193,16 +211,16 @@ export function useSavePlan() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, body }: { id?: string; body: PlanPayload }) =>
-      (id ? api.patch(`/drafting/plans/${id}`, body) : api.post('/drafting/plans', body)).then(r => r.data as Plan),
+      (id ? api.patch(`/planner/plans/${id}`, body) : api.post('/drafting/plans', body)).then(r => r.data as Plan),
     onSuccess: () => { qc.invalidateQueries({ queryKey: keys.plans }); qc.invalidateQueries({ queryKey: keys.teams }); },
   });
 }
 
-const boardKey = (planId: string) => ['drafting', 'board', planId] as const;
+export const boardKey = (planId: string) => ['drafting', 'board', planId] as const;
 
 export const useBoard = (planId: string) => useQuery({
   queryKey: boardKey(planId),
-  queryFn: () => api.get(`/drafting/plans/${planId}/board`).then(r => r.data as Board),
+  queryFn: () => api.get(`/planner/plans/${planId}/board`).then(r => r.data as Board),
   enabled: !!planId,
 });
 
@@ -211,14 +229,14 @@ export function usePatchPlan(planId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: Partial<PlanPayload & { calendar_id: string | null; auto_schedule: boolean }>) =>
-      api.patch(`/drafting/plans/${planId}`, body).then(r => r.data as Plan),
+      api.patch(`/planner/plans/${planId}`, body).then(r => r.data as Plan),
     onSuccess: () => { qc.invalidateQueries({ queryKey: boardKey(planId) }); qc.invalidateQueries({ queryKey: keys.plans }); },
   });
 }
 
 /** Save the plan's current dates as its baseline, or clear it. */
 export const useSetBaseline = (planId: string) => useBoardMutation(planId, (clear: boolean) =>
-  api.post(`/drafting/plans/${planId}/baseline`, { clear }).then(r => r.data as Plan));
+  api.post(`/planner/plans/${planId}/baseline`, { clear }).then(r => r.data as Plan));
 
 /**
  * Mutations on one plan's board refresh the board and the plan list counts. When the automatic
@@ -238,7 +256,7 @@ function useBoardMutation<TVars, TResult = unknown>(planId: string, fn: (vars: T
       const r = result as { id?: string; rescheduled?: RescheduleChange[]; successor_id?: string } | undefined;
       if (r?.rescheduled?.length) {
         showRescheduleToast(r.rescheduled, r.successor_id ? null : r.id ?? null, async changes => {
-          await api.post(`/drafting/plans/${planId}/dates`, {
+          await api.post(`/planner/plans/${planId}/dates`, {
             changes: changes.map(c => ({ id: c.id, start_date: c.old_start_date, due_date: c.old_due_date })),
           });
           refresh();
@@ -249,28 +267,28 @@ function useBoardMutation<TVars, TResult = unknown>(planId: string, fn: (vars: T
 }
 
 export const useSaveTask = (planId: string) => useBoardMutation(planId, ({ id, body }: { id?: string; body: TaskPayload }) =>
-  (id ? api.patch(`/drafting/tasks/${id}`, body) : api.post(`/drafting/plans/${planId}/tasks`, body))
+  (id ? api.patch(`/planner/tasks/${id}`, body) : api.post(`/planner/plans/${planId}/tasks`, body))
     .then(r => r.data as Task & { rescheduled?: RescheduleChange[] }));
 
-export const useDeleteTask = (planId: string) => useBoardMutation(planId, (id: string) => api.delete(`/drafting/tasks/${id}`));
+export const useDeleteTask = (planId: string) => useBoardMutation(planId, (id: string) => api.delete(`/planner/tasks/${id}`));
 
 export const useSaveGroup = (planId: string) => useBoardMutation(planId, ({ id, name }: { id?: string; name: string }) =>
-  (id ? api.patch(`/drafting/groups/${id}`, { name }) : api.post(`/drafting/plans/${planId}/groups`, { name })).then(r => r.data as TaskGroup));
+  (id ? api.patch(`/planner/groups/${id}`, { name }) : api.post(`/planner/plans/${planId}/groups`, { name })).then(r => r.data as TaskGroup));
 
-export const useDeleteGroup = (planId: string) => useBoardMutation(planId, (id: string) => api.delete(`/drafting/groups/${id}`));
+export const useDeleteGroup = (planId: string) => useBoardMutation(planId, (id: string) => api.delete(`/planner/groups/${id}`));
 
 export const useCreateLink = (planId: string) => useBoardMutation(planId,
   ({ successorId, predecessorId, link_type = 'FS', lag_days = 0 }: { successorId: string; predecessorId: string; link_type?: LinkType; lag_days?: number }) =>
-    api.post(`/drafting/tasks/${successorId}/links`, { predecessor_id: predecessorId, link_type, lag_days }).then(r => r.data as TaskLink));
+    api.post(`/planner/tasks/${successorId}/links`, { predecessor_id: predecessorId, link_type, lag_days }).then(r => r.data as TaskLink));
 
 export const useUpdateLink = (planId: string) => useBoardMutation(planId,
-  ({ id, ...body }: { id: string; link_type?: LinkType; lag_days?: number }) => api.patch(`/drafting/links/${id}`, body).then(r => r.data as TaskLink));
+  ({ id, ...body }: { id: string; link_type?: LinkType; lag_days?: number }) => api.patch(`/planner/links/${id}`, body).then(r => r.data as TaskLink));
 
-export const useDeleteLink = (planId: string) => useBoardMutation(planId, (id: string) => api.delete(`/drafting/links/${id}`));
+export const useDeleteLink = (planId: string) => useBoardMutation(planId, (id: string) => api.delete(`/planner/links/${id}`));
 
 /** apply=false previews which tasks would move; apply=true moves them. */
 export const useReschedule = (planId: string) => useBoardMutation(planId, (apply: boolean) =>
-  api.post(`/drafting/plans/${planId}/reschedule`, { apply }).then(r => r.data.data as RescheduleChange[]));
+  api.post(`/planner/plans/${planId}/reschedule`, { apply }).then(r => r.data.data as RescheduleChange[]));
 
 export function useCanManageDrafting() {
   const user = useAuthStore(s => s.user);

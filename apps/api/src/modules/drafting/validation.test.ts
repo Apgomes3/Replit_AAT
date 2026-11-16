@@ -30,7 +30,7 @@ describe('validatePlanInput', () => {
   const base = { name: 'Fabrication drawings', project_id: A, team_id: B };
 
   it('requires name, project and team when creating', () => {
-    expect(validatePlanInput(base, { creating: true }).value).toEqual(base);
+    expect(validatePlanInput(base, { creating: true }).value).toEqual({ ...base, visibility: 'team' });
     expect(validatePlanInput({ ...base, project_id: undefined }, { creating: true }).error).toMatch(/project_id/);
     expect(validatePlanInput({ name: 'x', project_id: A }, { creating: true }).error).toBe('team_id is required.');
   });

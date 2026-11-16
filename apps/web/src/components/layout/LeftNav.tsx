@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
- import { FolderOpen, Package, BookOpen, FileText, Network, Search, Users, Upload, Boxes, Pipette, Container, GripVertical, Settings, ChevronRight, Ruler, ShoppingCart, Home, ClipboardList, Layers, GitBranch, DollarSign, BookMarked, PanelLeftClose, PanelLeftOpen, Fish, Activity, Sun, Wind, SlidersHorizontal, BriefcaseBusiness, ClipboardCheck, PencilRuler, Gauge, Building2, Lightbulb } from 'lucide-react';
+ import { FolderOpen, Package, BookOpen, FileText, Network, Search, Users, Upload, Boxes, Pipette, Container, GripVertical, Settings, ChevronRight, Ruler, ShoppingCart, Home, ClipboardList, Layers, GitBranch, DollarSign, BookMarked, PanelLeftClose, PanelLeftOpen, Fish, Activity, Sun, Wind, SlidersHorizontal, BriefcaseBusiness, ClipboardCheck, CalendarRange, PencilRuler, Gauge, Building2, Lightbulb } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import clsx from 'clsx';
 import { useCommandPalette } from '../../store/commandPaletteStore';
@@ -460,6 +460,11 @@ export default function LeftNav({ collapsed, onToggleCollapsed, onNavigate }: Le
              className={({ isActive }) => clsx(navLinkClass({ isActive }), collapsed && 'justify-center px-3')}>
              <ClipboardCheck className="w-4 h-4 shrink-0 text-stone-400" />
              {!collapsed && <span>My Work</span>}
+           </NavLink>
+           <NavLink to="/plans" title={collapsed ? 'Plans' : undefined}
+             className={({ isActive }) => clsx(navLinkClass({ isActive }), collapsed && 'justify-center px-3')}>
+             <CalendarRange className="w-4 h-4 shrink-0 text-stone-400" />
+             {!collapsed && <span>Plans</span>}
            </NavLink>
         </div>
 

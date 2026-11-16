@@ -38,6 +38,8 @@ export type PlanInput = {
   team_id?: string | null;
   design_book_id?: string | null;
   enquiry_id?: string | null;
+  /** Internal work: a plan for an initiative is not also on a project, design book or enquiry. */
+  initiative_id?: string | null;
   visibility?: PlanVisibility;
   /** People the plan is shared with (replaces the list). */
   member_ids?: string[];
@@ -253,7 +255,7 @@ export function validatePlanInput(body: any, { creating, required = true }: { cr
   let error = requiredName(body, creating, 255, out) || optionalText(body, 'description', 4000, out);
   if (error) return { error };
 
-  for (const key of ['project_id', 'team_id', 'design_book_id', 'enquiry_id'] as const) {
+  for (const key of ['project_id', 'team_id', 'design_book_id', 'enquiry_id', 'initiative_id'] as const) {
     const mandatory = required && (key === 'project_id' || key === 'team_id');
     if (!has(body, key)) { if (creating && mandatory) return { error: `${key} is required.` }; continue; }
     if ((body[key] === null || body[key] === '') && !mandatory) { out[key] = null; continue; }
@@ -261,6 +263,9 @@ export function validatePlanInput(body: any, { creating, required = true }: { cr
     out[key] = body[key];
   }
   if (out.design_book_id && out.enquiry_id) return { error: 'A plan can be linked to a design book or an enquiry, not both.' };
+  if (out.initiative_id && (out.project_id || out.design_book_id || out.enquiry_id)) {
+    return { error: 'A plan for an initiative (internal work) is not also linked to a project, design book or enquiry.' };
+  }
   if (has(body, 'visibility')) {
     if (!PLAN_VISIBILITIES.includes(body.visibility)) return { error: `visibility must be one of: ${PLAN_VISIBILITIES.join(', ')}.` };
     out.visibility = body.visibility;

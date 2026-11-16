@@ -69,6 +69,7 @@ import EnquiriesList from './pages/business-development/EnquiriesList';
 import EnquiryDetail from './pages/business-development/EnquiryDetail';
 import DraftingSetup from './pages/drafting/DraftingSetup';
 import PlanBoard from './pages/drafting/PlanBoard';
+import MyPlansPage from './pages/plans/MyPlansPage';
 import ResourcesPage from './pages/resources/ResourcesPage';
 import { LEGACY_ROUTE_REDIRECTS } from './lib/navigation';
 import { isEditorRole } from './lib/roles';
@@ -148,6 +149,8 @@ const router = createBrowserRouter(createRoutesFromElements(
             <Route path="graph" element={<ModuleGuard moduleKey="graph"><GraphExplorer /></ModuleGuard>} />
             <Route path="search" element={<SearchPage />} />
              <Route path="my-work" element={<SearchPage work />} />
+            <Route path="plans" element={<MyPlansPage />} />
+            <Route path="plans/:id" element={<PlanBoard />} />
             <Route path="admin/users" element={<AdminUsers />} />
              <Route path="admin" element={<Navigate to="/admin/users" replace />} />
             <Route path="admin/import" element={<ImportGuard><AdminImport /></ImportGuard>} />
