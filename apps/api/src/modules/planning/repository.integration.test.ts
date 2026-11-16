@@ -5,6 +5,7 @@ import { query } from '../../db';
 import * as drafting from '../drafting/repository';
 import * as repo from './repository';
 import { HolidayDay, loadHolidaySets } from './holidays';
+import * as myWork from './myWork';
 
 const withDb = () => ({ query } as unknown as Parameters<typeof loadHolidaySets>[0]);
 
@@ -87,6 +88,32 @@ describe.skipIf(!process.env.DATABASE_URL)('planning repository (PostgreSQL)', (
     expect(team.map(p => p.user_id)).toEqual([ids.user]);
   });
 
+  it('adds own tasks and standing commitments to My Work and the workload', async () => {
+    // Part-time calendar from the earlier test: Mon-Fri 4 h, leave on Wed 18 Nov.
+    const own = await myWork.createPersonalTask(ids.user, {
+      title: 'Prepare proposal', start_date: '2026-11-23', due_date: '2026-11-24', planned_hours: 6, project_id: ids.project,
+    }, ids.user);
+    await myWork.saveCommitment(ids.user, {
+      title: 'Team meeting', kind: 'meeting', start_date: '2026-11-01', end_date: null, project_id: null,
+      weekdays: [0, 2], hours_per_day: 1, capacity_pct: null,
+    }, ids.user);
+
+    const w = await myWork.getMyWork(ids.user, '2026-11-16', 2);
+    expect(w.tasks.map(t => t.title)).toEqual(['Prepare proposal']);
+    expect(w.tasks[0]!.project?.code).toBe(`PLN-${suffix}`);
+    expect(w.plan_tasks.map(t => t.title)).toContain('Workload task');
+    expect(w.commitments.map(c => c.title)).toEqual(['Team meeting']);
+    // Week 1: plan task 10 h + meeting Mon 1 h (Wed is leave) = 11 h.
+    expect(w.weeks[0]!.booked).toBe(11);
+    // Week 2: proposal 6 h + meetings Mon and Wed 2 h = 8 h.
+    expect(w.weeks[1]!.booked).toBe(8);
+    expect(w.weeks[1]!.tasks.map(t => t.kind).sort()).toEqual(['commitment', 'task']);
+
+    // Done tasks stop booking hours.
+    await myWork.updatePersonalTask(own.id, { status: 'done' });
+    expect((await myWork.getMyWork(ids.user, '2026-11-23', 1)).weeks[0]!.booked).toBe(2);
+  });
+
   it('keeps company teams by department, with people in more than one team', async () => {
     const department = `Engineering ${suffix}`;
     const eng = await drafting.createTeam({ name: `ASW engineering ${suffix}`, department, member_ids: [ids.user] }, ids.user);
@@ -103,7 +130,7 @@ describe.skipIf(!process.env.DATABASE_URL)('planning repository (PostgreSQL)', (
 
     const [row] = await repo.getWorkload({ department, from: '2026-11-16', weeks: 1 });
     expect(row!.teams).toHaveLength(2);
-    expect(row!.weeks[0]!.booked).toBe(10);
+    expect(row!.weeks[0]!.booked).toBe(11); // plan task 10 h + Monday's team meeting 1 h
 
     // Inactive teams drop out of the department.
     await drafting.updateTeam(eng.id, { active: false }, ids.user);

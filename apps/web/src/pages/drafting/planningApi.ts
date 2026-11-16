@@ -81,7 +81,11 @@ export type Resource = {
   capacity_pct: number; notes: string | null; team_names: string[]; teams: PersonTeam[]; week_hours: number[];
 };
 export type Leave = { id: string; user_id: string; start_date: string; end_date: string; hours_per_day: number | null; reason: string | null };
-export type WorkloadTask = { id: string; title: string; plan_id: string; plan_code: string; project_code: string; hours: number };
+/** What books the hours: a plan task, the person's own task, or a standing commitment. */
+export type WorkloadTask = {
+  id: string; title: string; kind: 'plan' | 'task' | 'commitment';
+  plan_id: string | null; plan_code: string | null; project_code: string | null; hours: number;
+};
 export type WorkloadWeek = { week_start: string; capacity: number; booked: number; leave: number; tasks: WorkloadTask[] };
 export type WorkloadRow = {
   user_id: string; name: string; calendar_name: string; capacity_pct: number; teams: PersonTeam[]; weeks: WorkloadWeek[];

@@ -9,6 +9,7 @@ import {
   Users, LayoutGrid, GitBranch, Layers, Wrench, Keyboard, ClipboardCheck, PencilRuler,
 } from 'lucide-react';
 import ShortcutMapModal from '../components/ui/ShortcutMapModal';
+import MyWorkPlanner from './my-work/MyWorkPlanner';
 import { moduleForPath, ROUTES } from '../lib/navigation';
 import { supportError } from '../lib/supportError';
 
@@ -273,7 +274,7 @@ export default function HomeHub() {
             Welcome back, {firstName}
           </h1>
           <div className="flex items-center gap-3 mt-1">
-            <p className="text-stone-400 text-sm">Choose a module to get started</p>
+            <p className="text-stone-400 text-sm">Your week at a glance, and every module below</p>
             <button
               onClick={() => setShortcutMapOpen(true)}
               className="flex items-center gap-1 text-xs text-stone-400 hover:text-blue-600 transition-colors"
@@ -286,6 +287,8 @@ export default function HomeHub() {
         </div>
 
         {shortcutMapOpen && <ShortcutMapModal onClose={() => setShortcutMapOpen(false)} />}
+
+        <MyWorkPlanner />
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mb-10">
           {visibleModules.map((mod, i) => {

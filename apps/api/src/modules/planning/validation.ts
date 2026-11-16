@@ -89,7 +89,99 @@ export function validateResourceInput(body: any): Result<ResourceInput> {
   return { value: out };
 }
 
-export type LeaveInput = { start_date: string; end_date: string; hours_per_day?: number | null; reason?: string | null };
+export const WORK_STATUSES = ['not_started', 'in_progress', 'review', 'done'] as const;
+export type WorkStatus = typeof WORK_STATUSES[number];
+
+export type PersonalTaskInput = {
+  title?: string; notes?: string | null; project_id?: string | null; status?: WorkStatus; progress_pct?: number;
+  start_date?: string | null; due_date?: string | null; planned_hours?: number | null;
+};
+
+function optionalDate(body: any, key: string, out: Record<string, unknown>): string | null {
+  if (!has(body, key)) return null;
+  if (body[key] !== null && body[key] !== '' && !isIsoDate(body[key])) return `${key} must be a date (YYYY-MM-DD) or empty.`;
+  out[key] = body[key] || null;
+  return null;
+}
+
+/** A person's own task: title required on create; dates, project, effort and progress optional. */
+export function validatePersonalTaskInput(body: any, { creating }: { creating: boolean }): Result<PersonalTaskInput> {
+  if (!isObject(body)) return { error: 'Request body must be an object.' };
+  const out: PersonalTaskInput & Record<string, unknown> = {};
+  if (has(body, 'title') || creating) {
+    if (typeof body.title !== 'string' || !body.title.trim()) return { error: 'title is required.' };
+    if (body.title.trim().length > 255) return { error: 'title must be at most 255 characters.' };
+    out.title = body.title.trim();
+  }
+  if (has(body, 'notes')) {
+    if (body.notes !== null && typeof body.notes !== 'string') return { error: 'notes must be text.' };
+    out.notes = body.notes?.trim() || null;
+  }
+  if (has(body, 'project_id')) {
+    if (body.project_id !== null && body.project_id !== '' && !isUuid(body.project_id)) return { error: 'project_id must be a project id or empty.' };
+    out.project_id = body.project_id || null;
+  }
+  if (has(body, 'status')) {
+    if (!(WORK_STATUSES as readonly string[]).includes(body.status)) return { error: `status must be one of: ${WORK_STATUSES.join(', ')}.` };
+    out.status = body.status;
+  }
+  if (has(body, 'progress_pct')) {
+    if (!Number.isInteger(body.progress_pct) || body.progress_pct < 0 || body.progress_pct > 100) return { error: 'progress_pct must be a whole number from 0 to 100.' };
+    out.progress_pct = body.progress_pct;
+  }
+  const dateError = optionalDate(body, 'start_date', out) || optionalDate(body, 'due_date', out);
+  if (dateError) return { error: dateError };
+  if (out.start_date && out.due_date && out.due_date < out.start_date) return { error: 'The due date cannot be before the start date.' };
+  if (has(body, 'planned_hours')) {
+    const v = body.planned_hours;
+    if (v !== null && v !== '' && (typeof v !== 'number' || !Number.isFinite(v) || v <= 0 || v > 2000)) return { error: 'planned_hours must be more than 0 and at most 2000, or empty.' };
+    out.planned_hours = v === '' || v === null ? null : Math.round(v * 100) / 100;
+  }
+  if (!creating && Object.keys(out).length === 0) return { error: 'Nothing to update.' };
+  return { value: out };
+}
+
+export const COMMITMENT_KINDS = ['meeting', 'role', 'other'] as const;
+export type CommitmentInput = {
+  title: string; kind: typeof COMMITMENT_KINDS[number]; start_date: string; end_date: string | null; project_id: string | null;
+  /** Either weekdays + hours_per_day ... */
+  weekdays: number[] | null; hours_per_day: number | null;
+  /** ... or a share of the person's capacity. */
+  capacity_pct: number | null;
+};
+
+/** A standing commitment, always sent whole (create and replace). */
+export function validateCommitmentInput(body: any): Result<CommitmentInput> {
+  if (!isObject(body)) return { error: 'Request body must be an object.' };
+  if (typeof body.title !== 'string' || !body.title.trim() || body.title.trim().length > 200) return { error: 'title is required (at most 200 characters).' };
+  const kind = body.kind ?? 'meeting';
+  if (!(COMMITMENT_KINDS as readonly string[]).includes(kind)) return { error: `kind must be one of: ${COMMITMENT_KINDS.join(', ')}.` };
+  if (!isIsoDate(body.start_date)) return { error: 'start_date must be a date (YYYY-MM-DD).' };
+  const end = body.end_date || null;
+  if (end !== null && (!isIsoDate(end) || end < body.start_date)) return { error: 'end_date must be a date on or after start_date, or empty for ongoing.' };
+  const project = body.project_id || null;
+  if (project !== null && !isUuid(project)) return { error: 'project_id must be a project id or empty.' };
+  const byShare = body.capacity_pct !== undefined && body.capacity_pct !== null && body.capacity_pct !== '';
+  const out: CommitmentInput = {
+    title: body.title.trim(), kind, start_date: body.start_date, end_date: end, project_id: project,
+    weekdays: null, hours_per_day: null, capacity_pct: null,
+  };
+  if (byShare) {
+    if (!Number.isInteger(body.capacity_pct) || body.capacity_pct < 1 || body.capacity_pct > 100) return { error: 'capacity_pct must be a whole number from 1 to 100.' };
+    out.capacity_pct = body.capacity_pct;
+  } else {
+    const days = body.weekdays;
+    if (!Array.isArray(days) || !days.length || !days.every((d: unknown) => Number.isInteger(d) && (d as number) >= 0 && (d as number) <= 6)) {
+      return { error: 'Choose the weekdays (0 = Monday ... 6 = Sunday) and the hours, or a share of time.' };
+    }
+    if (!validHours(body.hours_per_day) || body.hours_per_day === 0) return { error: 'hours_per_day must be more than 0 and at most 24.' };
+    out.weekdays = [...new Set<number>(days)].sort();
+    out.hours_per_day = Math.round(body.hours_per_day * 100) / 100;
+  }
+  return { value: out };
+}
+
+export type LeaveInput ={ start_date: string; end_date: string; hours_per_day?: number | null; reason?: string | null };
 
 export function validateLeaveInput(body: any): Result<LeaveInput> {
   if (!isObject(body)) return { error: 'Request body must be an object.' };

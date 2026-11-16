@@ -82,6 +82,49 @@ SELECT r.id, 'resources', CASE WHEN r.name = 'admin' THEN 'manage' WHEN r.name I
 FROM roles r
 ON CONFLICT (role_id, module_key) DO NOTHING;
 
+-- My Work: a person's own tasks, outside any plan, optionally tied to a project.
+-- planned_hours (optional) is spread evenly over the working days from start to due.
+CREATE TABLE IF NOT EXISTS planning_personal_tasks (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title VARCHAR(255) NOT NULL,
+  notes TEXT,
+  project_id UUID REFERENCES projects(id) ON DELETE SET NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'not_started' CHECK (status IN ('not_started', 'in_progress', 'review', 'done')),
+  progress_pct INTEGER NOT NULL DEFAULT 0 CHECK (progress_pct BETWEEN 0 AND 100),
+  start_date DATE,
+  due_date DATE,
+  planned_hours NUMERIC(6,2) CHECK (planned_hours IS NULL OR (planned_hours > 0 AND planned_hours <= 2000)),
+  completed_at TIMESTAMPTZ,
+  created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (due_date IS NULL OR start_date IS NULL OR due_date >= start_date)
+);
+CREATE INDEX IF NOT EXISTS idx_planning_personal_tasks_user ON planning_personal_tasks (user_id, status);
+
+-- Standing commitments that take part of a person's time: meetings, a role ("BD 40%"), site visits.
+-- Either hours on chosen weekdays (weekdays: 0 = Monday ... 6 = Sunday) or a share of their capacity.
+CREATE TABLE IF NOT EXISTS planning_commitments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title VARCHAR(200) NOT NULL,
+  kind VARCHAR(20) NOT NULL DEFAULT 'meeting' CHECK (kind IN ('meeting', 'role', 'other')),
+  weekdays SMALLINT[],
+  hours_per_day NUMERIC(4,2) CHECK (hours_per_day IS NULL OR (hours_per_day > 0 AND hours_per_day <= 24)),
+  capacity_pct INTEGER CHECK (capacity_pct IS NULL OR capacity_pct BETWEEN 1 AND 100),
+  start_date DATE NOT NULL,
+  end_date DATE,
+  project_id UUID REFERENCES projects(id) ON DELETE SET NULL,
+  created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (end_date IS NULL OR end_date >= start_date),
+  CHECK ((capacity_pct IS NOT NULL AND weekdays IS NULL AND hours_per_day IS NULL)
+      OR (capacity_pct IS NULL AND weekdays IS NOT NULL AND hours_per_day IS NOT NULL))
+);
+CREATE INDEX IF NOT EXISTS idx_planning_commitments_user ON planning_commitments (user_id);
+
 -- Finished tasks are 100% complete.
 UPDATE drafting_tasks SET progress_pct = 100 WHERE status = 'done' AND progress_pct <> 100;
 

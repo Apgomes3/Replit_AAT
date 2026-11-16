@@ -3,6 +3,7 @@ import type { PoolClient } from 'pg';
 import { query, withTransaction } from '../../db';
 import { addDays, FALLBACK_CALENDAR, hoursOn, WorkCalendar } from './calendar';
 import type { CalendarInput, LeaveInput, ResourceInput } from './validation';
+import { commitmentHours, personalTaskHours } from './booking';
 
 type Db = Pick<PoolClient, 'query'>;
 const defaultDb = { query } as Db;
@@ -224,7 +225,11 @@ export async function deleteLeave(id: string): Promise<boolean> {
 
 // ---------- workload ----------
 
-export type WorkloadTask = { id: string; title: string; plan_id: string; plan_code: string; project_code: string; hours: number };
+/** Something booking hours: a plan task, the person's own task, or a standing commitment. */
+export type WorkloadTask = {
+  id: string; title: string; kind: 'plan' | 'task' | 'commitment';
+  plan_id: string | null; plan_code: string | null; project_code: string | null; hours: number;
+};
 export type WorkloadWeek = { week_start: string; capacity: number; booked: number; leave: number; tasks: WorkloadTask[] };
 export type WorkloadRow = {
   user_id: string; name: string; calendar_name: string; capacity_pct: number; teams: PersonTeam[]; weeks: WorkloadWeek[];
@@ -267,6 +272,27 @@ export async function getWorkload(opts: PeopleScope & { userIds?: string[]; from
     [ids, opts.from, to],
   )).rows;
   const leave = await listLeave({ userIds: ids, from: opts.from, to });
+  const ownTasks = (await query(
+    `SELECT t.id, t.user_id, t.title, t.planned_hours::float8 AS planned_hours, pr.project_code,
+       to_char(t.start_date, 'YYYY-MM-DD') AS start_date, to_char(t.due_date, 'YYYY-MM-DD') AS due_date
+     FROM planning_personal_tasks t LEFT JOIN projects pr ON pr.id = t.project_id
+     WHERE t.user_id = ANY($1::uuid[]) AND t.status <> 'done' AND t.planned_hours IS NOT NULL
+       AND COALESCE(t.start_date, t.due_date) <= $3 AND COALESCE(t.due_date, t.start_date) >= $2`,
+    [ids, opts.from, to],
+  )).rows;
+  const commitments = (await query(
+    `SELECT c.id, c.user_id, c.title, c.weekdays, c.hours_per_day::float8 AS hours_per_day, c.capacity_pct, pr.project_code,
+       to_char(c.start_date, 'YYYY-MM-DD') AS start_date, to_char(c.end_date, 'YYYY-MM-DD') AS end_date
+     FROM planning_commitments c LEFT JOIN projects pr ON pr.id = c.project_id
+     WHERE c.user_id = ANY($1::uuid[]) AND c.start_date <= $3 AND (c.end_date IS NULL OR c.end_date >= $2)`,
+    [ids, opts.from, to],
+  )).rows;
+  const book = (w: WorkloadWeek, item: Omit<WorkloadTask, 'hours'>, h: number) => {
+    w.booked += h;
+    const existing = w.tasks.find(t => t.id === item.id);
+    if (existing) existing.hours += h;
+    else w.tasks.push({ ...item, hours: h });
+  };
 
   const rows: WorkloadRow[] = [];
   for (const p of people) {
@@ -291,11 +317,22 @@ export async function getWorkload(opts: PeopleScope & { userIds?: string[]; from
         if (day < a.start_date || day > a.due_date) continue;
         const h = hoursOn(cal, day) * factor * (a.allocation_pct / 100);
         if (!h) continue;
-        const w = weeks[Math.floor(i / 7)]!;
-        w.booked += h;
-        const existing = w.tasks.find(t => t.id === a.id);
-        if (existing) existing.hours += h;
-        else w.tasks.push({ id: a.id, title: a.title, plan_id: a.plan_id, plan_code: a.plan_code, project_code: a.project_code, hours: h });
+        book(weeks[Math.floor(i / 7)]!, { id: a.id, title: a.title, kind: 'plan', plan_id: a.plan_id, plan_code: a.plan_code, project_code: a.project_code }, h);
+      }
+    }
+    for (const t of ownTasks.filter(x => x.user_id === p.user_id)) {
+      for (let i = 0; i < opts.weeks * 7; i++) {
+        const h = personalTaskHours(cal, t, addDays(opts.from, i));
+        if (h) book(weeks[Math.floor(i / 7)]!, { id: t.id, title: t.title, kind: 'task', plan_id: null, plan_code: null, project_code: t.project_code }, h);
+      }
+    }
+    for (const c of commitments.filter(x => x.user_id === p.user_id)) {
+      for (let i = 0; i < opts.weeks * 7; i++) {
+        const day = addDays(opts.from, i);
+        // A whole day of leave means the meeting or role is not happening for them that day.
+        if (myLeave.some(l => l.hours_per_day === null && l.start_date <= day && day <= l.end_date)) continue;
+        const h = commitmentHours(c, day, hoursOn(cal, day) * factor);
+        if (h) book(weeks[Math.floor(i / 7)]!, { id: c.id, title: c.title, kind: 'commitment', plan_id: null, plan_code: null, project_code: c.project_code }, h);
       }
     }
     for (const w of weeks) {

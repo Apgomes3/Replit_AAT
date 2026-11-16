@@ -112,7 +112,7 @@ export default function WorkloadPanel() {
       <span><i className="inline-block w-2.5 h-2.5 rounded-sm bg-[#e4f2ee] border border-[#b8d9d0] mr-1 align-[-1px]" />Room left</span>
       <span><i className="inline-block w-2.5 h-2.5 rounded-sm bg-amber-50 border border-amber-200 mr-1 align-[-1px]" />90–100%</span>
       <span><i className="inline-block w-2.5 h-2.5 rounded-sm bg-rose-50 border border-rose-200 mr-1 align-[-1px]" />Overbooked</span>
-      <span className="ml-auto">Booked hours come from every project's plans. Finished tasks and completed plans are not counted. Click a week to see its tasks.</span>
+      <span className="ml-auto">Booked hours come from every plan, people's own tasks and their standing commitments. Finished tasks and completed plans are not counted. Click a week to see its tasks.</span>
     </div>
 
     {openRow && openWeek && <div className="mt-4 bg-white rounded-xl border border-[#dce7e2] p-4 shadow-sm">
@@ -120,9 +120,11 @@ export default function WorkloadPanel() {
       <p className="text-xs text-[#6f8082] mt-0.5">{openWeek.booked} h booked of {openWeek.capacity} h available{openWeek.leave ? ` (${openWeek.leave} h leave)` : ''} · calendar {openRow.calendar_name}{openRow.capacity_pct < 100 ? ` at ${openRow.capacity_pct}%` : ''}</p>
       {openWeek.tasks.length
         ? <ul className="mt-3 divide-y divide-[#edf2ef]">{openWeek.tasks.map(t => <li key={t.id} className="py-2 flex items-center gap-3 text-sm">
-            <span className="font-mono text-xs text-[#6f8082] w-20">{t.project_code}</span>
-            <Link to={`/drafting/plans/${t.plan_id}`} className="flex-1 font-semibold hover:text-[#087f73] truncate">{t.title}</Link>
-            <span className="text-xs text-[#6f8082]">{t.plan_code}</span>
+            <span className="font-mono text-xs text-[#6f8082] w-20">{t.project_code ?? '—'}</span>
+            {t.plan_id
+              ? <Link to={`/drafting/plans/${t.plan_id}`} className="flex-1 font-semibold hover:text-[#087f73] truncate">{t.title}</Link>
+              : <span className="flex-1 font-semibold truncate">{t.title}</span>}
+            <span className="text-xs text-[#6f8082]">{t.kind === 'plan' ? t.plan_code : t.kind === 'task' ? 'Own task' : 'Commitment'}</span>
             <span className="w-14 text-right tabular-nums font-bold">{t.hours} h</span>
           </li>)}</ul>
         : <p className="mt-3 text-sm text-[#6f8082]">No tasks booked this week.</p>}
