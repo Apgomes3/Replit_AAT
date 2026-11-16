@@ -678,6 +678,14 @@ ON CONFLICT (name) DO NOTHING;
 -- Job position (e.g. "Drafting Supervisor"); separate from the access role.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS job_title VARCHAR(150);
 
+-- Direct manager (line management). Separate from team managers: a person can be in teams run by
+-- other people. Loops (A reports to B reports to A) are refused by the API.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS reports_to_user_id UUID REFERENCES users(id) ON DELETE SET NULL;
+DO $$ BEGIN
+  ALTER TABLE users ADD CONSTRAINT users_reports_to_not_self CHECK (reports_to_user_id IS NULL OR reports_to_user_id <> id);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+CREATE INDEX IF NOT EXISTS idx_users_reports_to ON users (reports_to_user_id);
+
 CREATE TABLE IF NOT EXISTS role_module_access (
   role_id UUID NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
   module_key VARCHAR(50) NOT NULL,

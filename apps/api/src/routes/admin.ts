@@ -58,6 +58,27 @@ function cleanJobTitle(value: unknown): string | null | undefined {
   return v || null;
 }
 
+/**
+ * Why `managerId` cannot be the direct manager of `userId`, or null when it can: the manager must be
+ * an active user other than the person, and must not already report (directly or further up) to them.
+ */
+export async function reportsToProblem(userId: string, managerId: string): Promise<string | null> {
+  if (userId === managerId) return 'A person cannot report to themselves';
+  const manager = await query('SELECT is_active FROM users WHERE id=$1', [managerId]);
+  if (!manager.rows[0] || manager.rows[0].is_active === false) return 'The chosen manager is not an active user';
+  const loop = await query(
+    `WITH RECURSIVE chain(id, depth) AS (
+       SELECT reports_to_user_id, 1 FROM users WHERE id = $1
+       UNION ALL
+       SELECT u.reports_to_user_id, c.depth + 1 FROM users u JOIN chain c ON u.id = c.id
+       WHERE c.id IS NOT NULL AND c.depth < 50
+     )
+     SELECT 1 FROM chain WHERE id = $2 LIMIT 1`,
+    [managerId, userId],
+  );
+  return loop.rows.length ? 'That would make a loop: the chosen manager already reports to this person' : null;
+}
+
 router.get('/email-status', authenticate, requireRole('admin'), (_req: AuthRequest, res: Response) => {
   res.json({ smtp_configured: isSmtpConfigured() });
 });
@@ -106,7 +127,9 @@ router.get('/users', authenticate, requireRole(...EDITOR_ROLES), async (req: Aut
   const [countResult, dataResult] = await Promise.all([
     query(`SELECT COUNT(*) FROM users ${where}`, countParams),
     query(
-      `SELECT id, email, first_name, last_name, job_title, role, is_active, can_see_all_pos, created_at, last_login_at
+      `SELECT id, email, first_name, last_name, job_title, reports_to_user_id,
+         (SELECT COALESCE(NULLIF(TRIM(CONCAT_WS(' ', m.first_name, m.last_name)), ''), m.email) FROM users m WHERE m.id = users.reports_to_user_id) AS reports_to_name,
+         role, is_active, can_see_all_pos, created_at, last_login_at
        FROM users ${where} ORDER BY ${orderBy} LIMIT $${dataParams.length - 1} OFFSET $${dataParams.length}`,
       dataParams
     ),
@@ -339,12 +362,23 @@ router.put('/users/:id', authenticate, requireRole('admin'), async (req: AuthReq
   if (jobTitle === undefined) {
     return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'Job position must be text of 150 characters or fewer' } });
   }
+  // reports_to_user_id is optional too: null clears it; a manager cannot be the person or below them.
+  const hasReportsTo = Object.prototype.hasOwnProperty.call(req.body, 'reports_to_user_id');
+  const reportsTo = hasReportsTo ? (req.body.reports_to_user_id || null) : null;
+  if (reportsTo !== null) {
+    if (typeof reportsTo !== 'string' || !/^[0-9a-f-]{36}$/i.test(reportsTo)) {
+      return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'reports_to_user_id must be a user id' } });
+    }
+    const problem = await reportsToProblem(String(req.params.id), reportsTo);
+    if (problem) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: problem } });
+  }
   const existing = await query('SELECT is_active, role FROM users WHERE id=$1', [req.params.id]);
   const result = await query(
     `UPDATE users SET first_name=$1, last_name=$2, role=$3, is_active=$4,
-       job_title = CASE WHEN $6 THEN $7 ELSE job_title END, updated_at=NOW()
-     WHERE id=$5 RETURNING id, email, first_name, last_name, job_title, role, is_active`,
-    [first_name, last_name, role, is_active, req.params.id, hasJobTitle, jobTitle]);
+       job_title = CASE WHEN $6 THEN $7 ELSE job_title END,
+       reports_to_user_id = CASE WHEN $8 THEN $9::uuid ELSE reports_to_user_id END, updated_at=NOW()
+     WHERE id=$5 RETURNING id, email, first_name, last_name, job_title, reports_to_user_id, role, is_active`,
+    [first_name, last_name, role, is_active, req.params.id, hasJobTitle, jobTitle, hasReportsTo, reportsTo]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'User not found' } });
   const updated = result.rows[0];
   let action = 'UPDATE';

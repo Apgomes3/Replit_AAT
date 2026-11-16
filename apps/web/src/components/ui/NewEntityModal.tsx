@@ -9,7 +9,8 @@ interface Field {
   type?: string;
   required?: boolean;
   placeholder?: string;
-  options?: string[];
+  /** Plain values, or { value, label } when the stored value differs from what is shown (e.g. an id). */
+  options?: Array<string | { value: string; label: string }>;
   onCreateOption?: (label: string, currentValues?: Record<string, any>) => Promise<string>;
   visibleWhen?: (currentValues: Record<string, any>) => boolean;
 }
@@ -124,7 +125,9 @@ export default function NewEntityModal({ title, fields, onSubmit, onClose, initi
                     className="w-full border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-600"
                   >
                     <option value="">Select...</option>
-                    {field.options.map(o => <option key={o}>{o}</option>)}
+                    {field.options.map(o => typeof o === 'string'
+                      ? <option key={o}>{o}</option>
+                      : <option key={o.value} value={o.value}>{o.label}</option>)}
                     {field.onCreateOption && (
                       <option value={CREATE_SENTINEL}>＋ Add new {field.label}…</option>
                     )}

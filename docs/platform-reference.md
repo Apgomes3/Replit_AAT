@@ -37,13 +37,14 @@ workspace/
         routes/
           auth.ts           # POST /login, GET /me, POST /reset-password (public)
           projects.ts       # Projects, Areas, Exhibits, Tanks, Systems, Equipment
-          products.ts       # Product Families, Masters, Variants, BOMs, Vendors
           knowledge.ts      # Materials, Specifications, Design Rules, Calc Templates
           documents.ts      # Documents, Revisions, Approvals, File Upload
           graph.ts          # Graph traversal, impact, reuse
           search.ts         # Cross-entity full-text search
           import.ts         # CSV bulk import (products, equipment, documents)
           admin.ts          # User management, audit logs, stats; POST /users/:id/send-reset-link
+        modules/pim/products/  # Product Families, Masters, Variants, BOMs, Vendors, Components,
+                               # engineering data (split from the former routes/products.ts)
         services/
           graphService.ts   # Recursive graph traversal + impact/reuse analysis
         uploads/            # Local file storage

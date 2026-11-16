@@ -99,7 +99,7 @@ describe('PIM product dimensions diameter', () => {
 
   beforeAll(async () => {
     process.env.JWT_SECRET = testSecret;
-    const { default: productRoutes } = await import('./products');
+    const { default: productRoutes } = await import('../modules/pim/products');
     app = express();
     app.use(express.json());
     app.use('/api/v1', productRoutes);

@@ -9,7 +9,7 @@ dotenv.config();
 
 import authRoutes from './routes/auth';
 import projectRoutes from './routes/projects';
-import productRoutes from './routes/products';
+import productRoutes from './modules/pim/products';
 import knowledgeRoutes from './routes/knowledge';
 import documentRoutes from './routes/documents';
 import graphRoutes from './routes/graph';

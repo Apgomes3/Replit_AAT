@@ -25,6 +25,8 @@ interface UserRow {
   first_name: string;
   last_name: string;
   job_title: string | null;
+  reports_to_user_id: string | null;
+  reports_to_name: string | null;
   role: string;
   is_active: boolean;
   can_see_all_pos: boolean;
@@ -593,6 +595,16 @@ export default function AdminUsers() {
     enabled: isAdmin,
   });
 
+  // Everyone active, for the "Reports to" picker (the table itself is paged).
+  const { data: allUsers } = useQuery<{ items: UserRow[] }>({
+    queryKey: ['admin-users', 'all-active'],
+    queryFn: () => api.get('/admin/users', { params: { page_size: 1000, sort: 'name_asc' } }).then(r => r.data),
+    enabled: !!editUser,
+  });
+  const managerOptions = (allUsers?.items ?? [])
+    .filter(u => u.is_active && u.id !== editUser?.id)
+    .map(u => ({ value: u.id, label: `${`${u.first_name || ''} ${u.last_name || ''}`.trim() || u.email}${u.job_title ? ` – ${u.job_title}` : ''}` }));
+
   const roleOptions: string[] = rolesData?.items?.map((r: any) => r.name) || ['admin', 'manager', 'user', 'viewer'];
   const smtpConfigured = emailStatus?.smtp_configured ?? false;
 
@@ -769,6 +781,7 @@ export default function AdminUsers() {
                 {sortableHeader('Email', 'email')}
                 {sortableHeader('Name', 'name')}
                 <th className="text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">Job position</th>
+                <th className="text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">Reports to</th>
                 {sortableHeader('Role', 'role')}
                 {sortableHeader('Status', 'status')}
                 <th className="text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">See All POs</th>
@@ -780,7 +793,7 @@ export default function AdminUsers() {
             <tbody>
               {users.length === 0 ? (
                 <tr>
-                  <td colSpan={isAdmin ? 9 : 8} className="text-center py-12 text-slate-400 text-sm">
+                  <td colSpan={isAdmin ? 10 : 9} className="text-center py-12 text-slate-400 text-sm">
                     {(debouncedQ || roleFilter) ? 'No users match the current filters' : 'No users found'}
                   </td>
                 </tr>
@@ -794,6 +807,7 @@ export default function AdminUsers() {
                       {`${user.first_name || ''} ${user.last_name || ''}`.trim() || '—'}
                     </td>
                     <td className="px-4 py-3 text-slate-600">{user.job_title || '—'}</td>
+                    <td className="px-4 py-3 text-slate-600">{user.reports_to_name || '—'}</td>
                     <td className="px-4 py-3">
                       <span className="bg-slate-100 text-slate-700 text-xs px-2 py-0.5 rounded capitalize">
                         {user.role?.replace(/_/g, ' ')}
@@ -927,11 +941,15 @@ export default function AdminUsers() {
           title="Edit User"
           submitLabel="Save Changes"
           onClose={() => setEditUser(null)}
-          initialValues={{ first_name: editUser.first_name, last_name: editUser.last_name, job_title: editUser.job_title ?? '', role: editUser.role }}
+          initialValues={{
+            first_name: editUser.first_name, last_name: editUser.last_name, job_title: editUser.job_title ?? '',
+            reports_to_user_id: editUser.reports_to_user_id ?? '', role: editUser.role,
+          }}
           fields={[
             { name: 'first_name', label: 'First Name' },
             { name: 'last_name', label: 'Last Name' },
             { name: 'job_title', label: 'Job Position' },
+            { name: 'reports_to_user_id', label: 'Reports to (direct manager)', options: managerOptions },
             { name: 'role', label: 'Role (access)', options: roleOptions },
           ]}
           onSubmit={async (values) => {
@@ -940,14 +958,15 @@ export default function AdminUsers() {
                 first_name: values.first_name,
                 last_name: values.last_name,
                 job_title: values.job_title || null,
+                reports_to_user_id: values.reports_to_user_id || null,
                 role: values.role,
                 is_active: editUser.is_active,
               });
               toast.success('User updated');
               refetch();
               setEditUser(null);
-            } catch {
-              toast.error('Failed to update user');
+            } catch (err: any) {
+              toast.error(err?.response?.data?.error?.message || 'Failed to update user');
             }
           }}
         />

@@ -160,7 +160,10 @@ Each step is its own commit with tests (`npm run check`), like Phase 0.
   existing columns), attribute groups, family templates (required / variant axis), sparse item values stored in base
   units, and warn-only completeness. Screens: PIM › Attributes (library, family templates, units) and an
   Attributes tab on each product. The old Drum Filters "Voltage" classifier was carried over to its template.
-  Still to do in step 1: move the PIM routes out of the 2,169-line `routes/products.ts` into the module.
+- *Step 1 finished, 2026-11-16:* the product routes moved out of `routes/products.ts` into
+  `apps/api/src/modules/pim/products/` — `familyRoutes`, `productMasterRoutes`, `bomAndSourcingRoutes`,
+  `componentRoutes`, `engineeringDataRoutes` and `shared` helpers, mounted in the original order by `index.ts`.
+  Same 63 endpoints, same paths; no behaviour change.
 
 ## 7. Decisions (agreed 2026-11-13)
 
