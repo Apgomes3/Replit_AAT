@@ -68,7 +68,7 @@ describe('cross-module search and work queue', () => {
 
   it('does not include hidden modules in either query or count even with filters', async () => {
     state.access = [{ can_see_all_pos: true, module_key: 'orders', access_level: 'hidden' },
-      { can_see_all_pos: true, module_key: 'business_development', access_level: 'hidden' }];
+      { can_see_all_pos: true, module_key: 'clients', access_level: 'hidden' }];
     const { body } = await request('/search?q=pump&module=orders');
     expect(body.total).toBe(0);
     for (const call of state.calls.slice(1)) {

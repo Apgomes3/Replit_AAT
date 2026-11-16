@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
- import { FolderOpen, Package, BookOpen, FileText, Network, Search, Users, Upload, Boxes, Pipette, Container, GripVertical, Settings, ChevronRight, Ruler, ShoppingCart, Home, ClipboardList, Layers, GitBranch, DollarSign, BookMarked, PanelLeftClose, PanelLeftOpen, Fish, Activity, Sun, Wind, SlidersHorizontal, BriefcaseBusiness, ClipboardCheck, PencilRuler, Gauge } from 'lucide-react';
+ import { FolderOpen, Package, BookOpen, FileText, Network, Search, Users, Upload, Boxes, Pipette, Container, GripVertical, Settings, ChevronRight, Ruler, ShoppingCart, Home, ClipboardList, Layers, GitBranch, DollarSign, BookMarked, PanelLeftClose, PanelLeftOpen, Fish, Activity, Sun, Wind, SlidersHorizontal, BriefcaseBusiness, ClipboardCheck, PencilRuler, Gauge, Building2 } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import clsx from 'clsx';
 import { useCommandPalette } from '../../store/commandPaletteStore';
@@ -47,9 +47,12 @@ const SECTIONS: NavSection[] = [
   {
     id: 'business-development', moduleKey: 'business_development', group: 'Commercial', label: 'Business Development', hub: ROUTES.businessDevelopment, icon: BriefcaseBusiness,
     items: [
-      { id: 'clients', to: '/clients', icon: Users, label: 'Clients' },
       { id: 'enquiries', to: '/enquiries', icon: ClipboardCheck, label: 'Enquiries' },
     ],
+  },
+  {
+    id: 'clients', moduleKey: 'clients', group: 'Commercial', label: 'Clients & Contacts', hub: ROUTES.clients, icon: Building2,
+    items: [{ id: 'clients-directory', to: ROUTES.clients, icon: Building2, label: 'Companies & People', end: true }],
   },
   {
     id: 'documents', moduleKey: 'documents', group: 'Reference', label: 'Documents', hub: ROUTES.documents, icon: FileText,

@@ -60,8 +60,8 @@ describe.skipIf(!process.env.DATABASE_URL)('changing a project code (PostgreSQL)
     await query(`DELETE FROM notifications WHERE entity_id = ANY($1::text[])`, [projectIds]).catch(() => undefined);
     await query(`DELETE FROM audit_logs WHERE entity_id::text = ANY($1::text[])`, [projectIds]).catch(() => undefined);
     await query(`DELETE FROM projects WHERE id = ANY($1::uuid[])`, [projectIds]);
-    await query(`DELETE FROM audit_logs WHERE user_id = $1`, [userId]).catch(() => undefined);
-    await query(`DELETE FROM users WHERE id = $1`, [userId]).catch(() => undefined);
+    await query(`DELETE FROM audit_logs WHERE actor_id = $1`, [userId]);
+    await query(`DELETE FROM users WHERE id = $1`, [userId]);
   });
 
   it('changes the code, keeps the record and logs old → new', async () => {

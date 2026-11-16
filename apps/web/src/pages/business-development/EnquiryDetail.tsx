@@ -8,6 +8,7 @@ import { useAuthStore } from '../../store/authStore';
 import ProtectedDraftBar, { readRecoveryDraft } from '../../components/ui/ProtectedDraftBar';
 import FollowRecordButton from '../../components/ui/FollowRecordButton';
 import EnquiryQuoteWorkspace from './EnquiryQuoteWorkspace';
+import ClientLink from '../../components/clients/ClientLink';
 
 const pretty = (s: string) => s?.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) || '—';
 const list = (data: any) => data?.items || data?.data || data || [];
@@ -132,7 +133,7 @@ export default function EnquiryDetail() {
          <div>
            <div className="font-mono text-xs text-[#087f73]">{d.enquiry_number || `ENQ-${d.id}`}</div>
            <h1 className="text-2xl font-extrabold mt-1">{d.title}</h1>
-           <p className="text-sm text-[#6f8082] mt-1">{d.client?.name || d.client_name || 'No client'} · due {d.due_date || 'not set'}</p>
+           <p className="text-sm text-[#6f8082] mt-1"><ClientLink id={d.client_id} name={d.client?.name || d.client_name || 'No client'} /> · due {d.due_date || 'not set'}</p>
          </div>
        </div>
        <div className="flex gap-2">

@@ -27,7 +27,7 @@ import lssControlRoutes from './routes/lssControls';
 import frictionLossRoutes from './routes/frictionLoss';
 import equipmentBreakdownRoutes from './routes/equipmentBreakdown';
 import ozoneCalculationRoutes from './routes/ozoneCalculations';
-import clientRoutes from './routes/clients';
+import clientRoutes from './modules/clients/routes';
 import enquiryRoutes from './routes/enquiries';
 import uvEngineeringRoutes, { uvEngineeringConsumerRoutes } from './routes/uvEngineering';
 import draftingRoutes from './modules/drafting/routes';

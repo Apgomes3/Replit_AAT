@@ -59,8 +59,8 @@ import DesignBookLSSDetail from './pages/design-books/DesignBookLSSDetail';
 import LSSCompactUnitsCatalog from './pages/design-books/LSSCompactUnitsCatalog';
 import SpeciesCatalog from './pages/design-books/SpeciesCatalog';
 import CommercialOverview from './pages/business-development/CommercialOverview';
-import ClientsList from './pages/business-development/ClientsList';
-import ClientDetail from './pages/business-development/ClientDetail';
+import ClientsList from './pages/clients/ClientsList';
+import ClientDetail from './pages/clients/ClientDetail';
 import MaterialDetail from './pages/knowledge/MaterialDetail';
 import EnquiriesList from './pages/business-development/EnquiriesList';
 import EnquiryDetail from './pages/business-development/EnquiryDetail';
@@ -174,8 +174,8 @@ const router = createBrowserRouter(createRoutesFromElements(
             <Route path="lss-compact-units" element={<ModuleGuard moduleKey="design_books"><LSSCompactUnitsCatalog /></ModuleGuard>} />
             <Route path="species-catalog" element={<ModuleGuard moduleKey="design_books"><SpeciesCatalog /></ModuleGuard>} />
               <Route path="business-development" element={<ModuleGuard moduleKey="business_development"><CommercialOverview /></ModuleGuard>} />
-              <Route path="clients" element={<ModuleGuard moduleKey="business_development"><ClientsList /></ModuleGuard>} />
-               <Route path="clients/:id" element={<ModuleGuard moduleKey="business_development"><ClientDetail /></ModuleGuard>} />
+              <Route path="clients" element={<ModuleGuard moduleKey="clients"><ClientsList /></ModuleGuard>} />
+              <Route path="clients/:id" element={<ModuleGuard moduleKey="clients"><ClientDetail /></ModuleGuard>} />
               <Route path="enquiries" element={<ModuleGuard moduleKey="business_development"><EnquiriesList /></ModuleGuard>} />
               <Route path="enquiries/:id" element={<ModuleGuard moduleKey="business_development"><EnquiryDetail /></ModuleGuard>} />
             <Route path="drafting" element={<ModuleGuard moduleKey="drafting"><DraftingSetup /></ModuleGuard>} />
