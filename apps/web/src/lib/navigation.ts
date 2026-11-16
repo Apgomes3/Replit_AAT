@@ -9,7 +9,8 @@ export type ModuleKey =
   | 'graph'
   | 'drafting'
   | 'resources'
-  | 'clients';
+  | 'clients'
+  | 'initiatives';
 
 export type RouteGroup = 'operational' | 'engineering' | 'commercial' | 'reference' | 'administration';
 
@@ -72,6 +73,7 @@ export function entityHref(entity: SearchEntity): string {
     case 'design_book': return `${ROUTES.designBooks}/${entity.id}`;
     case 'client': return `${ROUTES.clients}/${entity.id}`;
     case 'person': return `/people/${entity.id}`;
+    case 'initiative': return `/initiatives/${entity.id}`;
     case 'enquiry': return `${ROUTES.enquiries}/${entity.id}`;
     default: return ROUTES.search;
   }
@@ -83,6 +85,7 @@ export function moduleForPath(path: string): ModuleKey | null {
   if (path === ROUTES.projectManagement || path.startsWith('/projects') || path.startsWith('/systems')) return 'projects';
   if (path === ROUTES.designBookEngine || path.startsWith('/design-books') || path.startsWith('/lss-compact-units') || path.startsWith('/species-catalog')) return 'design_books';
   if (path.startsWith(ROUTES.clients)) return 'clients';
+  if (path.startsWith('/initiatives')) return 'initiatives';
   if (path === ROUTES.businessDevelopment || path.startsWith('/enquiries')) return 'business_development';
   if (path.startsWith('/documents')) return 'documents';
   if (path.startsWith('/knowledge')) return 'knowledge';

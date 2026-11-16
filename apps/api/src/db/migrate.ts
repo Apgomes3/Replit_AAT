@@ -10,6 +10,7 @@ import { PIM_SCHEMA } from '../modules/pim/schema';
 import { PLANNING_SCHEMA } from '../modules/planning/schema';
 import { loadHolidaySets } from '../modules/planning/holidays';
 import { CLIENTS_SCHEMA } from '../modules/clients/schema';
+import { INITIATIVES_SCHEMA } from '../modules/initiatives/schema';
 dotenv.config();
 
 // Self-contained module schemas, applied in order after the core schema.
@@ -19,6 +20,7 @@ const MODULE_SCHEMAS: Array<[name: string, sql: string]> = [
   ['planning', PLANNING_SCHEMA],
   ['pim', PIM_SCHEMA],
   ['clients', CLIENTS_SCHEMA],
+  ['initiatives', INITIATIVES_SCHEMA],
 ];
 
 const schema = `

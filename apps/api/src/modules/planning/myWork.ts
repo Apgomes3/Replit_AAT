@@ -14,6 +14,7 @@ export type MyPlanTask = {
 export type PersonalTask = {
   id: string; title: string; notes: string | null; status: WorkStatus; progress_pct: number;
   start_date: string | null; due_date: string | null; planned_hours: number | null; project: ProjectRef; completed_at: string | null;
+  initiative: ProjectRef;
 };
 export type Commitment = {
   id: string; title: string; kind: 'meeting' | 'role' | 'other'; weekdays: number[] | null; hours_per_day: number | null;
@@ -32,8 +33,9 @@ const RECENTLY_DONE = `(t.status <> 'done' OR t.completed_at >= NOW() - INTERVAL
 
 const PERSONAL_SELECT = `
   SELECT t.id, t.title, t.notes, t.status, t.progress_pct, ${D('t.start_date')} AS start_date, ${D('t.due_date')} AS due_date,
-    t.planned_hours::float8 AS planned_hours, t.completed_at, ${PROJECT} AS project
-  FROM planning_personal_tasks t LEFT JOIN projects pr ON pr.id = t.project_id`;
+    t.planned_hours::float8 AS planned_hours, t.completed_at, ${PROJECT} AS project,
+    CASE WHEN ini.id IS NULL THEN NULL ELSE json_build_object('id', ini.id, 'code', ini.code, 'name', ini.title) END AS initiative
+  FROM planning_personal_tasks t LEFT JOIN projects pr ON pr.id = t.project_id LEFT JOIN initiatives ini ON ini.id = t.initiative_id`;
 
 const COMMITMENT_SELECT = `
   SELECT c.id, c.title, c.kind, c.weekdays, c.hours_per_day::float8 AS hours_per_day, c.capacity_pct,
@@ -77,10 +79,11 @@ export async function listProjectOptions(): Promise<Array<{ id: string; code: st
 export async function createPersonalTask(userId: string, input: PersonalTaskInput, actorId: string): Promise<PersonalTask> {
   const done = input.status === 'done';
   const r = await query(
-    `INSERT INTO planning_personal_tasks (user_id, title, notes, project_id, status, progress_pct, start_date, due_date, planned_hours, completed_at, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, ${done ? 'NOW()' : 'NULL'}, $10) RETURNING id`,
+    `INSERT INTO planning_personal_tasks (user_id, title, notes, project_id, status, progress_pct, start_date, due_date, planned_hours, completed_at, created_by, initiative_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, ${done ? 'NOW()' : 'NULL'}, $10, $11) RETURNING id`,
     [userId, input.title, input.notes ?? null, input.project_id ?? null, input.status ?? 'not_started',
-      input.progress_pct ?? (done ? 100 : 0), input.start_date ?? null, input.due_date ?? null, input.planned_hours ?? null, actorId],
+      input.progress_pct ?? (done ? 100 : 0), input.start_date ?? null, input.due_date ?? null, input.planned_hours ?? null, actorId,
+      input.initiative_id ?? null],
   );
   return (await getPersonalTask(r.rows[0].id))!;
 }
@@ -92,9 +95,12 @@ export async function getPersonalTask(id: string): Promise<(PersonalTask & { use
 export async function updatePersonalTask(id: string, input: PersonalTaskInput): Promise<PersonalTask | null> {
   const set: string[] = [];
   const values: unknown[] = [id];
-  for (const key of ['title', 'notes', 'project_id', 'status', 'progress_pct', 'start_date', 'due_date', 'planned_hours'] as const) {
+  for (const key of ['title', 'notes', 'project_id', 'initiative_id', 'status', 'progress_pct', 'start_date', 'due_date', 'planned_hours'] as const) {
     if (input[key] !== undefined) { values.push(input[key]); set.push(`${key} = $${values.length}`); }
   }
+  // A task belongs to a project or an initiative: choosing one clears the other.
+  if (input.project_id && input.initiative_id === undefined) set.push('initiative_id = NULL');
+  if (input.initiative_id && input.project_id === undefined) set.push('project_id = NULL');
   if (input.status !== undefined) {
     set.push(input.status === 'done' ? 'completed_at = COALESCE(completed_at, NOW())' : 'completed_at = NULL');
     if (input.status === 'done' && input.progress_pct === undefined) set.push('progress_pct = 100');

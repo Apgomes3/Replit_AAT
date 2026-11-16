@@ -13,10 +13,10 @@ const labels: Record<string, string> = {
   person: 'Person', project: 'Project', system: 'System', equipment: 'Equipment', product: 'Product',
   component: 'Component', material: 'Material', document: 'Document', purchase_order: 'Purchase Order',
   client: 'Client', contact: 'Client contact', enquiry: 'Enquiry', design_book: 'Design Book',
-  drafting_plan: 'Drafting plan', notification: 'Notification', audit_event: 'Audit event',
+  drafting_plan: 'Drafting plan', initiative: 'Initiative', notification: 'Notification', audit_event: 'Audit event',
 };
 const modules = [
-  ['people', 'People'], ['projects', 'Projects'], ['clients', 'Clients & contacts'], ['orders', 'Orders'],
+  ['people', 'People'], ['projects', 'Projects'], ['initiatives', 'Initiatives'], ['clients', 'Clients & contacts'], ['orders', 'Orders'],
   ['design_books', 'Design Books'], ['drafting', 'Drafting'], ['pim', 'Products'],
   ['business_development', 'Business Development'], ['documents', 'Documents'], ['knowledge', 'Knowledge'],
   ['admin', 'Audit'],

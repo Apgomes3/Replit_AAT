@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
- import { FolderOpen, Package, BookOpen, FileText, Network, Search, Users, Upload, Boxes, Pipette, Container, GripVertical, Settings, ChevronRight, Ruler, ShoppingCart, Home, ClipboardList, Layers, GitBranch, DollarSign, BookMarked, PanelLeftClose, PanelLeftOpen, Fish, Activity, Sun, Wind, SlidersHorizontal, BriefcaseBusiness, ClipboardCheck, PencilRuler, Gauge, Building2 } from 'lucide-react';
+ import { FolderOpen, Package, BookOpen, FileText, Network, Search, Users, Upload, Boxes, Pipette, Container, GripVertical, Settings, ChevronRight, Ruler, ShoppingCart, Home, ClipboardList, Layers, GitBranch, DollarSign, BookMarked, PanelLeftClose, PanelLeftOpen, Fish, Activity, Sun, Wind, SlidersHorizontal, BriefcaseBusiness, ClipboardCheck, PencilRuler, Gauge, Building2, Lightbulb } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import clsx from 'clsx';
 import { useCommandPalette } from '../../store/commandPaletteStore';
@@ -24,6 +24,10 @@ const SECTIONS: NavSection[] = [
   {
     id: 'projects', moduleKey: 'projects', group: 'Operational', label: 'Project Management', hub: ROUTES.projectManagement, icon: FolderOpen,
     items: [{ id: 'projects', to: ROUTES.projects, icon: FolderOpen, label: 'Projects' }],
+  },
+  {
+    id: 'initiatives', moduleKey: 'initiatives', group: 'Operational', label: 'Initiatives', hub: '/initiatives', icon: Lightbulb,
+    items: [{ id: 'initiatives-board', to: '/initiatives', icon: Lightbulb, label: 'Internal work', end: true }],
   },
   {
     id: 'resources', moduleKey: 'resources', group: 'Operational', label: 'Resources', hub: ROUTES.resources, icon: Gauge,

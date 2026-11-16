@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   Search, X, ArrowRight, Package, FolderOpen, Network,
   Wrench, BookOpen, FileText, Clock, Hash, ExternalLink, User, Building2, Contact,
-  ClipboardCheck, BookMarked, PencilRuler, Boxes, ShoppingCart, Bell,
+  ClipboardCheck, BookMarked, PencilRuler, Boxes, ShoppingCart, Bell, Lightbulb,
 } from 'lucide-react';
 import clsx from 'clsx';
 import api from '../../lib/api';
@@ -37,6 +37,7 @@ const TYPE_CONFIG: Record<string, { label: string; icon: any; color: string; dot
   enquiry:        { label: 'Enquiry',        icon: ClipboardCheck,color: 'text-teal-700',    dot: 'bg-teal-500'    },
   design_book:    { label: 'Design Book',    icon: BookMarked,    color: 'text-violet-600',  dot: 'bg-violet-500'  },
   drafting_plan:  { label: 'Drafting plan',  icon: PencilRuler,   color: 'text-amber-700',   dot: 'bg-amber-500'   },
+  initiative:     { label: 'Initiative',     icon: Lightbulb,     color: 'text-violet-600',  dot: 'bg-violet-500'  },
   system:         { label: 'System',         icon: Network,       color: 'text-sky-600',     dot: 'bg-sky-500'     },
   equipment:      { label: 'Equipment',      icon: Wrench,        color: 'text-indigo-600',  dot: 'bg-indigo-500'  },
   product:        { label: 'Product',        icon: Package,       color: 'text-blue-600',    dot: 'bg-blue-500'    },

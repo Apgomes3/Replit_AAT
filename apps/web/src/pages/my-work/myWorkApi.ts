@@ -14,7 +14,7 @@ export type MyPlanTask = {
 };
 export type PersonalTask = {
   id: string; title: string; notes: string | null; status: WorkStatus; progress_pct: number;
-  start_date: string | null; due_date: string | null; planned_hours: number | null; project: ProjectRef;
+  start_date: string | null; due_date: string | null; planned_hours: number | null; project: ProjectRef; initiative?: ProjectRef;
 };
 export type CommitmentKind = 'meeting' | 'role' | 'other';
 export type Commitment = {
@@ -27,7 +27,7 @@ export type MyWork = {
 };
 
 export type PersonalTaskPayload = Partial<{
-  title: string; notes: string | null; project_id: string | null; status: WorkStatus; progress_pct: number;
+  title: string; notes: string | null; project_id: string | null; initiative_id: string | null; status: WorkStatus; progress_pct: number;
   start_date: string | null; due_date: string | null; planned_hours: number | null;
 }>;
 export type CommitmentPayload = {
@@ -45,6 +45,14 @@ export const useMyWork = (from: string, weeks = 4) => useQuery({
 export const useMyProjects = () => useQuery({
   queryKey: [...KEY, 'projects'], staleTime: 60_000,
   queryFn: () => api.get('/my-work/projects').then(r => r.data.data as Array<{ id: string; code: string; name: string }>),
+});
+
+/** Initiatives a task can be booked to: approved, running or on hold. */
+export const useMyInitiatives = () => useQuery({
+  queryKey: [...KEY, 'initiatives'], staleTime: 60_000,
+  queryFn: () => api.get('/initiatives').then(r => (r.data.data as Array<{ id: string; code: string; title: string; stage: string }>)
+    .filter(i => ['approved', 'in_progress', 'on_hold'].includes(i.stage)).map(i => ({ id: i.id, code: i.code, name: i.title }))),
+  retry: false,
 });
 
 /** Every change can move booked hours, so refresh My Work and any workload or board on screen. */
@@ -74,19 +82,19 @@ export const useDeleteCommitment = () => useMyWorkMutation((id: string) => api.d
 /** One row in the planner: a plan task assigned to me or one of my own tasks. */
 export type WorkItem = {
   key: string; kind: 'plan' | 'task'; id: string; title: string; status: WorkStatus; progress_pct: number;
-  start_date: string | null; due_date: string | null; is_milestone: boolean; project: ProjectRef;
+  start_date: string | null; due_date: string | null; is_milestone: boolean; project: ProjectRef; initiative: ProjectRef;
   plan: MyPlanTask['plan'] | null; planned_hours: number | null; notes: string | null;
 };
 
 export const toWorkItems = (w: Partial<Pick<MyWork, 'plan_tasks' | 'tasks'>>): WorkItem[] => [
   ...(w.plan_tasks ?? []).map(t => ({
     key: `plan:${t.id}`, kind: 'plan' as const, id: t.id, title: t.title, status: t.status, progress_pct: t.progress_pct,
-    start_date: t.start_date, due_date: t.due_date, is_milestone: t.is_milestone, project: t.project, plan: t.plan,
+    start_date: t.start_date, due_date: t.due_date, is_milestone: t.is_milestone, project: t.project, initiative: null, plan: t.plan,
     planned_hours: null, notes: null,
   })),
   ...(w.tasks ?? []).map(t => ({
     key: `task:${t.id}`, kind: 'task' as const, id: t.id, title: t.title, status: t.status, progress_pct: t.progress_pct,
-    start_date: t.start_date, due_date: t.due_date, is_milestone: false, project: t.project, plan: null,
+    start_date: t.start_date, due_date: t.due_date, is_milestone: false, project: t.project, initiative: t.initiative ?? null, plan: null,
     planned_hours: t.planned_hours, notes: t.notes,
   })),
 ];

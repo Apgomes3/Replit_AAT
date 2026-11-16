@@ -16,7 +16,7 @@ const pid = (req: Request) => String(req.params.id);
 const me = (req: AuthRequest) => req.user!.id;
 
 function handleDbError(e: any, res: Response, next: NextFunction) {
-  if (e?.code === '23503') return fail(res, 400, 'VALIDATION', 'The selected project no longer exists.');
+  if (e?.code === '23503') return fail(res, 400, 'VALIDATION', 'The selected project or initiative no longer exists.');
   if (e?.code === '23514') return fail(res, 400, 'VALIDATION', 'The due date cannot be before the start date.');
   return next(e);
 }

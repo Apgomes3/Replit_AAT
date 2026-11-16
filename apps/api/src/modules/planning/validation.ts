@@ -93,7 +93,7 @@ export const WORK_STATUSES = ['not_started', 'in_progress', 'review', 'done'] as
 export type WorkStatus = typeof WORK_STATUSES[number];
 
 export type PersonalTaskInput = {
-  title?: string; notes?: string | null; project_id?: string | null; status?: WorkStatus; progress_pct?: number;
+  title?: string; notes?: string | null; project_id?: string | null; initiative_id?: string | null; status?: WorkStatus; progress_pct?: number;
   start_date?: string | null; due_date?: string | null; planned_hours?: number | null;
 };
 
@@ -121,6 +121,11 @@ export function validatePersonalTaskInput(body: any, { creating }: { creating: b
     if (body.project_id !== null && body.project_id !== '' && !isUuid(body.project_id)) return { error: 'project_id must be a project id or empty.' };
     out.project_id = body.project_id || null;
   }
+  if (has(body, 'initiative_id')) {
+    if (body.initiative_id !== null && body.initiative_id !== '' && !isUuid(body.initiative_id)) return { error: 'initiative_id must be an initiative id or empty.' };
+    out.initiative_id = body.initiative_id || null;
+  }
+  if (out.project_id && out.initiative_id) return { error: 'A task belongs to a project or an initiative, not both.' };
   if (has(body, 'status')) {
     if (!(WORK_STATUSES as readonly string[]).includes(body.status)) return { error: `status must be one of: ${WORK_STATUSES.join(', ')}.` };
     out.status = body.status;

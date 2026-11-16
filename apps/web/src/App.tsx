@@ -62,6 +62,8 @@ import CommercialOverview from './pages/business-development/CommercialOverview'
 import ClientsList from './pages/clients/ClientsList';
 import ClientDetail from './pages/clients/ClientDetail';
 import PersonCard from './pages/people/PersonCard';
+import InitiativesBoard from './pages/initiatives/InitiativesBoard';
+import InitiativeDetail from './pages/initiatives/InitiativeDetail';
 import MaterialDetail from './pages/knowledge/MaterialDetail';
 import EnquiriesList from './pages/business-development/EnquiriesList';
 import EnquiryDetail from './pages/business-development/EnquiryDetail';
@@ -178,6 +180,8 @@ const router = createBrowserRouter(createRoutesFromElements(
               <Route path="clients" element={<ModuleGuard moduleKey="clients"><ClientsList /></ModuleGuard>} />
               <Route path="clients/:id" element={<ModuleGuard moduleKey="clients"><ClientDetail /></ModuleGuard>} />
               <Route path="people/:id" element={<PersonCard />} />
+              <Route path="initiatives" element={<ModuleGuard moduleKey="initiatives"><InitiativesBoard /></ModuleGuard>} />
+              <Route path="initiatives/:id" element={<ModuleGuard moduleKey="initiatives"><InitiativeDetail /></ModuleGuard>} />
               <Route path="enquiries" element={<ModuleGuard moduleKey="business_development"><EnquiriesList /></ModuleGuard>} />
               <Route path="enquiries/:id" element={<ModuleGuard moduleKey="business_development"><EnquiryDetail /></ModuleGuard>} />
             <Route path="drafting" element={<ModuleGuard moduleKey="drafting"><DraftingSetup /></ModuleGuard>} />

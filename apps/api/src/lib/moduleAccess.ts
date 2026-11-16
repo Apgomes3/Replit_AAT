@@ -10,6 +10,7 @@ export const MODULE_ACCESS_KEYS = [
   'drafting',
   'resources',
   'clients',
+  'initiatives',
 ] as const;
 
 export type ModuleAccessKey = typeof MODULE_ACCESS_KEYS[number];
@@ -27,4 +28,5 @@ export const MODULE_ACCESS_LABELS: Record<ModuleAccessKey, string> = {
   drafting: 'Drafting',
   resources: 'Resources (company teams & workload)',
   clients: 'Clients & contacts',
+  initiatives: 'Initiatives (internal work)',
 };

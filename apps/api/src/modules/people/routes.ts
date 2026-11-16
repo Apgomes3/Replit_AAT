@@ -9,6 +9,14 @@ const router = Router();
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const NAME = `COALESCE(NULLIF(TRIM(CONCAT_WS(' ', u.first_name, u.last_name)), ''), u.email)`;
 
+/** Active colleagues for pickers (owner, sponsor…): id, name, job position. */
+router.get('/', authenticate, async (_req, res, next) => {
+  try {
+    const rows = await query(`SELECT u.id, ${NAME} AS name, u.job_title FROM users u WHERE u.is_active IS NOT FALSE ORDER BY 2`);
+    res.json({ data: rows.rows });
+  } catch (e) { next(e); }
+});
+
 router.get('/:id', authenticate, async (req, res, next) => {
   try {
     const id = String(req.params.id);

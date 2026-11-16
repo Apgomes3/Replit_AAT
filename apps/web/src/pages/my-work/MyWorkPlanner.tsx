@@ -7,7 +7,7 @@ import { addDays, todayIso } from '../drafting/taskTiming';
 import type { WorkloadWeek } from '../drafting/planningApi';
 import {
   BUCKET_LABELS, Commitment, CommitmentKind, CommitmentPayload, describeCommitment, groupWork, toWorkItems, useDeleteCommitment,
-  useDeletePersonalTask, useMyProjects, useMyWork, useSaveCommitment, useSavePersonalTask, useUpdatePlanTask, WEEKDAY_SHORT,
+  useDeletePersonalTask, useMyInitiatives, useMyProjects, useMyWork, useSaveCommitment, useSavePersonalTask, useUpdatePlanTask, WEEKDAY_SHORT,
   WorkItem,
 } from './myWorkApi';
 
@@ -94,9 +94,26 @@ function ProjectSelect({ value, onChange, label = 'Project' }: { value: string; 
   </select>;
 }
 
+/** What a task is for: "p:<project id>", "i:<initiative id>" or "" (nothing). */
+function WorkForSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const projects = useMyProjects();
+  const initiatives = useMyInitiatives();
+  return <select aria-label="For" value={value} onChange={e => onChange(e.target.value)} className={`${input} max-w-[220px]`}>
+    <option value="">Not for a project or initiative</option>
+    {(initiatives.data ?? []).length > 0 && <optgroup label="Initiatives (internal work)">
+      {(initiatives.data ?? []).map(i => <option key={i.id} value={`i:${i.id}`}>{i.code} · {i.name}</option>)}
+    </optgroup>}
+    <optgroup label="Projects">
+      {(projects.data ?? []).map(p => <option key={p.id} value={`p:${p.id}`}>{p.code} · {p.name}</option>)}
+    </optgroup>
+  </select>;
+}
+const workForValue = (item: Pick<WorkItem, 'project' | 'initiative'>) => item.initiative ? `i:${item.initiative.id}` : item.project ? `p:${item.project.id}` : '';
+const workForBody = (v: string) => ({ project_id: v.startsWith('p:') ? v.slice(2) : null, initiative_id: v.startsWith('i:') ? v.slice(2) : null });
+
 function QuickAdd() {
   const save = useSavePersonalTask();
-  const [f, setF] = useState({ title: '', project_id: '', start_date: '', due_date: '', planned_hours: '' });
+  const [f, setF] = useState({ title: '', work_for: '', start_date: '', due_date: '', planned_hours: '' });
   const [more, setMore] = useState(false);
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -104,10 +121,10 @@ function QuickAdd() {
     if (f.start_date && f.due_date && f.due_date < f.start_date) return toast.error('The due date cannot be before the start date');
     try {
       await save.mutateAsync({ body: {
-        title: f.title.trim(), project_id: f.project_id || null, start_date: f.start_date || null, due_date: f.due_date || null,
+        title: f.title.trim(), ...workForBody(f.work_for), start_date: f.start_date || null, due_date: f.due_date || null,
         planned_hours: f.planned_hours ? Number(f.planned_hours) : null,
       } });
-      setF({ title: '', project_id: f.project_id, start_date: '', due_date: '', planned_hours: '' });
+      setF({ title: '', work_for: f.work_for, start_date: '', due_date: '', planned_hours: '' });
     } catch (err) { toast.error(apiErrorMessage(err, 'Could not add the task')); }
   };
   return <form onSubmit={submit} className="p-4 flex flex-wrap items-center gap-2">
@@ -118,7 +135,7 @@ function QuickAdd() {
     <button type="button" onClick={() => setMore(v => !v)} className="text-xs font-semibold text-stone-500 hover:text-[#087f73]">{more ? 'Less' : 'More'}</button>
     <button disabled={save.isPending || !f.title.trim()} className="px-3 py-1.5 rounded-lg bg-[#087f73] text-white text-sm font-bold disabled:opacity-50">Add</button>
     {more && <div className="basis-full flex flex-wrap items-center gap-2 pl-6">
-      <ProjectSelect value={f.project_id} onChange={v => setF({ ...f, project_id: v })} />
+      <WorkForSelect value={f.work_for} onChange={v => setF({ ...f, work_for: v })} />
       <label className="text-xs text-stone-500 flex items-center gap-1">Start<input aria-label="Start date" type="date" value={f.start_date} max={f.due_date || undefined} onChange={e => setF({ ...f, start_date: e.target.value })} className={input} /></label>
       <label className="text-xs text-stone-500 flex items-center gap-1">Effort<input aria-label="Planned hours" type="number" min={0.5} step={0.5} value={f.planned_hours} onChange={e => setF({ ...f, planned_hours: e.target.value })} placeholder="h" className={`${input} w-20`} /> h</label>
       <span className="text-[11px] text-stone-400">Effort is spread over the working days from start to due and shows in your week.</span>
@@ -155,6 +172,7 @@ function WorkRow({ item, today }: { item: WorkItem; today: string }) {
       <div className="text-[11px] text-stone-500 truncate">
         {item.plan ? <Link to={`/drafting/plans/${item.plan.id}`} className="hover:text-[#087f73]">{item.plan.code}</Link> : <span>Own task</span>}
         {item.project && <> · <span className="font-mono">{item.project.code}</span> {item.project.name}</>}
+        {item.initiative && <> · <Link to={`/initiatives/${item.initiative.id}`} className="hover:text-[#087f73]"><span className="font-mono">{item.initiative.code}</span> {item.initiative.name}</Link></>}
         {item.planned_hours ? <> · {item.planned_hours} h</> : null}
       </div>
     </div>
@@ -179,7 +197,7 @@ function WorkRow({ item, today }: { item: WorkItem; today: string }) {
 function EditOwnTask({ item, onClose }: { item: WorkItem; onClose: () => void }) {
   const save = useSavePersonalTask();
   const [f, setF] = useState({
-    title: item.title, notes: item.notes ?? '', project_id: item.project?.id ?? '', start_date: item.start_date ?? '',
+    title: item.title, notes: item.notes ?? '', work_for: workForValue(item), start_date: item.start_date ?? '',
     due_date: item.due_date ?? '', planned_hours: item.planned_hours ? String(item.planned_hours) : '',
   });
   const submit = async (e: FormEvent) => {
@@ -188,7 +206,7 @@ function EditOwnTask({ item, onClose }: { item: WorkItem; onClose: () => void })
     if (f.start_date && f.due_date && f.due_date < f.start_date) return toast.error('The due date cannot be before the start date');
     try {
       await save.mutateAsync({ id: item.id, body: {
-        title: f.title.trim(), notes: f.notes.trim() || null, project_id: f.project_id || null, start_date: f.start_date || null,
+        title: f.title.trim(), notes: f.notes.trim() || null, ...workForBody(f.work_for), start_date: f.start_date || null,
         due_date: f.due_date || null, planned_hours: f.planned_hours ? Number(f.planned_hours) : null,
       } });
       onClose();
@@ -196,7 +214,7 @@ function EditOwnTask({ item, onClose }: { item: WorkItem; onClose: () => void })
   };
   return <form onSubmit={submit} className="flex flex-wrap items-center gap-2 py-1">
     <input aria-label="Title" value={f.title} onChange={e => setF({ ...f, title: e.target.value })} className={`${input} flex-1 min-w-[200px]`} />
-    <ProjectSelect value={f.project_id} onChange={v => setF({ ...f, project_id: v })} />
+    <WorkForSelect value={f.work_for} onChange={v => setF({ ...f, work_for: v })} />
     <input aria-label="Start date" type="date" value={f.start_date} onChange={e => setF({ ...f, start_date: e.target.value })} className={input} />
     <input aria-label="Due date" type="date" value={f.due_date} onChange={e => setF({ ...f, due_date: e.target.value })} className={input} />
     <input aria-label="Planned hours" type="number" min={0.5} step={0.5} placeholder="h" value={f.planned_hours} onChange={e => setF({ ...f, planned_hours: e.target.value })} className={`${input} w-20`} />
