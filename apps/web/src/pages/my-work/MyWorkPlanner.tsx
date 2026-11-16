@@ -10,6 +10,7 @@ import {
   useDeletePersonalTask, useMyInitiatives, useMyProjects, useMyWork, useSaveCommitment, useSavePersonalTask, useUpdatePlanTask, WEEKDAY_SHORT,
   WorkItem,
 } from './myWorkApi';
+import GoogleCalendarCard from './GoogleCalendarCard';
 
 const mondayOf = (iso: string) => addDays(iso, -((new Date(`${iso}T00:00:00Z`).getUTCDay() + 6) % 7));
 const fmt = (iso: string | null) => iso ? new Date(`${iso}T00:00:00Z`).toLocaleDateString(undefined, { day: 'numeric', month: 'short', timeZone: 'UTC' }) : '';
@@ -55,7 +56,10 @@ export default function MyWorkPlanner() {
               </div>;
             })}
       </div>
-      <Commitments list={work.data?.commitments ?? []} />
+      <div className="space-y-5 self-start">
+        <Commitments list={work.data?.commitments ?? []} />
+        <GoogleCalendarCard from={from} />
+      </div>
     </div>
   </section>;
 }

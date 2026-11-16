@@ -38,6 +38,7 @@ import planningRoutes from './modules/planning/routes';
 import myWorkRoutes from './modules/planning/myWorkRoutes';
 import plansRoutes from './modules/planning/plansRoutes';
 import pimRoutes from './modules/pim/routes';
+import googleCalendarRoutes from './modules/google-calendar/routes';
 import { errorHandler, notFound } from './middleware/errors';
 import { observe, summary } from './lib/telemetry';
 import { authenticate, requireRole } from './middleware/auth';
@@ -59,6 +60,8 @@ app.use((req, _res, next) => { if (req.body === undefined) req.body = {}; next()
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 app.use('/api/v1/auth', authRoutes);
+// Before the /api/v1 routers that require login on everything: Google's OAuth callback arrives without a Bearer token.
+app.use('/api/v1/google-calendar', googleCalendarRoutes);
 app.use('/api/v1', projectRoutes);
 app.use('/api/v1', productRoutes);
 app.use('/api/v1', knowledgeRoutes);
