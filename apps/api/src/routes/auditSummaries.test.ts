@@ -41,10 +41,14 @@ vi.mock('../db', () => {
     if (sql.startsWith('select fo_number from purchase_orders')) {
       return { rows: [{ fo_number: null }] };
     }
+    if (sql.startsWith('select project_code from projects where id=$1')) {
+      return { rows: [{ project_code: 'PRJ-1' }] };
+    }
     if (sql.startsWith('update projects set')) {
       return {
         rows: [{
           id: projectId,
+          project_code: 'PRJ-1',
           project_name: 'Updated Aquarium',
           project_status: 'Active',
           // Routes use updated_at as the optimistic-concurrency version.

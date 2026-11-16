@@ -386,6 +386,7 @@ export default function ProjectDetail() {
 
   const startEditProject = () => {
     setProjectForm({
+      project_code: project.project_code || '',
       project_name: project.project_name || '',
       client_name: project.client_name || '',
       site_name: project.site_name || '',
@@ -405,14 +406,22 @@ export default function ProjectDetail() {
   };
 
   const handleSaveProject = async () => {
+    const newCode = String(projectForm.project_code ?? '').trim();
+    const codeChanged = newCode !== project.project_code;
+    if (!newCode) { toast.error('Project code cannot be empty'); return; }
+    if (codeChanged && !window.confirm(`Change the project code from ${project.project_code} to ${newCode}?\n\nPlans, tasks and documents stay linked. Codes already issued from the old number (such as BOM release numbers) keep it.`)) return;
     setProjectSaving(true);
     try {
-      await api.put(`/projects/${project.id}`, projectForm);
-      toast.success('Project saved');
-      refetch();
+      await api.put(`/projects/${project.id}`, { ...projectForm, project_code: newCode });
+      toast.success(codeChanged ? `Project code changed to ${newCode}` : 'Project saved');
       qc.invalidateQueries({ queryKey: ['projects'] });
       setEditingProject(false);
-    } catch { toast.error('Save failed'); }
+      // The page may have been opened by the old code: reopen it by id so it keeps loading.
+      if (codeChanged && id !== project.id) navigate(`/projects/${project.id}`, { replace: true });
+      else refetch();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message || 'Save failed');
+    }
     finally { setProjectSaving(false); }
   };
 
@@ -1209,6 +1218,16 @@ export default function ProjectDetail() {
               <div className="bg-white border border-slate-200 rounded-lg p-5 mt-3">
                 <div className="text-xs text-slate-400 uppercase tracking-wide mb-4">Edit Project Details</div>
                 <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label htmlFor="project-code-input" className="block text-xs font-medium text-slate-600 mb-1">Project Code</label>
+                    <input id="project-code-input" value={projectForm.project_code} maxLength={50}
+                      onChange={e => setProjectForm((f: any) => ({ ...f, project_code: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-600/30" />
+                    {projectForm.project_code?.trim() !== project.project_code && (
+                      <p className="text-[11px] text-amber-700 mt-1">Currently {project.project_code}. You'll be asked to confirm.</p>
+                    )}
+                  </div>
+                  <div />
                   <div className="col-span-2">
                     <label className="block text-xs font-medium text-slate-600 mb-1">Project Name</label>
                     <input value={projectForm.project_name} onChange={e => setProjectForm((f: any) => ({ ...f, project_name: e.target.value }))}

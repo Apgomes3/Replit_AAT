@@ -294,6 +294,161 @@ function InviteModal({ roleOptions, smtpConfigured, onClose, onSuccess }: Invite
   );
 }
 
+interface ReportingPlan {
+  applied: boolean;
+  total: number;
+  unchanged: number;
+  changes: Array<{
+    row: number; email: string; name: string;
+    reports_to?: { from: string | null; to: string | null };
+    job_title?: { from: string | null; to: string };
+  }>;
+  errors: Array<{ row: number; email?: string; message: string }>;
+}
+
+/** Upload an edited user export: preview the reports-to and job position changes, then apply them. */
+function ReportingImportModal({ onClose, onApplied }: { onClose: () => void; onApplied: () => void }) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [plan, setPlan] = useState<ReportingPlan | null>(null);
+  const [busy, setBusy] = useState(false);
+  const modalRef = useModalFocus<HTMLDivElement>({ onClose });
+
+  const send = async (selected: File, apply: boolean) => {
+    setBusy(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', selected);
+      const res = await api.post(`/admin/users/reporting-import${apply ? '?apply=1' : ''}`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      setPlan(res.data);
+      if (apply) {
+        onApplied();
+        toast.success(`${res.data.changes.length} ${res.data.changes.length === 1 ? 'person' : 'people'} updated`);
+      }
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message || 'Could not read the file');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const choose = (selected: File | undefined) => {
+    if (!selected) return;
+    if (!selected.name.toLowerCase().endsWith('.csv')) { toast.error('Please choose a CSV file'); return; }
+    setFile(selected);
+    setPlan(null);
+    send(selected, false);
+  };
+
+  const arrow = (from: string | null, to: string | null) => (
+    <><span className="text-slate-400">{from ?? 'nobody'}</span> → <span className="font-medium text-slate-800">{to ?? 'nobody'}</span></>
+  );
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div ref={modalRef} role="dialog" aria-modal="true" aria-labelledby="reporting-import-title" tabIndex={-1} className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+        <div className="flex items-start justify-between p-5 border-b border-slate-100">
+          <div className="flex items-start gap-2">
+            <FileSpreadsheet className="w-4 h-4 text-blue-600 mt-0.5" />
+            <div>
+              <h2 id="reporting-import-title" className="text-base font-semibold text-slate-800">Update reporting from file</h2>
+              <p className="text-xs text-slate-500 mt-1">
+                Use a file from <span className="font-medium">Export</span>. Fill <span className="font-mono">reports_to_email</span> (or
+                just <span className="font-mono">reports_to_name</span>) and <span className="font-mono">job_title</span>; leave both
+                reports-to cells blank for nobody. Other columns are ignored, and no one is added or removed.
+              </p>
+            </div>
+          </div>
+          <button onClick={onClose} aria-label="Close dialog" title="Close dialog" className="text-slate-300 hover:text-slate-500">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="overflow-auto p-5 space-y-4">
+          <div
+            className="border-2 border-dashed border-slate-200 rounded-xl p-6 text-center cursor-pointer hover:border-blue-600/40 hover:bg-slate-50 transition-colors"
+            onClick={() => fileRef.current?.click()}
+            onDragOver={event => event.preventDefault()}
+            onDrop={event => { event.preventDefault(); choose(event.dataTransfer.files[0]); }}
+          >
+            <Upload className="w-6 h-6 text-slate-300 mx-auto mb-2" />
+            <div className="text-sm font-medium text-slate-600">{file ? file.name : 'Drop the edited CSV here or click to browse'}</div>
+            <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden" onChange={event => { choose(event.target.files?.[0]); event.target.value = ''; }} />
+          </div>
+
+          {busy && !plan && <p className="text-sm text-slate-500">Reading the file…</p>}
+
+          {plan && (
+            <>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="rounded-lg bg-emerald-50 border border-emerald-100 p-3 text-center">
+                  <div className="text-xl font-semibold text-emerald-700">{plan.changes.length}</div>
+                  <div className="text-xs text-emerald-700">{plan.applied ? 'Updated' : 'To update'}</div>
+                </div>
+                <div className="rounded-lg bg-slate-50 border border-slate-100 p-3 text-center">
+                  <div className="text-xl font-semibold text-slate-600">{plan.unchanged}</div>
+                  <div className="text-xs text-slate-500">No change</div>
+                </div>
+                <div className="rounded-lg bg-red-50 border border-red-100 p-3 text-center">
+                  <div className="text-xl font-semibold text-red-700">{plan.errors.length}</div>
+                  <div className="text-xs text-red-700">Need attention</div>
+                </div>
+              </div>
+
+              {plan.changes.length > 0 && (
+                <div className="border border-slate-200 rounded-lg overflow-hidden">
+                  <div className="px-3 py-2 bg-slate-50 text-xs font-semibold text-slate-600">{plan.applied ? 'Saved changes' : 'Changes to save'}</div>
+                  <div className="max-h-64 overflow-auto divide-y divide-slate-100">
+                    {plan.changes.map(c => (
+                      <div key={c.email} className="px-3 py-2 text-xs text-slate-600">
+                        <span className="font-medium text-slate-800">{c.name}</span>
+                        {c.reports_to && <div className="mt-0.5">Reports to: {arrow(c.reports_to.from, c.reports_to.to)}</div>}
+                        {c.job_title && <div className="mt-0.5">Job position: {arrow(c.job_title.from, c.job_title.to)}</div>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {plan.errors.length > 0 && (
+                <div className="border border-red-100 rounded-lg overflow-hidden">
+                  <div className="px-3 py-2 bg-red-50 text-xs font-semibold text-red-700">
+                    Rows that need attention {plan.applied ? '(not saved)' : '(will be skipped)'}
+                  </div>
+                  <div className="max-h-48 overflow-auto divide-y divide-red-50">
+                    {plan.errors.map(error => (
+                      <div key={`${error.row}-${error.email}-${error.message}`} className="px-3 py-2 text-xs text-slate-600">
+                        <span className="font-medium text-slate-800">Row {error.row}</span>
+                        {error.email && <span className="text-slate-500"> · {error.email}</span>}
+                        <span className="block text-red-600 mt-0.5">{error.message}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2 px-5 pb-5">
+          {plan?.applied ? (
+            <Button variant="primary" onClick={onClose}>Done</Button>
+          ) : (
+            <>
+              <Button onClick={onClose}>Cancel</Button>
+              <Button variant="primary" onClick={() => file && send(file, true)} disabled={!plan || busy || plan.changes.length === 0}>
+                {busy && plan ? 'Saving…' : `Save ${plan?.changes.length ?? 0} change${plan?.changes.length === 1 ? '' : 's'}`}
+              </Button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface BulkInviteResult {
   total: number;
   invited: number;
@@ -559,6 +714,25 @@ export default function AdminUsers() {
   // Modals
   const [showInvite, setShowInvite] = useState(false);
   const [showBulkInvite, setShowBulkInvite] = useState(false);
+  const [showReportingImport, setShowReportingImport] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const exportUsers = async () => {
+    setExporting(true);
+    try {
+      const res = await api.get('/admin/users/export', { responseType: 'blob' });
+      const name = /filename="([^"]+)"/.exec(res.headers['content-disposition'] ?? '')?.[1] ?? 'shark-os-users.csv';
+      const url = URL.createObjectURL(res.data);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = name;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error('Could not export users');
+    } finally {
+      setExporting(false);
+    }
+  };
   const [editUser, setEditUser] = useState<UserRow | null>(null);
   const [confirmBlock, setConfirmBlock] = useState<UserRow | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<UserRow | null>(null);
@@ -713,6 +887,12 @@ export default function AdminUsers() {
         subtitle="Platform users and roles"
         actions={isAdmin ? (
           <div className="flex items-center gap-2">
+            <Button onClick={exportUsers} disabled={exporting} title="Download every user with job position and reports-to, to edit offline">
+              <Download className="w-4 h-4" />{exporting ? 'Exporting…' : 'Export'}
+            </Button>
+            <Button onClick={() => setShowReportingImport(true)} title="Upload an edited export to update reports-to and job positions">
+              <Users className="w-4 h-4" />Update reporting
+            </Button>
             <Button onClick={() => setShowBulkInvite(true)}>
               <Upload className="w-4 h-4" />Import CSV
             </Button>
@@ -924,6 +1104,13 @@ export default function AdminUsers() {
           smtpConfigured={smtpConfigured}
           onClose={() => setShowInvite(false)}
           onSuccess={() => refetch()}
+        />
+      )}
+
+      {showReportingImport && (
+        <ReportingImportModal
+          onClose={() => setShowReportingImport(false)}
+          onApplied={() => refetch()}
         />
       )}
 

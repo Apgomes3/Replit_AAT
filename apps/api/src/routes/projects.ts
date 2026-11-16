@@ -444,16 +444,44 @@ router.post('/projects', authenticate, async (req: AuthRequest, res: Response) =
   res.status(201).json(result.rows[0]);
 });
 
+/** A project code as typed (trimmed, inner spaces collapsed), or an error message. */
+export function cleanProjectCode(value: unknown): { code: string } | { error: string } {
+  if (typeof value !== 'string') return { error: 'Project code must be text' };
+  const code = value.trim().replace(/\s+/g, ' ');
+  if (!code) return { error: 'Project code cannot be empty' };
+  if (code.length > 50) return { error: 'Project code must be 50 characters or fewer' };
+  return { code };
+}
+
 router.put('/projects/:id', authenticate, async (req: AuthRequest, res: Response) => {
   const { project_name, client_name, site_name, country, city, latitude, longitude, project_status, start_date, target_completion_date, project_manager, engineering_manager, qa_owner, notes, project_scopes } = req.body;
   const toDate = (v: any) => (v === '' || v == null) ? null : v;
   const toNum  = (v: any) => (v === '' || v == null) ? null : Number(v);
   const toStr  = (v: any) => (v === '' || v == null) ? null : String(v);
-  const result = await withTransaction(async db => {
+  // project_code is optional: left unchanged when the body does not include it.
+  let newCode: string | null = null;
+  if (req.body.project_code !== undefined) {
+    const cleaned = cleanProjectCode(req.body.project_code);
+    if ('error' in cleaned) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: cleaned.error } });
+    newCode = cleaned.code;
+  }
+  const before = await query('SELECT project_code FROM projects WHERE id=$1', [req.params.id]);
+  if (!before.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Project not found' } });
+  const oldCode: string = before.rows[0].project_code;
+  if (newCode !== null && newCode !== oldCode) {
+    const taken = await query('SELECT project_name FROM projects WHERE LOWER(project_code)=LOWER($1) AND id<>$2', [newCode, req.params.id]);
+    if (taken.rows[0]) {
+      return res.status(409).json({ error: { code: 'CONFLICT', message: `Project code ${newCode} is already used by "${taken.rows[0].project_name}"` } });
+    }
+  }
+  let result;
+  try {
+    result = await withTransaction(async db => {
     const updated = await db.query(
-    `UPDATE projects SET project_name=$1, client_name=$2, site_name=$3, country=$4, city=$5, latitude=$6, longitude=$7, project_status=$8, start_date=$9, target_completion_date=$10, project_manager=$11, engineering_manager=$12, qa_owner=$13, notes=$14, project_scopes=COALESCE($15, project_scopes), updated_at=NOW()
+    `UPDATE projects SET project_name=$1, client_name=$2, site_name=$3, country=$4, city=$5, latitude=$6, longitude=$7, project_status=$8, start_date=$9, target_completion_date=$10, project_manager=$11, engineering_manager=$12, qa_owner=$13, notes=$14, project_scopes=COALESCE($15, project_scopes),
+       project_code=COALESCE($17, project_code), updated_at=NOW()
      WHERE id=$16 RETURNING *`,
-    [toStr(project_name), toStr(client_name), toStr(site_name), toStr(country), toStr(city), toNum(latitude), toNum(longitude), project_status, toDate(start_date), toDate(target_completion_date), toStr(project_manager), toStr(engineering_manager), toStr(qa_owner), toStr(notes), Array.isArray(project_scopes) ? project_scopes : null, req.params.id]
+    [toStr(project_name), toStr(client_name), toStr(site_name), toStr(country), toStr(city), toNum(latitude), toNum(longitude), project_status, toDate(start_date), toDate(target_completion_date), toStr(project_manager), toStr(engineering_manager), toStr(qa_owner), toStr(notes), Array.isArray(project_scopes) ? project_scopes : null, req.params.id, newCode]
     );
     if (updated.rows[0]) {
       await emitNotification(db, {
@@ -467,12 +495,18 @@ router.put('/projects/:id', authenticate, async (req: AuthRequest, res: Response
       });
     }
     return updated;
-  });
+    });
+  } catch (err: any) {
+    if (err?.code === '23505') return res.status(409).json({ error: { code: 'CONFLICT', message: `Project code ${newCode} is already used` } });
+    throw err;
+  }
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Project not found' } });
+  const codeChanged = result.rows[0].project_code !== oldCode;
   await logAudit(req.user!.id, 'project', result.rows[0].id, 'UPDATE', {
-    summary: 'Project details updated',
+    summary: codeChanged ? `Project code changed from ${oldCode} → ${result.rows[0].project_code}` : 'Project details updated',
     project_name: result.rows[0].project_name,
     project_status: result.rows[0].project_status,
+    ...(codeChanged ? { previous_project_code: oldCode, project_code: result.rows[0].project_code } : {}),
   });
   res.json(result.rows[0]);
 });

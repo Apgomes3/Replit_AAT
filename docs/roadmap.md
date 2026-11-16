@@ -20,11 +20,14 @@ Items marked **You** need a decision or data from the business before (or while)
 
 - **You:** check the teams and their managers in Resources › Teams.
 - **You:** finish people's calendars in Resources › People (the ones not yet placed are on China office).
-- **You:** set "Reports to" for each person in Admin › Users (direct line manager, independent of teams).
+- **You:** set "Reports to" for each person in Admin › Users (direct line manager, independent of teams), one by one
+  or offline: **Export** the list, fill `reports_to_email` (or `reports_to_name`) and `job_title`, save as CSV UTF-8,
+  then **Update reporting** to preview and save the changes.
 - **You:** decide module access for the `user` role in Admin › Roles (today it can manage every module), and
   fix `viewer`, which has manage access on most modules.
 - **You:** fill in the 16 projects created by the Planner import (client, country/city, status, project manager)
-  and give `064-XXX NZ Underwater UV` and `001-XXX Pond Fishing Pool` their real numbers (Projects › edit).
+  and give `064-XXX NZ Underwater UV` and `001-XXX Pond Fishing Pool` their real numbers (open the project › Edit ›
+  Project Code; codes already issued from the old number, such as BOM release numbers, keep it).
 
 ## Step 2 — who sees what (next build)
 
