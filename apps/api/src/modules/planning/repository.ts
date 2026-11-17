@@ -230,7 +230,9 @@ export type WorkloadTask = {
   id: string; title: string; kind: 'plan' | 'task' | 'commitment';
   plan_id: string | null; plan_code: string | null; project_code: string | null; hours: number;
 };
-export type WorkloadWeek = { week_start: string; capacity: number; booked: number; leave: number; tasks: WorkloadTask[] };
+/** One day of a week: hours that can be worked, booked and on leave. */
+export type WorkloadDay = { date: string; capacity: number; booked: number; leave: number };
+export type WorkloadWeek = { week_start: string; capacity: number; booked: number; leave: number; tasks: WorkloadTask[]; days: WorkloadDay[] };
 export type WorkloadRow = {
   user_id: string; name: string; calendar_name: string; capacity_pct: number; teams: PersonTeam[]; weeks: WorkloadWeek[];
 };
@@ -287,8 +289,10 @@ export async function getWorkload(opts: PeopleScope & { userIds?: string[]; from
      WHERE c.user_id = ANY($1::uuid[]) AND c.start_date <= $3 AND (c.end_date IS NULL OR c.end_date >= $2)`,
     [ids, opts.from, to],
   )).rows;
-  const book = (w: WorkloadWeek, item: Omit<WorkloadTask, 'hours'>, h: number) => {
+  const book = (weeks: WorkloadWeek[], i: number, item: Omit<WorkloadTask, 'hours'>, h: number) => {
+    const w = weeks[Math.floor(i / 7)]!;
     w.booked += h;
+    w.days[i % 7]!.booked += h;
     const existing = w.tasks.find(t => t.id === item.id);
     if (existing) existing.hours += h;
     else w.tasks.push({ ...item, hours: h });
@@ -300,6 +304,7 @@ export async function getWorkload(opts: PeopleScope & { userIds?: string[]; from
     const factor = p.capacity_pct / 100;
     const weeks: WorkloadWeek[] = Array.from({ length: opts.weeks }, (_, i) => ({
       week_start: addDays(opts.from, i * 7), capacity: 0, booked: 0, leave: 0, tasks: [],
+      days: Array.from({ length: 7 }, (_, d) => ({ date: addDays(opts.from, i * 7 + d), capacity: 0, booked: 0, leave: 0 })),
     }));
     const myLeave = leave.filter(l => l.user_id === p.user_id);
     for (let i = 0; i < opts.weeks * 7; i++) {
@@ -310,6 +315,8 @@ export async function getWorkload(opts: PeopleScope & { userIds?: string[]; from
       const w = weeks[Math.floor(i / 7)]!;
       w.capacity += hours - Math.min(hours, off);
       w.leave += Math.min(hours, off);
+      w.days[i % 7]!.capacity = hours - Math.min(hours, off);
+      w.days[i % 7]!.leave = Math.min(hours, off);
     }
     for (const a of assignments.filter(x => x.user_id === p.user_id)) {
       for (let i = 0; i < opts.weeks * 7; i++) {
@@ -317,13 +324,13 @@ export async function getWorkload(opts: PeopleScope & { userIds?: string[]; from
         if (day < a.start_date || day > a.due_date) continue;
         const h = hoursOn(cal, day) * factor * (a.allocation_pct / 100);
         if (!h) continue;
-        book(weeks[Math.floor(i / 7)]!, { id: a.id, title: a.title, kind: 'plan', plan_id: a.plan_id, plan_code: a.plan_code, project_code: a.project_code }, h);
+        book(weeks, i, { id: a.id, title: a.title, kind: 'plan', plan_id: a.plan_id, plan_code: a.plan_code, project_code: a.project_code }, h);
       }
     }
     for (const t of ownTasks.filter(x => x.user_id === p.user_id)) {
       for (let i = 0; i < opts.weeks * 7; i++) {
         const h = personalTaskHours(cal, t, addDays(opts.from, i));
-        if (h) book(weeks[Math.floor(i / 7)]!, { id: t.id, title: t.title, kind: 'task', plan_id: null, plan_code: null, project_code: t.project_code }, h);
+        if (h) book(weeks, i, { id: t.id, title: t.title, kind: 'task', plan_id: null, plan_code: null, project_code: t.project_code }, h);
       }
     }
     for (const c of commitments.filter(x => x.user_id === p.user_id)) {
@@ -332,7 +339,7 @@ export async function getWorkload(opts: PeopleScope & { userIds?: string[]; from
         // A whole day of leave means the meeting or role is not happening for them that day.
         if (myLeave.some(l => l.hours_per_day === null && l.start_date <= day && day <= l.end_date)) continue;
         const h = commitmentHours(c, day, hoursOn(cal, day) * factor);
-        if (h) book(weeks[Math.floor(i / 7)]!, { id: c.id, title: c.title, kind: 'commitment', plan_id: null, plan_code: null, project_code: c.project_code }, h);
+        if (h) book(weeks, i, { id: c.id, title: c.title, kind: 'commitment', plan_id: null, plan_code: null, project_code: c.project_code }, h);
       }
     }
     for (const w of weeks) {
@@ -340,6 +347,7 @@ export async function getWorkload(opts: PeopleScope & { userIds?: string[]; from
       w.booked = Math.round(w.booked * 10) / 10;
       w.leave = Math.round(w.leave * 10) / 10;
       w.tasks.forEach(t => { t.hours = Math.round(t.hours * 10) / 10; });
+      w.days.forEach(d => { d.capacity = Math.round(d.capacity * 10) / 10; d.booked = Math.round(d.booked * 10) / 10; d.leave = Math.round(d.leave * 10) / 10; });
       w.tasks.sort((a, b) => b.hours - a.hours);
     }
     rows.push({ user_id: p.user_id, name: p.name, calendar_name: p.calendar_name, capacity_pct: p.capacity_pct, teams: p.teams, weeks });

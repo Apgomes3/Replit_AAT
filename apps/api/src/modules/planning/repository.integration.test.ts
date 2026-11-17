@@ -83,6 +83,12 @@ describe.skipIf(!process.env.DATABASE_URL)('planning repository (PostgreSQL)', (
     expect(row!.weeks[0]).toMatchObject({ week_start: '2026-11-16', capacity: 16, leave: 4, booked: 10 });
     expect(row!.weeks[0]!.tasks).toEqual([expect.objectContaining({ title: 'Workload task', hours: 10 })]);
     expect(row!.weeks[1]).toMatchObject({ week_start: '2026-11-23', capacity: 20, booked: 0 });
+    // The same week day by day (for the My Work calendar): leave on Wednesday, nothing at the weekend.
+    expect(row!.weeks[0]!.days.slice(1, 3)).toEqual([
+      { date: '2026-11-17', capacity: 4, leave: 0, booked: 2 },
+      { date: '2026-11-18', capacity: 0, leave: 4, booked: 2 },
+    ]);
+    expect(row!.weeks[0]!.days[6]).toEqual({ date: '2026-11-22', capacity: 0, leave: 0, booked: 0 });
 
     const team = await repo.listResources({ teamId: ids.team });
     expect(team.map(p => p.user_id)).toEqual([ids.user]);

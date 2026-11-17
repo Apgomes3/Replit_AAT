@@ -86,7 +86,8 @@ export type WorkloadTask = {
   id: string; title: string; kind: 'plan' | 'task' | 'commitment';
   plan_id: string | null; plan_code: string | null; project_code: string | null; hours: number;
 };
-export type WorkloadWeek = { week_start: string; capacity: number; booked: number; leave: number; tasks: WorkloadTask[] };
+export type WorkloadDay = { date: string; capacity: number; booked: number; leave: number };
+export type WorkloadWeek = { week_start: string; capacity: number; booked: number; leave: number; tasks: WorkloadTask[]; days?: WorkloadDay[] };
 export type WorkloadRow = {
   user_id: string; name: string; calendar_name: string; capacity_pct: number; teams: PersonTeam[]; weeks: WorkloadWeek[];
 };

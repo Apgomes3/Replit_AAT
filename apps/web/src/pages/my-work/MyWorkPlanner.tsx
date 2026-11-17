@@ -11,6 +11,11 @@ import {
   WorkItem,
 } from './myWorkApi';
 import GoogleCalendarCard from './GoogleCalendarCard';
+import { MonthCalendar, WeekCalendar } from './MyWorkCalendar';
+
+type View = 'list' | 'week' | 'month';
+const VIEW_KEY = 'my-work:view';
+const savedView = (): View => { try { const v = localStorage.getItem(VIEW_KEY); return v === 'week' || v === 'month' ? v : 'list'; } catch { return 'list'; } };
 
 const mondayOf = (iso: string) => addDays(iso, -((new Date(`${iso}T00:00:00Z`).getUTCDay() + 6) % 7));
 const fmt = (iso: string | null) => iso ? new Date(`${iso}T00:00:00Z`).toLocaleDateString(undefined, { day: 'numeric', month: 'short', timeZone: 'UTC' }) : '';
@@ -24,6 +29,10 @@ export default function MyWorkPlanner() {
   const items = useMemo(() => work.data ? toWorkItems(work.data) : [], [work.data]);
   const groups = useMemo(() => groupWork(items, today), [items, today]);
   const [showDone, setShowDone] = useState(false);
+  const [view, setViewState] = useState<View>(savedView);
+  const [month, setMonth] = useState(today);
+  const setView = (v: View) => { setViewState(v); try { localStorage.setItem(VIEW_KEY, v); } catch { /* per-browser convenience only */ } };
+  const row = (i: WorkItem) => <WorkRow key={i.key} item={i} today={today} />;
 
   return <section aria-labelledby="my-work-title" className="mb-10 animate-fade-in-up">
     <div className="flex flex-wrap items-end justify-between gap-3 mb-3">
@@ -32,12 +41,33 @@ export default function MyWorkPlanner() {
         <p className="text-xs text-stone-500">Everything assigned to you across all plans, your own tasks and your regular commitments.
           {work.data && <> Calendar: {work.data.calendar_name}{work.data.capacity_pct < 100 ? ` at ${work.data.capacity_pct}%` : ''}.</>}</p>
       </div>
-      <Link to="/my-work" className="text-xs font-semibold text-[#087f73] hover:underline">Approvals and records assigned to me →</Link>
+      <div className="flex items-center gap-3">
+        <div role="tablist" aria-label="How to show my work" className="inline-flex rounded-lg border border-stone-200 bg-white p-0.5">
+          {(['list', 'week', 'month'] as const).map(v => <button key={v} role="tab" aria-selected={view === v} onClick={() => setView(v)}
+            className={`px-3 py-1 rounded-md text-xs font-bold capitalize ${view === v ? 'bg-[#087f73] text-white' : 'text-stone-600 hover:text-[#087f73]'}`}>{v}</button>)}
+        </div>
+        <Link to="/my-work" className="text-xs font-semibold text-[#087f73] hover:underline">Approvals and records assigned to me →</Link>
+      </div>
     </div>
 
     <WeekStrip weeks={work.data?.weeks ?? []} loading={work.isLoading} from={from} today={today}
       onShift={d => setFrom(addDays(from, d * 7))} onToday={() => setFrom(mondayOf(today))} />
 
+    {view !== 'list' ? <div className="mt-4 space-y-5">
+      <div className="bg-white rounded-2xl border border-stone-200/70 shadow-sm">
+        <QuickAdd />
+        <div className="border-t border-stone-100">
+          {work.isError ? <p className="p-5 text-sm text-rose-700">Your work could not be loaded. <button className="underline font-semibold" onClick={() => work.refetch()}>Try again</button></p>
+            : view === 'week' ? <WeekCalendar from={from} items={items} commitments={work.data?.commitments ?? []} days={work.data?.weeks[0]?.days ?? []}
+                onShift={d => setFrom(addDays(from, d * 7))} onToday={() => setFrom(mondayOf(today))} renderRow={row} />
+            : <MonthCalendar month={month} items={items} onMonth={setMonth} onPickWeek={m => { setFrom(m); setView('week'); }} renderRow={row} />}
+        </div>
+      </div>
+      <div className="grid md:grid-cols-2 gap-5">
+        <Commitments list={work.data?.commitments ?? []} />
+        <GoogleCalendarCard from={from} />
+      </div>
+    </div> :
     <div className="grid lg:grid-cols-[1fr_320px] gap-5 mt-4">
       <div className="bg-white rounded-2xl border border-stone-200/70 shadow-sm">
         <QuickAdd />
@@ -60,7 +90,7 @@ export default function MyWorkPlanner() {
         <Commitments list={work.data?.commitments ?? []} />
         <GoogleCalendarCard from={from} />
       </div>
-    </div>
+    </div>}
   </section>;
 }
 
