@@ -138,11 +138,17 @@ router.post('/', requireModuleManage('business_development'), referenceModuleAcc
       const number = await nextNumber(db, `enquiry:${new Date().getUTCFullYear()}`, `ENQ-${new Date().getUTCFullYear()}-`);
       if (b.enquiry_type !== undefined && !['direct','tender'].includes(b.enquiry_type)) validation('Type must be direct or tender.', 'enquiry_type');
       if (b.status && !['new','qualifying'].includes(b.status)) validation('A new enquiry starts as New or Qualifying.', 'status');
+      // The AAT owner: whoever was chosen, otherwise the person creating it.
+      const owner = b.bid_owner_user_id || req.user!.id;
+      if (owner !== req.user!.id) {
+        if (invalidId(owner, 'bid_owner_user_id')) validation(invalidId(owner, 'bid_owner_user_id')!, 'bid_owner_user_id');
+        if (!(await db.query('SELECT 1 FROM users WHERE id=$1', [owner])).rows[0]) validation('The AAT owner is not a user.', 'bid_owner_user_id');
+      }
       const inserted = await db.query(`INSERT INTO enquiries(enquiry_number,client_id,title,description,status,contact_details,received_date,due_date,project_id,design_book_id,source_metadata,created_by,updated_by,idempotency_key,contact_id,enquiry_type,bid_owner_user_id)
-        VALUES($1,$2,$3,$4,$5,$6,COALESCE($7,CURRENT_DATE),$8,$9,$10,$11,$12,$12,$13,$14,$15,$12) RETURNING *`,
-        [number,b.client_id,b.title.trim(),b.description || null,b.status || 'new',contact,b.received_date || null,b.due_date || null,b.project_id || null,b.design_book_id || null,flatSource(b),req.user!.id,b.idempotency_key || null,b.contact_id || null,b.enquiry_type || 'direct']);
+        VALUES($1,$2,$3,$4,$5,$6,COALESCE($7,CURRENT_DATE),$8,$9,$10,$11,$12,$12,$13,$14,$15,$16) RETURNING *`,
+        [number,b.client_id,b.title.trim(),b.description || null,b.status || 'new',contact,b.received_date || null,b.due_date || null,b.project_id || null,b.design_book_id || null,flatSource(b),req.user!.id,b.idempotency_key || null,b.contact_id || null,b.enquiry_type || 'direct',owner]);
       const activityId = await record(db, inserted.rows[0].id, req.user!.id, 'created', { project_id: b.project_id || null, design_book_id: b.design_book_id || null });
-      const recipients = (await enquiryStakeholders(db, inserted.rows[0])).filter(id => id !== req.user!.id);
+      const recipients = (await enquiryStakeholders(db, inserted.rows[0], owner)).filter(id => id !== req.user!.id);
       if (recipients.length) {
         await emitNotification(db, {
           eventKey: `enquiry-activity:${activityId}`,

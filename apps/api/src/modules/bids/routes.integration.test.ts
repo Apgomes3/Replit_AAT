@@ -86,7 +86,9 @@ describe.skipIf(!process.env.DATABASE_URL)('bids (PostgreSQL)', () => {
   });
 
   it('closes a tender we decide not to bid for', async () => {
-    const made = await call('POST', '/enquiries', { client_id: ids.client, title: `Too far away ${tag}`, enquiry_type: 'tender' });
+    expect((await call('POST', '/enquiries', { client_id: ids.client, title: 'x', bid_owner_user_id: ids.client })).body.error.message).toBe('The AAT owner is not a user.');
+    const made = await call('POST', '/enquiries', { client_id: ids.client, title: `Too far away ${tag}`, enquiry_type: 'tender', bid_owner_user_id: ids.estimator });
+    expect(made.body.bid_owner_user_id).toBe(ids.estimator);
     expect((await call('POST', `/bids/${made.body.id}/decision`, { decision: 'no_bid' })).status).toBe(400); // needs a reason
     expect((await call('POST', `/bids/${made.body.id}/decision`, { decision: 'no_bid', note: 'Outside our region' })).status).toBe(200);
     expect((await call('GET', `/bids/${made.body.id}`)).body).toMatchObject({ status: 'closed', bid_decision: 'no_bid', outcome_reason: 'no_bid' });
