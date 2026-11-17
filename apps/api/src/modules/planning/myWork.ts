@@ -2,7 +2,8 @@
 // commitments, with their booked hours against what they can work.
 import { query } from '../../db';
 import { getWorkload, WorkloadWeek } from './repository';
-import type { CommitmentInput, PersonalTaskInput, WorkStatus } from './validation';
+import { TASK_LINKS } from './validation';
+import type { CommitmentInput, PersonalTaskInput, TaskLink, WorkStatus } from './validation';
 
 type ProjectRef = { id: string; code: string; name: string } | null;
 
@@ -14,7 +15,7 @@ export type MyPlanTask = {
 export type PersonalTask = {
   id: string; title: string; notes: string | null; status: WorkStatus; progress_pct: number;
   start_date: string | null; due_date: string | null; planned_hours: number | null; project: ProjectRef; completed_at: string | null;
-  initiative: ProjectRef;
+  initiative: ProjectRef; enquiry: ProjectRef; design_book: ProjectRef;
 };
 export type Commitment = {
   id: string; title: string; kind: 'meeting' | 'role' | 'other'; weekdays: number[] | null; hours_per_day: number | null;
@@ -34,8 +35,11 @@ const RECENTLY_DONE = `(t.status <> 'done' OR t.completed_at >= NOW() - INTERVAL
 const PERSONAL_SELECT = `
   SELECT t.id, t.title, t.notes, t.status, t.progress_pct, ${D('t.start_date')} AS start_date, ${D('t.due_date')} AS due_date,
     t.planned_hours::float8 AS planned_hours, t.completed_at, ${PROJECT} AS project,
-    CASE WHEN ini.id IS NULL THEN NULL ELSE json_build_object('id', ini.id, 'code', ini.code, 'name', ini.title) END AS initiative
-  FROM planning_personal_tasks t LEFT JOIN projects pr ON pr.id = t.project_id LEFT JOIN initiatives ini ON ini.id = t.initiative_id`;
+    CASE WHEN ini.id IS NULL THEN NULL ELSE json_build_object('id', ini.id, 'code', ini.code, 'name', ini.title) END AS initiative,
+    CASE WHEN enq.id IS NULL THEN NULL ELSE json_build_object('id', enq.id, 'code', enq.enquiry_number, 'name', enq.title) END AS enquiry,
+    CASE WHEN dbk.id IS NULL THEN NULL ELSE json_build_object('id', dbk.id, 'code', dbk.book_code, 'name', dbk.book_title) END AS design_book
+  FROM planning_personal_tasks t LEFT JOIN projects pr ON pr.id = t.project_id LEFT JOIN initiatives ini ON ini.id = t.initiative_id
+  LEFT JOIN enquiries enq ON enq.id = t.enquiry_id LEFT JOIN design_books dbk ON dbk.id = t.design_book_id`;
 
 const COMMITMENT_SELECT = `
   SELECT c.id, c.title, c.kind, c.weekdays, c.hours_per_day::float8 AS hours_per_day, c.capacity_pct,
@@ -74,16 +78,52 @@ export async function listProjectOptions(): Promise<Array<{ id: string; code: st
   return (await query(`SELECT id, project_code AS code, project_name AS name FROM projects ORDER BY project_code`)).rows;
 }
 
+type LinkOption = { id: string; code: string; name: string };
+export type LinkOptions = { projects: LinkOption[]; initiatives: LinkOption[]; enquiries: LinkOption[]; design_books: LinkOption[] };
+
+/**
+ * What a task can be for, limited to the modules the person can see: projects, initiatives that
+ * are approved / running / on hold, open enquiries, and design books.
+ */
+export async function listLinkOptions(visible: Record<'projects' | 'initiatives' | 'enquiries' | 'design_books', boolean>): Promise<LinkOptions> {
+  const none = Promise.resolve({ rows: [] as LinkOption[] });
+  const [projects, initiatives, enquiries, books] = await Promise.all([
+    visible.projects ? query(`SELECT id, project_code AS code, project_name AS name FROM projects ORDER BY project_code`) : none,
+    visible.initiatives ? query(`SELECT id, code, title AS name FROM initiatives WHERE stage IN ('approved','in_progress','on_hold') ORDER BY code`) : none,
+    visible.enquiries ? query(`SELECT id, enquiry_number AS code, title AS name FROM enquiries WHERE status NOT IN ('won','lost','closed') ORDER BY enquiry_number DESC`) : none,
+    visible.design_books ? query(`SELECT id, book_code AS code, book_title AS name FROM design_books ORDER BY book_code`) : none,
+  ]);
+  return { projects: projects.rows, initiatives: initiatives.rows, enquiries: enquiries.rows, design_books: books.rows };
+}
+
+export type LinkedTask = {
+  id: string; title: string; status: WorkStatus; progress_pct: number; start_date: string | null; due_date: string | null;
+  planned_hours: number | null; user_id: string; user_name: string;
+};
+
+/** Everyone's own tasks for one enquiry, design book, project or initiative (open first). */
+export async function listLinkedTasks(link: TaskLink, id: string): Promise<LinkedTask[]> {
+  return (await query(
+    `SELECT t.id, t.title, t.status, t.progress_pct, ${D('t.start_date')} AS start_date, ${D('t.due_date')} AS due_date,
+       t.planned_hours::float8 AS planned_hours, t.user_id,
+       COALESCE(NULLIF(TRIM(CONCAT_WS(' ', u.first_name, u.last_name)), ''), u.email) AS user_name
+     FROM planning_personal_tasks t JOIN users u ON u.id = t.user_id
+     WHERE t.${link} = $1
+     ORDER BY (t.status = 'done'), COALESCE(t.due_date, t.start_date) NULLS LAST, t.created_at`, [id],
+  )).rows;
+}
+
 // ---------- own tasks ----------
 
 export async function createPersonalTask(userId: string, input: PersonalTaskInput, actorId: string): Promise<PersonalTask> {
   const done = input.status === 'done';
   const r = await query(
-    `INSERT INTO planning_personal_tasks (user_id, title, notes, project_id, status, progress_pct, start_date, due_date, planned_hours, completed_at, created_by, initiative_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, ${done ? 'NOW()' : 'NULL'}, $10, $11) RETURNING id`,
+    `INSERT INTO planning_personal_tasks (user_id, title, notes, project_id, status, progress_pct, start_date, due_date, planned_hours, completed_at, created_by,
+       initiative_id, enquiry_id, design_book_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, ${done ? 'NOW()' : 'NULL'}, $10, $11, $12, $13) RETURNING id`,
     [userId, input.title, input.notes ?? null, input.project_id ?? null, input.status ?? 'not_started',
       input.progress_pct ?? (done ? 100 : 0), input.start_date ?? null, input.due_date ?? null, input.planned_hours ?? null, actorId,
-      input.initiative_id ?? null],
+      input.initiative_id ?? null, input.enquiry_id ?? null, input.design_book_id ?? null],
   );
   return (await getPersonalTask(r.rows[0].id))!;
 }
@@ -95,12 +135,13 @@ export async function getPersonalTask(id: string): Promise<(PersonalTask & { use
 export async function updatePersonalTask(id: string, input: PersonalTaskInput): Promise<PersonalTask | null> {
   const set: string[] = [];
   const values: unknown[] = [id];
-  for (const key of ['title', 'notes', 'project_id', 'initiative_id', 'status', 'progress_pct', 'start_date', 'due_date', 'planned_hours'] as const) {
+  for (const key of ['title', 'notes', ...TASK_LINKS, 'status', 'progress_pct', 'start_date', 'due_date', 'planned_hours'] as const) {
     if (input[key] !== undefined) { values.push(input[key]); set.push(`${key} = $${values.length}`); }
   }
-  // A task belongs to a project or an initiative: choosing one clears the other.
-  if (input.project_id && input.initiative_id === undefined) set.push('initiative_id = NULL');
-  if (input.initiative_id && input.project_id === undefined) set.push('project_id = NULL');
+  // A task is for one thing: choosing a project, initiative, enquiry or design book clears the others.
+  if (TASK_LINKS.some(k => input[k])) {
+    for (const k of TASK_LINKS) if (input[k] === undefined) set.push(`${k} = NULL`);
+  }
   if (input.status !== undefined) {
     set.push(input.status === 'done' ? 'completed_at = COALESCE(completed_at, NOW())' : 'completed_at = NULL');
     if (input.status === 'done' && input.progress_pct === undefined) set.push('progress_pct = 100');

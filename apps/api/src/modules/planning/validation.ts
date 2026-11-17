@@ -92,8 +92,13 @@ export function validateResourceInput(body: any): Result<ResourceInput> {
 export const WORK_STATUSES = ['not_started', 'in_progress', 'review', 'done'] as const;
 export type WorkStatus = typeof WORK_STATUSES[number];
 
+/** What a person's own task can be for; at most one of them. */
+export const TASK_LINKS = ['project_id', 'initiative_id', 'enquiry_id', 'design_book_id'] as const;
+export type TaskLink = typeof TASK_LINKS[number];
+
 export type PersonalTaskInput = {
-  title?: string; notes?: string | null; project_id?: string | null; initiative_id?: string | null; status?: WorkStatus; progress_pct?: number;
+  title?: string; notes?: string | null; project_id?: string | null; initiative_id?: string | null;
+  enquiry_id?: string | null; design_book_id?: string | null; status?: WorkStatus; progress_pct?: number;
   start_date?: string | null; due_date?: string | null; planned_hours?: number | null;
 };
 
@@ -117,15 +122,12 @@ export function validatePersonalTaskInput(body: any, { creating }: { creating: b
     if (body.notes !== null && typeof body.notes !== 'string') return { error: 'notes must be text.' };
     out.notes = body.notes?.trim() || null;
   }
-  if (has(body, 'project_id')) {
-    if (body.project_id !== null && body.project_id !== '' && !isUuid(body.project_id)) return { error: 'project_id must be a project id or empty.' };
-    out.project_id = body.project_id || null;
+  for (const key of TASK_LINKS) {
+    if (!has(body, key)) continue;
+    if (body[key] !== null && body[key] !== '' && !isUuid(body[key])) return { error: `${key} must be an id or empty.` };
+    out[key] = body[key] || null;
   }
-  if (has(body, 'initiative_id')) {
-    if (body.initiative_id !== null && body.initiative_id !== '' && !isUuid(body.initiative_id)) return { error: 'initiative_id must be an initiative id or empty.' };
-    out.initiative_id = body.initiative_id || null;
-  }
-  if (out.project_id && out.initiative_id) return { error: 'A task belongs to a project or an initiative, not both.' };
+  if (TASK_LINKS.filter(k => out[k]).length > 1) return { error: 'A task is for one thing: a project, an initiative, an enquiry or a design book.' };
   if (has(body, 'status')) {
     if (!(WORK_STATUSES as readonly string[]).includes(body.status)) return { error: `status must be one of: ${WORK_STATUSES.join(', ')}.` };
     out.status = body.status;

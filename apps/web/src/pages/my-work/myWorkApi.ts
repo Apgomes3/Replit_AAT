@@ -15,6 +15,7 @@ export type MyPlanTask = {
 export type PersonalTask = {
   id: string; title: string; notes: string | null; status: WorkStatus; progress_pct: number;
   start_date: string | null; due_date: string | null; planned_hours: number | null; project: ProjectRef; initiative?: ProjectRef;
+  enquiry?: ProjectRef; design_book?: ProjectRef;
 };
 export type CommitmentKind = 'meeting' | 'role' | 'other';
 export type Commitment = {
@@ -27,7 +28,8 @@ export type MyWork = {
 };
 
 export type PersonalTaskPayload = Partial<{
-  title: string; notes: string | null; project_id: string | null; initiative_id: string | null; status: WorkStatus; progress_pct: number;
+  title: string; notes: string | null; project_id: string | null; initiative_id: string | null; enquiry_id: string | null;
+  design_book_id: string | null; status: WorkStatus; progress_pct: number;
   start_date: string | null; due_date: string | null; planned_hours: number | null;
 }>;
 export type CommitmentPayload = {
@@ -53,6 +55,26 @@ export const useMyInitiatives = () => useQuery({
   queryFn: () => api.get('/initiatives').then(r => (r.data.data as Array<{ id: string; code: string; title: string; stage: string }>)
     .filter(i => ['approved', 'in_progress', 'on_hold'].includes(i.stage)).map(i => ({ id: i.id, code: i.code, name: i.title }))),
   retry: false,
+});
+
+type LinkOption = { id: string; code: string; name: string };
+export type LinkOptions = { projects: LinkOption[]; initiatives: LinkOption[]; enquiries: LinkOption[]; design_books: LinkOption[] };
+
+/** What a task can be for (only modules you can see): projects, active initiatives, open enquiries, design books. */
+export const useLinkOptions = () => useQuery({
+  queryKey: [...KEY, 'link-options'], staleTime: 60_000,
+  queryFn: () => api.get('/my-work/link-options').then(r => r.data as LinkOptions),
+});
+
+export type TaskLinkKey = 'project_id' | 'initiative_id' | 'enquiry_id' | 'design_book_id';
+export type LinkedTask = {
+  id: string; title: string; status: WorkStatus; progress_pct: number; start_date: string | null; due_date: string | null;
+  planned_hours: number | null; user_id: string; user_name: string;
+};
+/** Everyone's own tasks for one project, initiative, enquiry or design book. */
+export const useLinkedTasks = (link: TaskLinkKey, id: string | undefined) => useQuery({
+  queryKey: [...KEY, 'linked', link, id], enabled: !!id,
+  queryFn: () => api.get('/my-work/linked-tasks', { params: { [link]: id } }).then(r => r.data.data as LinkedTask[]),
 });
 
 /** Every change can move booked hours, so refresh My Work and any workload or board on screen. */
@@ -83,18 +105,19 @@ export const useDeleteCommitment = () => useMyWorkMutation((id: string) => api.d
 export type WorkItem = {
   key: string; kind: 'plan' | 'task'; id: string; title: string; status: WorkStatus; progress_pct: number;
   start_date: string | null; due_date: string | null; is_milestone: boolean; project: ProjectRef; initiative: ProjectRef;
+  enquiry: ProjectRef; design_book: ProjectRef;
   plan: MyPlanTask['plan'] | null; planned_hours: number | null; notes: string | null;
 };
 
 export const toWorkItems = (w: Partial<Pick<MyWork, 'plan_tasks' | 'tasks'>>): WorkItem[] => [
   ...(w.plan_tasks ?? []).map(t => ({
     key: `plan:${t.id}`, kind: 'plan' as const, id: t.id, title: t.title, status: t.status, progress_pct: t.progress_pct,
-    start_date: t.start_date, due_date: t.due_date, is_milestone: t.is_milestone, project: t.project, initiative: null, plan: t.plan,
+    start_date: t.start_date, due_date: t.due_date, is_milestone: t.is_milestone, project: t.project, initiative: null, enquiry: null, design_book: null, plan: t.plan,
     planned_hours: null, notes: null,
   })),
   ...(w.tasks ?? []).map(t => ({
     key: `task:${t.id}`, kind: 'task' as const, id: t.id, title: t.title, status: t.status, progress_pct: t.progress_pct,
-    start_date: t.start_date, due_date: t.due_date, is_milestone: false, project: t.project, initiative: t.initiative ?? null, plan: null,
+    start_date: t.start_date, due_date: t.due_date, is_milestone: false, project: t.project, initiative: t.initiative ?? null, enquiry: t.enquiry ?? null, design_book: t.design_book ?? null, plan: null,
     planned_hours: t.planned_hours, notes: t.notes,
   })),
 ];

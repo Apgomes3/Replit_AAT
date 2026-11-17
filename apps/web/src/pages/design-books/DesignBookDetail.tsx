@@ -28,6 +28,7 @@ import NewRevisionModal from './NewRevisionModal';
 import EquipmentBreakdownTab from './EquipmentBreakdownTab';
 import { isEditorRole } from '../../lib/roles';
 import { LinkedPlans } from '../plans/MyPlansPage';
+import LinkedTasks from '../my-work/LinkedTasks';
 
 type Tab = 'exhibits' | 'lss' | 'thermal' | 'piping' | 'control' | 'equipment-breakdown' | 'review' | 'versions' | 'plans';
 
@@ -4869,7 +4870,7 @@ export default function DesignBookDetail() {
     'equipment-breakdown': 'Equipment Breakdown',
     review: 'Review & Handover',
     versions: 'Versions',
-    plans: 'Plans',
+    plans: 'Plans & tasks',
   };
   const TABS: { key: Tab; label: string; count?: number }[] = DESIGN_BOOK_TAB_ORDER.map(key => ({
     key,
@@ -5227,7 +5228,7 @@ export default function DesignBookDetail() {
         />
       )}
 
-      {tab === 'plans' && <LinkedPlans designBookId={id!} />}
+      {tab === 'plans' && <div className="space-y-5"><LinkedPlans designBookId={id!} /><LinkedTasks link="design_book_id" id={id!} /></div>}
 
       {tab === 'versions' && (
         <VersionsTab bookId={id!} onBookRefresh={refresh} readOnly={isDesignReadOnly} />

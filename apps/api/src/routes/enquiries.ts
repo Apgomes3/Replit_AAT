@@ -252,6 +252,10 @@ router.post('/:id/create-project', requireModuleManage('business_development'), 
        if(e.project_id)throw Object.assign(new Error('Enquiry is already linked to a Project.'),{status:409,code:'CONFLICT'});
        const p=(await db.query(`INSERT INTO projects(project_code,project_name,client_id,client_name,site_name,country,city,project_status,notes,created_by) VALUES($1,$2,$3,(SELECT name FROM clients WHERE id=$3),$4,$5,$6,$7,$8,$9) RETURNING *`,[b.project_code.trim(),b.project_name.trim(),e.client_id,b.site_name||null,b.country||null,b.city||null,b.project_status||'Concept',b.notes||null,req.user!.id])).rows[0];
        const u=await db.query('UPDATE enquiries SET project_id=$1,updated_by=$2,updated_at=NOW() WHERE id=$3 RETURNING *',[p.id,req.user!.id,req.params.id]);
+       // The work carries over: open tasks for the enquiry move to the project (finished ones stay as its
+       // history), and the enquiry's plans are also on the project from now on.
+       await db.query(`UPDATE planning_personal_tasks SET project_id=$1, enquiry_id=NULL, updated_at=NOW() WHERE enquiry_id=$2 AND status<>'done'`,[p.id,req.params.id]);
+       await db.query(`UPDATE drafting_plans SET project_id=$1, updated_at=NOW() WHERE enquiry_id=$2 AND project_id IS NULL`,[p.id,req.params.id]);
        const activityId = await record(db,req.params.id,req.user!.id,'project_created',{project_id:p.id});
        const recipients = (await enquiryStakeholders(db, { ...e, project_id: p.id }, p.created_by)).filter(id => id !== req.user!.id);
        await emitNotification(db, {

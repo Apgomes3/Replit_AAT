@@ -182,4 +182,11 @@ SELECT cal.id, d.day::date, d.hours, d.name FROM cal, (VALUES
   ('2026-10-04', 0, 'National Day'), ('2026-10-05', 0, 'National Day'), ('2026-10-06', 0, 'National Day'),
   ('2026-10-07', 0, 'National Day')
 ) AS d(day, hours, name);
+
+-- A person's own task is for one thing at most: a project, an enquiry, a design book or (see the
+-- initiatives schema) an initiative. The API keeps it to one.
+ALTER TABLE planning_personal_tasks ADD COLUMN IF NOT EXISTS enquiry_id UUID REFERENCES enquiries(id) ON DELETE SET NULL;
+ALTER TABLE planning_personal_tasks ADD COLUMN IF NOT EXISTS design_book_id UUID REFERENCES design_books(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_personal_tasks_enquiry ON planning_personal_tasks (enquiry_id) WHERE enquiry_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_personal_tasks_design_book ON planning_personal_tasks (design_book_id) WHERE design_book_id IS NOT NULL;
 `;

@@ -7,7 +7,7 @@ import { addDays, todayIso } from '../drafting/taskTiming';
 import type { WorkloadWeek } from '../drafting/planningApi';
 import {
   BUCKET_LABELS, Commitment, CommitmentKind, CommitmentPayload, describeCommitment, groupWork, toWorkItems, useDeleteCommitment,
-  useDeletePersonalTask, useMyInitiatives, useMyProjects, useMyWork, useSaveCommitment, useSavePersonalTask, useUpdatePlanTask, WEEKDAY_SHORT,
+  useDeletePersonalTask, useLinkOptions, useMyProjects, useMyWork, useSaveCommitment, useSavePersonalTask, useUpdatePlanTask, WEEKDAY_SHORT,
   WorkItem,
 } from './myWorkApi';
 import GoogleCalendarCard from './GoogleCalendarCard';
@@ -98,22 +98,33 @@ function ProjectSelect({ value, onChange, label = 'Project' }: { value: string; 
   </select>;
 }
 
-/** What a task is for: "p:<project id>", "i:<initiative id>" or "" (nothing). */
+/**
+ * What a task is for, as "<kind>:<id>" — p: project, i: initiative, e: enquiry, d: design book — or ""
+ * for nothing. Only the modules the person can see are offered.
+ */
+const FOR_GROUPS = [
+  ['projects', 'p', 'Projects'], ['enquiries', 'e', 'Enquiries (business development)'],
+  ['design_books', 'd', 'Design books'], ['initiatives', 'i', 'Initiatives (internal work)'],
+] as const;
 function WorkForSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const projects = useMyProjects();
-  const initiatives = useMyInitiatives();
-  return <select aria-label="For" value={value} onChange={e => onChange(e.target.value)} className={`${input} max-w-[220px]`}>
-    <option value="">Not for a project or initiative</option>
-    {(initiatives.data ?? []).length > 0 && <optgroup label="Initiatives (internal work)">
-      {(initiatives.data ?? []).map(i => <option key={i.id} value={`i:${i.id}`}>{i.code} · {i.name}</option>)}
-    </optgroup>}
-    <optgroup label="Projects">
-      {(projects.data ?? []).map(p => <option key={p.id} value={`p:${p.id}`}>{p.code} · {p.name}</option>)}
-    </optgroup>
+  const options = useLinkOptions();
+  return <select aria-label="For" value={value} onChange={e => onChange(e.target.value)} className={`${input} max-w-[240px]`}>
+    <option value="">Not for anything in particular</option>
+    {FOR_GROUPS.map(([key, prefix, label]) => (options.data?.[key] ?? []).length > 0 && <optgroup key={key} label={label}>
+      {options.data![key].map(o => <option key={o.id} value={`${prefix}:${o.id}`}>{o.code} · {o.name}</option>)}
+    </optgroup>)}
   </select>;
 }
-const workForValue = (item: Pick<WorkItem, 'project' | 'initiative'>) => item.initiative ? `i:${item.initiative.id}` : item.project ? `p:${item.project.id}` : '';
-const workForBody = (v: string) => ({ project_id: v.startsWith('p:') ? v.slice(2) : null, initiative_id: v.startsWith('i:') ? v.slice(2) : null });
+const workForValue = (item: Pick<WorkItem, 'project' | 'initiative' | 'enquiry' | 'design_book'>) =>
+  item.initiative ? `i:${item.initiative.id}` : item.enquiry ? `e:${item.enquiry.id}` : item.design_book ? `d:${item.design_book.id}`
+    : item.project ? `p:${item.project.id}` : '';
+const workForBody = (v: string) => {
+  const [kind, id] = v.includes(':') ? v.split(':') : ['', ''];
+  return {
+    project_id: kind === 'p' ? id : null, initiative_id: kind === 'i' ? id : null,
+    enquiry_id: kind === 'e' ? id : null, design_book_id: kind === 'd' ? id : null,
+  };
+};
 
 function QuickAdd() {
   const save = useSavePersonalTask();
@@ -177,6 +188,8 @@ function WorkRow({ item, today }: { item: WorkItem; today: string }) {
         {item.plan ? <Link to={`/drafting/plans/${item.plan.id}`} className="hover:text-[#087f73]">{item.plan.code}</Link> : <span>Own task</span>}
         {item.project && <> · <span className="font-mono">{item.project.code}</span> {item.project.name}</>}
         {item.initiative && <> · <Link to={`/initiatives/${item.initiative.id}`} className="hover:text-[#087f73]"><span className="font-mono">{item.initiative.code}</span> {item.initiative.name}</Link></>}
+        {item.enquiry && <> · <Link to={`/enquiries/${item.enquiry.id}`} className="hover:text-[#087f73]"><span className="font-mono">{item.enquiry.code}</span> {item.enquiry.name}</Link></>}
+        {item.design_book && <> · <Link to={`/design-books/${item.design_book.id}`} className="hover:text-[#087f73]"><span className="font-mono">{item.design_book.code}</span> {item.design_book.name}</Link></>}
         {item.planned_hours ? <> · {item.planned_hours} h</> : null}
       </div>
     </div>

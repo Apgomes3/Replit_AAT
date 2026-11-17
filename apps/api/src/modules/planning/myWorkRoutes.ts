@@ -1,12 +1,13 @@
 // HTTP layer for My Work (/api/v1/my-work). Open to every signed-in user, for their own work only:
 // their own tasks and commitments, and progress on plan tasks they are assigned to.
 import { Router, Request, Response, NextFunction } from 'express';
-import { authenticate, AuthRequest } from '../../middleware/auth';
+import { authenticate, AuthRequest, getModuleAccessLevel } from '../../middleware/auth';
+import type { ModuleAccessKey } from '../../lib/moduleAccess';
 import { logAudit } from '../../db/audit';
 import * as repo from './myWork';
 import { updateTask } from '../drafting/repository';
 import { addDays } from './calendar';
-import { isIsoDate, isUuid, validateCommitmentInput, validatePersonalTaskInput, WORK_STATUSES, WorkStatus } from './validation';
+import { isIsoDate, isUuid, TASK_LINKS, validateCommitmentInput, validatePersonalTaskInput, WORK_STATUSES, WorkStatus } from './validation';
 
 const router = Router();
 router.use(authenticate);
@@ -16,7 +17,7 @@ const pid = (req: Request) => String(req.params.id);
 const me = (req: AuthRequest) => req.user!.id;
 
 function handleDbError(e: any, res: Response, next: NextFunction) {
-  if (e?.code === '23503') return fail(res, 400, 'VALIDATION', 'The selected project or initiative no longer exists.');
+  if (e?.code === '23503') return fail(res, 400, 'VALIDATION', 'The selected project, initiative, enquiry or design book no longer exists.');
   if (e?.code === '23514') return fail(res, 400, 'VALIDATION', 'The due date cannot be before the start date.');
   return next(e);
 }
@@ -34,6 +35,30 @@ router.get('/', async (req: AuthRequest, res, next) => {
 
 router.get('/projects', async (_req, res, next) => {
   try { res.json({ data: await repo.listProjectOptions() }); } catch (e) { next(e); }
+});
+
+const LINK_MODULES = { project_id: 'projects', initiative_id: 'initiatives', enquiry_id: 'business_development', design_book_id: 'design_books' } as const;
+const canSee = async (req: AuthRequest, key: ModuleAccessKey) => req.user!.role === 'admin' || (await getModuleAccessLevel(me(req), key)) !== 'hidden';
+
+/** What a task can be for (the "For" list), only from modules the person can see. */
+router.get('/link-options', async (req: AuthRequest, res, next) => {
+  try {
+    const [projects, initiatives, enquiries, design_books] = await Promise.all(
+      (['projects', 'initiatives', 'business_development', 'design_books'] as const).map(k => canSee(req, k)));
+    res.json(await repo.listLinkOptions({ projects, initiatives, enquiries, design_books }));
+  } catch (e) { next(e); }
+});
+
+/** Everyone's own tasks for one project, initiative, enquiry or design book: ?enquiry_id=… (one link). */
+router.get('/linked-tasks', async (req: AuthRequest, res, next) => {
+  try {
+    const link = TASK_LINKS.find(k => typeof req.query[k] === 'string');
+    if (!link) return fail(res, 400, 'VALIDATION', `Send one of: ${TASK_LINKS.join(', ')}.`);
+    const id = String(req.query[link]);
+    if (!isUuid(id)) return fail(res, 400, 'VALIDATION', `${link} must be a valid id.`);
+    if (!(await canSee(req, LINK_MODULES[link]))) return fail(res, 403, 'FORBIDDEN', 'You do not have access to this module.');
+    res.json({ data: await repo.listLinkedTasks(link, id) });
+  } catch (e) { next(e); }
 });
 
 // ---------- own tasks ----------
