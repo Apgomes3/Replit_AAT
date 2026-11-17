@@ -51,6 +51,7 @@ const SECTIONS: NavSection[] = [
   {
     id: 'business-development', moduleKey: 'business_development', group: 'Commercial', label: 'Business Development', hub: ROUTES.businessDevelopment, icon: BriefcaseBusiness,
     items: [
+      { id: 'bid-pipeline', to: ROUTES.businessDevelopment, icon: BriefcaseBusiness, label: 'Bid pipeline', end: true },
       { id: 'enquiries', to: '/enquiries', icon: ClipboardCheck, label: 'Enquiries' },
     ],
   },

@@ -40,7 +40,7 @@ describe.skipIf(!process.env.DATABASE_URL)('tasks for enquiries and design books
       [`tasks-${tag}@example.test`])).rows[0].id;
     token = jwt.sign({ id: ids.user, email: `tasks-${tag}@example.test`, role: 'admin' }, JWT_SECRET);
     ids.client = (await query(`INSERT INTO clients (client_code, name) VALUES ($1, $2) RETURNING id`, [`T-${tag}`, `Bidding Aquarium ${tag}`])).rows[0].id;
-    ids.enquiry = (await query(`INSERT INTO enquiries (enquiry_number, client_id, title, status, created_by) VALUES ($1, $2, 'Tender for LSS', 'in_review', $3) RETURNING id`,
+    ids.enquiry = (await query(`INSERT INTO enquiries (enquiry_number, client_id, title, status, created_by) VALUES ($1, $2, 'Tender for LSS', 'qualifying', $3) RETURNING id`,
       [`ENQ-T-${tag}`.slice(0, 30), ids.client, ids.user])).rows[0].id;
     ids.book = (await query(`INSERT INTO design_books (book_code, book_title, created_by) VALUES ($1, 'Concept LSS', $2) RETURNING id`, [`DB-T-${tag}`, ids.user])).rows[0].id;
     const app = express();

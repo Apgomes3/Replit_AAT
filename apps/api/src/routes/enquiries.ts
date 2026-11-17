@@ -5,11 +5,12 @@ import { versionMatches, withVersion, versionConflict } from '../lib/concurrency
 import { emitNotification } from '../db/notifications';
 import { createKeyError, findCreateRetry } from '../lib/createIdempotency';
 import { enquiryQuoteLines } from './enquiryQuoteLines';
+import { STAGES as BID_STAGES, stageProblem } from '../modules/bids/rules';
 
 const router = Router();
 router.use(authenticate, requireModuleAccess('business_development'));
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const statuses = ['new','in_review','quoted','won','lost','closed'];
+const statuses: string[] = [...BID_STAGES];
 const flatContact = (body: any) => ({
   ...(body.contact_details && typeof body.contact_details === 'object' ? body.contact_details : {}),
   ...(body.contact_name !== undefined ? { name: body.contact_name } : {}),
@@ -135,9 +136,11 @@ router.post('/', requireModuleManage('business_development'), referenceModuleAcc
       await references(db, b.project_id || null, b.design_book_id || null);
       const contact = b.contact_id ? { ...flatContact(b), ...(await contactSnapshot(db, b.contact_id, b.client_id)) } : flatContact(b);
       const number = await nextNumber(db, `enquiry:${new Date().getUTCFullYear()}`, `ENQ-${new Date().getUTCFullYear()}-`);
-      const inserted = await db.query(`INSERT INTO enquiries(enquiry_number,client_id,title,description,status,contact_details,received_date,due_date,project_id,design_book_id,source_metadata,created_by,updated_by,idempotency_key,contact_id)
-        VALUES($1,$2,$3,$4,$5,$6,COALESCE($7,CURRENT_DATE),$8,$9,$10,$11,$12,$12,$13,$14) RETURNING *`,
-        [number,b.client_id,b.title.trim(),b.description || null,b.status || 'new',contact,b.received_date || null,b.due_date || null,b.project_id || null,b.design_book_id || null,flatSource(b),req.user!.id,b.idempotency_key || null,b.contact_id || null]);
+      if (b.enquiry_type !== undefined && !['direct','tender'].includes(b.enquiry_type)) validation('Type must be direct or tender.', 'enquiry_type');
+      if (b.status && !['new','qualifying'].includes(b.status)) validation('A new enquiry starts as New or Qualifying.', 'status');
+      const inserted = await db.query(`INSERT INTO enquiries(enquiry_number,client_id,title,description,status,contact_details,received_date,due_date,project_id,design_book_id,source_metadata,created_by,updated_by,idempotency_key,contact_id,enquiry_type,bid_owner_user_id)
+        VALUES($1,$2,$3,$4,$5,$6,COALESCE($7,CURRENT_DATE),$8,$9,$10,$11,$12,$12,$13,$14,$15,$12) RETURNING *`,
+        [number,b.client_id,b.title.trim(),b.description || null,b.status || 'new',contact,b.received_date || null,b.due_date || null,b.project_id || null,b.design_book_id || null,flatSource(b),req.user!.id,b.idempotency_key || null,b.contact_id || null,b.enquiry_type || 'direct']);
       const activityId = await record(db, inserted.rows[0].id, req.user!.id, 'created', { project_id: b.project_id || null, design_book_id: b.design_book_id || null });
       const recipients = (await enquiryStakeholders(db, inserted.rows[0])).filter(id => id !== req.user!.id);
       if (recipients.length) {
@@ -197,6 +200,11 @@ router.patch('/:id', requireModuleManage('business_development'), referenceModul
       const updated=await withTransaction(async db=>{
         const current=(await db.query('SELECT *, xmin::text AS version FROM enquiries WHERE id=$1 FOR UPDATE', [req.params.id])).rows[0];
         if(!current) throw Object.assign(new Error('Enquiry not found.'),{status:404,code:'NOT_FOUND'});
+        // Stage rules (tender needs a bid decision; lost / closed need a reason, given via /bids/:id/stage).
+        if (b.status !== undefined && b.status !== current.status) {
+          const problem = stageProblem(current.status, b.status, { type: current.enquiry_type ?? 'direct', decision: current.bid_decision ?? 'pending', reason: null });
+          if (problem) throw Object.assign(new Error(problem),{status:400,code:'VALIDATION'});
+        }
         if (expectedVersion !== undefined && !versionMatches(current, expectedVersion)) throw Object.assign(new Error('This record changed since it was loaded.'), { status: 409, code: 'VERSION_CONFLICT', current_record: aliases(current) });
         if (b.client_id !== undefined && b.client_id === null) throw Object.assign(new Error('client_id cannot be null.'),{status:400,code:'VALIDATION'});
         if (b.client_id !== undefined && !(await db.query('SELECT id FROM clients WHERE id=$1',[b.client_id])).rows[0]) throw Object.assign(new Error('Client not found.'),{status:404,code:'NOT_FOUND'});

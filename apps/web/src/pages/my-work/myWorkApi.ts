@@ -63,7 +63,20 @@ export type LinkOptions = { projects: LinkOption[]; initiatives: LinkOption[]; e
 /** What a task can be for (only modules you can see): projects, active initiatives, open enquiries, design books. */
 export const useLinkOptions = () => useQuery({
   queryKey: [...KEY, 'link-options'], staleTime: 60_000,
-  queryFn: () => api.get('/my-work/link-options').then(r => r.data as LinkOptions),
+  queryFn: async () => {
+    try {
+      return (await api.get('/my-work/link-options')).data as LinkOptions;
+    } catch {
+      // An API started before this endpoint existed: fall back to the older lists so tasks can
+      // still be booked to projects and initiatives (enquiries and design books need the new API).
+      const [projects, initiatives] = await Promise.all([
+        api.get('/my-work/projects').then(r => r.data.data as LinkOption[]).catch(() => []),
+        api.get('/initiatives').then(r => (r.data.data as Array<{ id: string; code: string; title: string; stage: string }>)
+          .filter(i => ['approved', 'in_progress', 'on_hold'].includes(i.stage)).map(i => ({ id: i.id, code: i.code, name: i.title }))).catch(() => []),
+      ]);
+      return { projects, initiatives, enquiries: [], design_books: [] };
+    }
+  },
 });
 
 export type TaskLinkKey = 'project_id' | 'initiative_id' | 'enquiry_id' | 'design_book_id';

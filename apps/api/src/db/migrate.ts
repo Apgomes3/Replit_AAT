@@ -12,6 +12,7 @@ import { loadHolidaySets } from '../modules/planning/holidays';
 import { CLIENTS_SCHEMA } from '../modules/clients/schema';
 import { GOOGLE_CALENDAR_SCHEMA } from '../modules/google-calendar/schema';
 import { INITIATIVES_SCHEMA } from '../modules/initiatives/schema';
+import { BIDS_SCHEMA } from '../modules/bids/schema';
 dotenv.config();
 
 // Self-contained module schemas, applied in order after the core schema.
@@ -23,6 +24,7 @@ const MODULE_SCHEMAS: Array<[name: string, sql: string]> = [
   ['clients', CLIENTS_SCHEMA],
   ['google-calendar', GOOGLE_CALENDAR_SCHEMA],
   ['initiatives', INITIATIVES_SCHEMA],
+  ['bids', BIDS_SCHEMA],
 ];
 
 const schema = `
@@ -3527,7 +3529,10 @@ CREATE INDEX IF NOT EXISTS idx_enquiries_status ON enquiries(status);
 ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS idempotency_key UUID;
 CREATE UNIQUE INDEX IF NOT EXISTS enquiries_create_key_unique ON enquiries(created_by, idempotency_key) WHERE idempotency_key IS NOT NULL;
 ALTER TABLE enquiries DROP CONSTRAINT IF EXISTS enquiries_status_check;
-ALTER TABLE enquiries ADD CONSTRAINT enquiries_status_check CHECK (status IN ('new','in_review','quoted','won','lost','closed'));
+-- Bid stages (Nov 2026): "in review" is now Qualifying and "quoted" is Submitted.
+UPDATE enquiries SET status = 'qualifying' WHERE status = 'in_review';
+UPDATE enquiries SET status = 'submitted' WHERE status = 'quoted';
+ALTER TABLE enquiries ADD CONSTRAINT enquiries_status_check CHECK (status IN ('new','qualifying','bidding','submitted','won','lost','closed'));
 CREATE TABLE IF NOT EXISTS enquiry_activities (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(), enquiry_id UUID NOT NULL REFERENCES enquiries(id) ON DELETE CASCADE,
   action VARCHAR(50) NOT NULL, details JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -3616,8 +3621,8 @@ export async function backfillLegacyBusinessDevelopment(client: any) {
       const records = opportunities.length ? opportunities : [null];
       for (const opportunity of records) {
         const number = String(opportunity?.opportunity_number || book.book_number).slice(0, 30);
-        const statusMap: Record<string, string> = { active: 'in_review', in_review: 'in_review', withdrawn: 'closed', draft: 'new' };
-        const status = statusMap[opportunity?.status] || (['new', 'in_review', 'quoted', 'won', 'lost', 'closed'].includes(opportunity?.status) ? opportunity.status : 'new');
+        const statusMap: Record<string, string> = { active: 'qualifying', in_review: 'qualifying', quoted: 'submitted', withdrawn: 'closed', draft: 'new' };
+        const status = statusMap[opportunity?.status] || (['new', 'qualifying', 'bidding', 'submitted', 'won', 'lost', 'closed'].includes(opportunity?.status) ? opportunity.status : 'new');
         const description = opportunity
           ? [opportunity.description, opportunity.outcome_notes].filter(Boolean).join('\n\n')
           : book.notes || null;

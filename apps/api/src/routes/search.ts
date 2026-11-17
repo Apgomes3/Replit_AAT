@@ -119,7 +119,7 @@ function filters(req: AuthRequest, allowed: Adapter[], work: boolean) {
       OR (status='For Review' AND $${params.length + 5}::boolean)
       OR (status='Approved' AND $${params.length + 5}::boolean)
     ))
-    OR (type='enquiry' AND status IN ('new','in_review') AND owner_id=$2::text AND $${params.length + 6}::boolean)
+    OR (type='enquiry' AND status IN ('new','qualifying') AND owner_id=$2::text AND $${params.length + 6}::boolean)
     OR (type='document' AND LOWER(status)='draft' AND owner_id=$2::text AND $${params.length + 7}::boolean)
   )`);
   return { permitted, conditions, params, q };
