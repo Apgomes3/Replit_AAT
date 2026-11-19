@@ -151,7 +151,8 @@ router.post('/:id/stage', manage, async (req: AuthRequest, res, next) => {
       const closing = to === 'lost' || to === 'closed' || to === 'won';
       await db.query(
         `UPDATE enquiries SET status = $2::text,
-           submitted_on = CASE WHEN $2::text = 'submitted' THEN COALESCE(submitted_on, CURRENT_DATE) ELSE submitted_on END,
+           submitted_on = CASE WHEN $2::text = 'submitted' THEN COALESCE(submitted_on, CURRENT_DATE)
+                               WHEN $2::text IN ('new','qualifying','bidding') THEN NULL ELSE submitted_on END,
            outcome_reason = CASE WHEN $3::boolean THEN $4::text ELSE NULL END,
            outcome_note = CASE WHEN $3::boolean THEN $5::text ELSE NULL END,
            updated_by = $6, updated_at = NOW()

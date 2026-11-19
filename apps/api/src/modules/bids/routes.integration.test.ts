@@ -83,6 +83,14 @@ describe.skipIf(!process.env.DATABASE_URL)('bids (PostgreSQL)', () => {
     const lost = await call('GET', `/bids/${id}`);
     expect(lost.body).toMatchObject({ status: 'lost', outcome_reason: 'price', outcome_note: 'Lost to a local firm, 15% cheaper' });
     expect(lost.body.submitted_on).toBeTruthy();
+
+    // A mistaken move can be undone: back from lost to submitted, then back to bidding.
+    expect((await call('POST', `/bids/${id}/stage`, { stage: 'submitted' })).status).toBe(200);
+    const reopened = await call('GET', `/bids/${id}`);
+    expect(reopened.body).toMatchObject({ status: 'submitted', outcome_reason: null, outcome_note: null });
+    expect((await call('POST', `/bids/${id}/stage`, { stage: 'bidding' })).status).toBe(200);
+    const back = await call('GET', `/bids/${id}`);
+    expect(back.body).toMatchObject({ status: 'bidding', submitted_on: null });
   });
 
   it('closes a tender we decide not to bid for', async () => {
