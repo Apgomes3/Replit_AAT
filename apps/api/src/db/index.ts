@@ -1,8 +1,13 @@
 // Load .env before the pool reads DATABASE_URL (entry points import this module
 // before calling dotenv.config(); on Replit the vars come from secrets instead).
 import 'dotenv/config';
-import { Pool, PoolClient } from 'pg';
+import { Pool, PoolClient, types } from 'pg';
 import { databaseEvent, isDatabaseError } from '../lib/telemetry';
+
+// Postgres DATE (OID 1082) has no time zone. By default pg turns it into a JS Date
+// at local midnight, which serialises as e.g. "2026-11-27T16:00:00.000Z" on a UTC+8
+// server: a raw timestamp in the UI and one day early. Keep it as "YYYY-MM-DD".
+types.setTypeParser(types.builtins.DATE, value => value);
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
