@@ -1,4 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import SkeletonTable from '../../components/ui/SkeletonTable';
+import EmptyState from '../../components/ui/EmptyState';
 import { Link, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import api from '../../lib/api';
@@ -121,7 +123,7 @@ export default function DesignBooksList() {
       {/* Table */}
       <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
         {isLoading || searchIsDebouncing ? (
-          <div className="py-16 text-center text-stone-400 text-sm">Loading…</div>
+          <SkeletonTable rows={6} columns={6} />
         ) : isError ? (
           <QueryError
             message="Could not load design books"
@@ -129,29 +131,9 @@ export default function DesignBooksList() {
           />
         ) : items.length === 0 ? (
           hasSearch ? (
-            <div className="py-16 text-center">
-              <BookMarked className="w-10 h-10 text-stone-300 mx-auto mb-3" />
-              <p className="text-stone-500 font-medium">No design books found for “{search}”</p>
-              <p className="text-stone-400 text-sm mt-1">Try a different code, title or project</p>
-              <button
-                onClick={() => setSearch('')}
-                className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 border border-stone-200 text-stone-600 rounded-lg text-sm font-medium hover:bg-stone-50"
-              >
-                Clear search
-              </button>
-            </div>
+            <EmptyState icon={BookMarked} title={`No design books found for “${search}”`} description="Try a different code, title or project." actionLabel="Clear search" onAction={() => setSearch('')} />
           ) : (
-            <div className="py-16 text-center">
-              <BookMarked className="w-10 h-10 text-stone-300 mx-auto mb-3" />
-              <p className="text-stone-500 font-medium">No design books yet</p>
-              <p className="text-stone-400 text-sm mt-1">Create one from scratch or link to an existing project</p>
-              {canCreate && <button
-                onClick={() => setShowNew(true)}
-                className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
-              >
-                <Plus className="w-4 h-4" /> New Design Book
-              </button>}
-            </div>
+            <EmptyState icon={BookMarked} title="No design books yet" description="Create one from scratch or link it to an existing project." actionLabel={canCreate ? 'New Design Book' : undefined} onAction={() => setShowNew(true)} />
           )
         ) : (
           <DataTable<any>

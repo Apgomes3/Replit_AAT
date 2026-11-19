@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import SkeletonTable from '../../components/ui/SkeletonTable';
+import EmptyState from '../../components/ui/EmptyState';
 import PageHeader from '../../components/ui/PageHeader';
 import Button from '../../components/ui/Button';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
@@ -54,8 +56,8 @@ export default function ClientsList() {
 
     <div className="bg-white rounded-xl border border-stone-200 overflow-hidden shadow-sm">
       {list.isError ? <div className="p-8 text-sm text-rose-700">Companies could not be loaded. <button className="underline font-bold" onClick={() => list.refetch()}>Try again</button></div>
-        : list.isLoading ? <div className="p-5 space-y-3">{[1, 2, 3, 4].map(i => <div key={i} className="h-12 skeleton" />)}</div>
-        : rows.length === 0 ? <div className="p-16 text-center"><Building2 className="mx-auto w-9 h-9 text-stone-300 mb-3" /><p className="font-bold">No companies found</p></div>
+        : list.isLoading ? <SkeletonTable rows={6} columns={6} />
+        : rows.length === 0 ? <EmptyState icon={Building2} title="No companies found" description={search ? 'Try a different name, code, place or person.' : 'Add the companies you work with to use them in projects, enquiries and quotes.'} />
         : <DataTable<Row>
             tableId="clients"
             data={rows}

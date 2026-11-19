@@ -10,7 +10,8 @@ interface SkeletonTableProps {
  */
 export default function SkeletonTable({ rows = 5, columns = 4, className = '' }: SkeletonTableProps) {
   return (
-    <div className={`divide-y divide-stone-100 ${className}`}>
+    <div role="status" className={`divide-y divide-stone-100 ${className}`}>
+      <span className="sr-only">Loading…</span>
       {Array.from({ length: rows }).map((_, rowIndex) => (
         <div key={rowIndex} className="flex items-center gap-4 px-4 py-3">
           {Array.from({ length: columns }).map((_, columnIndex) => (

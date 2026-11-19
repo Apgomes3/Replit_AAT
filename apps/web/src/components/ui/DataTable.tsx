@@ -3,6 +3,8 @@ import clsx from 'clsx';
 import { GripVertical, ChevronsUpDown, ArrowUp, ArrowDown, Filter, X } from 'lucide-react';
 import ContextMenu, { ContextMenuItem } from './ContextMenu';
 import SkeletonTable from './SkeletonTable';
+import EmptyState from './EmptyState';
+import { Inbox, SearchX } from 'lucide-react';
 
 export interface Column<T> {
   key: string;
@@ -270,8 +272,10 @@ export default function DataTable<T extends Record<string, any>>({
           <tbody>
             {processed.length === 0 ? (
               <tr>
-                <td colSpan={cols.length} className="text-center py-12 text-stone-400 text-sm">
-                  {activeFilterCount > 0 ? `No rows match the active filters` : emptyMessage}
+                <td colSpan={cols.length}>
+                  {activeFilterCount > 0
+                    ? <EmptyState icon={SearchX} title="No rows match the active filters" actionLabel="Clear filters" onAction={() => setFilters({})} className="min-h-48" />
+                    : <EmptyState icon={Inbox} title={emptyMessage} className="min-h-48" />}
                 </td>
               </tr>
             ) : processed.map((row, i) => (

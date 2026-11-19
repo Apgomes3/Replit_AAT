@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import SkeletonTable from '../../components/ui/SkeletonTable';
+import EmptyState from '../../components/ui/EmptyState';
 import PageHeader from '../../components/ui/PageHeader';
 import Button from '../../components/ui/Button';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -1036,20 +1038,14 @@ export default function LSSCompactUnitsCatalog() {
       {/* Table */}
       <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
         {isLoading ? (
-          <div className="py-14 text-center text-stone-400 text-sm">Loading…</div>
+          <SkeletonTable rows={6} columns={6} />
         ) : filtered.length === 0 ? (
-          <div className="py-16 text-center">
-            <Layers className="w-10 h-10 text-stone-200 mx-auto mb-3" />
-            <p className="text-stone-400 font-medium">
-              {filter ? 'No units match your search' : 'No compact units in the catalog yet'}
-            </p>
-            {!filter && (
-              <button onClick={() => setModal('new')}
-                className="mt-3 flex items-center gap-1.5 px-3 py-1.5 text-sm text-violet-600 border border-violet-200 rounded-lg mx-auto hover:bg-violet-50 transition-colors">
-                <Plus className="w-3.5 h-3.5" /> Add your first unit
-              </button>
-            )}
-          </div>
+          <EmptyState
+            icon={Layers}
+            title={filter ? 'No units match your search' : 'No compact units in the catalog yet'}
+            actionLabel={filter ? undefined : 'Add your first unit'}
+            onAction={() => setModal('new')}
+          />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">

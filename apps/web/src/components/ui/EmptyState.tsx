@@ -40,11 +40,11 @@ export default function EmptyState({
 
   return (
     <div className={`flex min-h-64 flex-col items-center justify-center gap-2 px-6 text-center ${className}`}>
-      <div className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-50 text-slate-300">
+      <div className="flex h-11 w-11 items-center justify-center rounded-full bg-stone-100 text-stone-400">
         <Icon className="h-5 w-5" />
       </div>
-      <p className="text-sm font-medium text-slate-600">{title}</p>
-      {description && <p className="max-w-sm text-xs leading-relaxed text-slate-400">{description}</p>}
+      <p className="text-sm font-medium text-stone-700">{title}</p>
+      {description && <p className="max-w-sm text-xs leading-relaxed text-stone-500">{description}</p>}
       {action}
     </div>
   );
