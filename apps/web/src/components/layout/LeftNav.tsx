@@ -1,80 +1,51 @@
-import { NavLink, useNavigate } from 'react-router-dom';
- import { FolderOpen, Package, BookOpen, FileText, Network, Search, Users, Upload, Boxes, Pipette, Container, GripVertical, Settings, ChevronRight, Ruler, ShoppingCart, Home, ClipboardList, Layers, GitBranch, DollarSign, BookMarked, PanelLeftClose, PanelLeftOpen, Fish, Activity, Sun, Wind, SlidersHorizontal, BriefcaseBusiness, ClipboardCheck, CalendarRange, PencilRuler, Gauge, Building2, Lightbulb } from 'lucide-react';
-import { useState, useRef, useEffect } from 'react';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+ import { FolderOpen, Package, BookOpen, FileText, Network, Search, Users, Upload, Boxes, Pipette, Container, Settings, ChevronRight, Ruler, ShoppingCart, Home, ClipboardList, Layers, GitBranch, DollarSign, BookMarked, PanelLeftClose, PanelLeftOpen, Fish, Activity, Sun, Wind, SlidersHorizontal, BriefcaseBusiness, ClipboardCheck, CalendarRange, PencilRuler, Gauge, Building2, Lightbulb } from 'lucide-react';
+import { useState, useRef, useEffect, ReactNode } from 'react';
 import clsx from 'clsx';
 import { useCommandPalette } from '../../store/commandPaletteStore';
 import { useAuthStore } from '../../store/authStore';
 import { ModuleKey, ROUTES } from '../../lib/navigation';
 import { isEditorRole } from '../../lib/roles';
 
-type NavItemDef = { id: string; to: string; icon: any; label: string; end?: boolean };
-type NavSection = { id: string; moduleKey: ModuleKey; group: string; label: string; hub: string; icon: any; items: NavItemDef[] };
+type NavItemDef = { id: string; to: string; icon: any; label: string; moduleKey?: ModuleKey; end?: boolean };
+type NavArea = { id: string; label: string; items: NavItemDef[] };
 
-const PIM_ITEMS: NavItemDef[] = [
-  { id: 'products', to: '/products/masters', icon: Package, label: 'Products' },
-  { id: 'components', to: '/products/components', icon: Boxes, label: 'Components' },
-  { id: 'piping', to: '/products/piping', icon: Pipette, label: 'Pipes & Fittings' },
-  { id: 'tanks', to: '/products/tanks', icon: Container, label: 'Tanks' },
-  { id: 'attributes', to: '/products/attributes', icon: SlidersHorizontal, label: 'Attributes' },
+/** Shared records everyone works from: one click, no sub-menus. */
+const SHARED_ITEMS: NavItemDef[] = [
+  { id: 'projects', to: ROUTES.projects, icon: FolderOpen, label: 'Projects', moduleKey: 'projects' },
+  { id: 'clients', to: ROUTES.clients, icon: Building2, label: 'Clients & Contacts', moduleKey: 'clients' },
+  { id: 'products', to: ROUTES.products, icon: Package, label: 'Products', moduleKey: 'pim' },
+  { id: 'documents', to: ROUTES.documents, icon: FileText, label: 'Documents', moduleKey: 'documents' },
 ];
 
-const SECTIONS: NavSection[] = [
-  { id: 'orders', moduleKey: 'orders', group: 'Operational', label: 'Order Management', hub: ROUTES.orders, icon: ShoppingCart,
-    items: [{ id: 'purchase-orders', to: ROUTES.purchaseOrders, icon: ShoppingCart, label: 'Purchase Orders' }] },
-  {
-    id: 'projects', moduleKey: 'projects', group: 'Operational', label: 'Project Management', hub: ROUTES.projectManagement, icon: FolderOpen,
-    items: [{ id: 'projects', to: ROUTES.projects, icon: FolderOpen, label: 'Projects' }],
-  },
-  {
-    id: 'initiatives', moduleKey: 'initiatives', group: 'Operational', label: 'Initiatives', hub: '/initiatives', icon: Lightbulb,
-    items: [{ id: 'initiatives-board', to: '/initiatives', icon: Lightbulb, label: 'Internal work', end: true }],
-  },
-  {
-    id: 'resources', moduleKey: 'resources', group: 'Operational', label: 'Resources', hub: ROUTES.resources, icon: Gauge,
-    items: [{ id: 'resources-overview', to: ROUTES.resources, icon: Gauge, label: 'Teams & Workload', end: true }],
-  },
-  {
-    id: 'design-book-engine', moduleKey: 'design_books', group: 'Engineering', label: 'Design Book Engine', hub: ROUTES.designBookEngine, icon: BookMarked,
-    items: [
-      { id: 'design-books', to: ROUTES.designBooks, icon: BookMarked, label: 'Design Books' },
-      { id: 'lss-catalog', to: ROUTES.lssCompactUnits, icon: Layers, label: 'LSS Unit Catalog' },
-      { id: 'species-catalog', to: ROUTES.speciesCatalog, icon: Fish, label: 'Species Catalog' },
-    ],
-  },
-  { id: 'pim', moduleKey: 'pim', group: 'Engineering', label: 'PIM Management', hub: ROUTES.pim, icon: Package, items: PIM_ITEMS },
-  {
-    id: 'drafting', moduleKey: 'drafting', group: 'Engineering', label: 'Drafting', hub: ROUTES.drafting, icon: PencilRuler,
-    items: [
-      { id: 'drafting-plans', to: ROUTES.drafting, icon: PencilRuler, label: 'Plans & Teams', end: true },
-    ],
-  },
-  {
-    id: 'business-development', moduleKey: 'business_development', group: 'Commercial', label: 'Business Development', hub: ROUTES.businessDevelopment, icon: BriefcaseBusiness,
-    items: [
-      { id: 'bid-pipeline', to: ROUTES.businessDevelopment, icon: BriefcaseBusiness, label: 'Bid pipeline', end: true },
-      { id: 'enquiries', to: '/enquiries', icon: ClipboardCheck, label: 'Enquiries' },
-    ],
-  },
-  {
-    id: 'clients', moduleKey: 'clients', group: 'Commercial', label: 'Clients & Contacts', hub: ROUTES.clients, icon: Building2,
-    items: [{ id: 'clients-directory', to: ROUTES.clients, icon: Building2, label: 'Companies & People', end: true }],
-  },
-  {
-    id: 'documents', moduleKey: 'documents', group: 'Reference', label: 'Documents', hub: ROUTES.documents, icon: FileText,
-    items: [{ id: 'document-register', to: ROUTES.documents, icon: FileText, label: 'Document Register', end: true }],
-  },
-  {
-    id: 'knowledge', moduleKey: 'knowledge', group: 'Reference', label: 'Engineering Knowledge', hub: ROUTES.materials, icon: BookOpen,
-    items: [
-      { id: 'materials', to: ROUTES.materials, icon: BookOpen, label: 'Materials' },
-      { id: 'specifications', to: ROUTES.specifications, icon: BookOpen, label: 'Specifications' },
-      { id: 'design-rules', to: ROUTES.designRules, icon: Ruler, label: 'Design Rules' },
-    ],
-  },
-  {
-    id: 'graph', moduleKey: 'graph', group: 'Reference', label: 'Relationships', hub: ROUTES.graph, icon: Network,
-    items: [{ id: 'graph-explorer', to: ROUTES.graph, icon: Network, label: 'Graph Explorer', end: true }],
-  },
+/** Department areas: collapsible, shown only when the user can see at least one item. */
+const AREAS: NavArea[] = [
+  { id: 'business-development', label: 'Business Development', items: [
+    { id: 'bid-pipeline', to: ROUTES.businessDevelopment, icon: BriefcaseBusiness, label: 'Bid Pipeline', moduleKey: 'business_development', end: true },
+    { id: 'enquiries', to: ROUTES.enquiries, icon: ClipboardCheck, label: 'Enquiries', moduleKey: 'business_development' },
+  ] },
+  { id: 'procurement', label: 'Procurement', items: [
+    { id: 'orders-overview', to: ROUTES.orders, icon: Gauge, label: 'Order Overview', moduleKey: 'orders', end: true },
+    { id: 'purchase-orders', to: ROUTES.purchaseOrders, icon: ShoppingCart, label: 'Purchase Orders', moduleKey: 'orders' },
+  ] },
+  { id: 'engineering', label: 'Engineering', items: [
+    { id: 'design-books', to: ROUTES.designBooks, icon: BookMarked, label: 'Design Books', moduleKey: 'design_books' },
+    { id: 'drafting', to: ROUTES.drafting, icon: PencilRuler, label: 'Drafting', moduleKey: 'drafting' },
+    { id: 'components', to: ROUTES.components, icon: Boxes, label: 'Components', moduleKey: 'pim' },
+    { id: 'piping', to: ROUTES.piping, icon: Pipette, label: 'Pipes & Fittings', moduleKey: 'pim' },
+    { id: 'tanks', to: ROUTES.tanks, icon: Container, label: 'Tanks', moduleKey: 'pim' },
+    { id: 'attributes', to: '/products/attributes', icon: SlidersHorizontal, label: 'Attributes', moduleKey: 'pim' },
+    { id: 'lss-catalog', to: ROUTES.lssCompactUnits, icon: Layers, label: 'LSS Unit Catalog', moduleKey: 'design_books' },
+    { id: 'species-catalog', to: ROUTES.speciesCatalog, icon: Fish, label: 'Species Catalog', moduleKey: 'design_books' },
+    { id: 'materials', to: ROUTES.materials, icon: BookOpen, label: 'Materials', moduleKey: 'knowledge' },
+    { id: 'specifications', to: ROUTES.specifications, icon: BookOpen, label: 'Specifications', moduleKey: 'knowledge' },
+    { id: 'design-rules', to: ROUTES.designRules, icon: Ruler, label: 'Design Rules', moduleKey: 'knowledge' },
+  ] },
+  { id: 'management', label: 'Management', items: [
+    { id: 'resources', to: ROUTES.resources, icon: Gauge, label: 'Teams & Workload', moduleKey: 'resources' },
+    { id: 'initiatives', to: '/initiatives', icon: Lightbulb, label: 'Initiatives', moduleKey: 'initiatives' },
+    { id: 'graph', to: ROUTES.graph, icon: Network, label: 'Relationship Graph', moduleKey: 'graph' },
+  ] },
 ];
 
 const ADMIN_ITEMS: NavItemDef[] = [
@@ -103,157 +74,64 @@ const ADMIN_ITEMS: NavItemDef[] = [
   { id: 'audit-log', to: '/admin/audit-log', icon: ClipboardList, label: 'Audit Log' },
 ];
 
-const STORAGE_KEY = 'nav-section-orders';
+const STORAGE_KEY = 'nav-collapsed-areas';
 
-function loadOrders(): Record<string, string[]> {
+function loadCollapsedAreas(): string[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch { return {}; }
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
 }
 
-function saveOrders(orders: Record<string, string[]>) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(orders));
+function NavItemLink({ item, collapsed, indent = false }: { item: NavItemDef; collapsed: boolean; indent?: boolean }) {
+  const Icon = item.icon;
+  return (
+    <NavLink
+      to={item.to}
+      end={item.end}
+      title={collapsed ? item.label : undefined}
+      className={({ isActive }) => clsx(navLinkClass({ isActive }), collapsed ? 'justify-center px-3' : indent && 'pl-5')}
+    >
+      {({ isActive }) => (
+        <>
+          {isActive && <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-4 bg-blue-500 rounded-r-full" />}
+          <Icon className={clsx(
+            'w-4 h-4 shrink-0 transition-all duration-150',
+            isActive ? 'text-blue-500' : 'text-stone-400 group-hover:text-stone-600',
+          )} />
+          {!collapsed && <span className="truncate">{item.label}</span>}
+        </>
+      )}
+    </NavLink>
+  );
 }
 
-function applySectionOrder(items: NavItemDef[], savedIds: string[] | undefined): NavItemDef[] {
-  if (!savedIds || savedIds.length === 0) return items;
-  const map = new Map(items.map(i => [i.id, i]));
-  const ordered: NavItemDef[] = [];
-  for (const id of savedIds) { const item = map.get(id); if (item) ordered.push(item); }
-  for (const item of items) { if (!ordered.find(o => o.id === item.id)) ordered.push(item); }
-  return ordered;
+function GroupHeading({ children }: { children: ReactNode }) {
+  return <div className="px-4 pt-5 pb-1 text-[10px] font-bold uppercase tracking-[0.16em] text-stone-500">{children}</div>;
 }
 
-function DraggableSection({ section, savedOrder, onOrderChange, collapsed, onNavigate }: {
-  section: NavSection;
-  savedOrder: string[] | undefined;
-  onOrderChange: (sectionId: string, newOrder: string[]) => void;
-  collapsed: boolean;
-  onNavigate?: () => void;
+function NavAreaSection({ area, items, expanded, onToggle, collapsed }: {
+  area: NavArea; items: NavItemDef[]; expanded: boolean; onToggle: () => void; collapsed: boolean;
 }) {
-  const navigate = useNavigate();
-  const [items, setItems] = useState<NavItemDef[]>(() => applySectionOrder(section.items, savedOrder));
-  const dragIdx = useRef<number | null>(null);
-  const overIdx = useRef<number | null>(null);
-  const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [overItemId, setOverItemId] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState(true);
-  const HubIcon = section.icon;
-
-  useEffect(() => { setItems(applySectionOrder(section.items, savedOrder)); }, []);
-
-  const handleDragStart = (e: React.DragEvent, idx: number) => {
-    dragIdx.current = idx;
-    setDraggingId(items[idx].id);
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', items[idx].id);
-  };
-
-  const handleDragOver = (e: React.DragEvent, idx: number) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    overIdx.current = idx;
-    setOverItemId(items[idx].id);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    const from = dragIdx.current, to = overIdx.current;
-    if (from === null || to === null || from === to) return;
-    const next = [...items];
-    const [moved] = next.splice(from, 1);
-    next.splice(to, 0, moved);
-    setItems(next);
-    onOrderChange(section.id, next.map(i => i.id));
-    dragIdx.current = null; overIdx.current = null;
-  };
-
-  const handleDragEnd = () => { setDraggingId(null); setOverItemId(null); dragIdx.current = null; overIdx.current = null; };
-
+  const location = useLocation();
+  const containsActive = items.some(item => location.pathname === item.to || location.pathname.startsWith(`${item.to}/`));
+  const open = expanded || containsActive;
+  if (collapsed) {
+    return <div className="space-y-0.5 border-t border-stone-200/70 pt-1 mt-1">{items.map(item => <NavItemLink key={item.id} item={item} collapsed />)}</div>;
+  }
   return (
     <div>
-      {!collapsed && (
-        <button
-          onClick={() => { navigate(section.hub); setExpanded(v => !v); onNavigate?.(); }}
-          className="w-full flex items-center justify-between pt-4 pb-1.5 px-3 group focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
-          aria-expanded={expanded}
-          aria-label={`${expanded ? 'Collapse' : 'Expand'} ${section.label}`}
-        >
-          <span className="text-[10px] font-bold text-stone-400 uppercase tracking-[0.12em] group-hover:text-blue-600 transition-colors duration-150">
-            {section.label}
-          </span>
-          <ChevronRight className={clsx(
-            'w-3 h-3 text-stone-300 group-hover:text-blue-500 transition-all duration-200',
-            expanded ? 'rotate-90' : 'rotate-0'
-          )} />
-        </button>
-      )}
-
-      {collapsed && (
-        <NavLink
-          to={section.hub}
-          title={section.label}
-          aria-label={section.label}
-          className={({ isActive }) => clsx(navLinkClass({ isActive }), 'justify-center px-3')}
-        >
-          <HubIcon className="w-4 h-4 shrink-0 text-stone-400" />
-        </NavLink>
-      )}
-
-      {(collapsed || expanded) && items.map((item, idx) => {
-        const Icon = item.icon;
-        const isDragging = draggingId === item.id;
-        const isOver = overItemId === item.id && draggingId !== item.id;
-        return (
-          <div
-            key={item.id}
-            draggable
-            onDragStart={e => handleDragStart(e, idx)}
-            onDragOver={e => handleDragOver(e, idx)}
-            onDrop={handleDrop}
-            onDragEnd={handleDragEnd}
-            className={clsx(
-              'group relative flex items-center rounded-lg transition-all mx-1',
-              isDragging && 'opacity-40 scale-95',
-              isOver && 'ring-1 ring-blue-400/40 ring-inset bg-blue-50/60',
-            )}
-          >
-            <div
-              className="absolute left-0 top-0 bottom-0 flex items-center pl-1 opacity-0 group-hover:opacity-60 transition-opacity cursor-grab active:cursor-grabbing z-10"
-              title={`Drag to reorder ${item.label}`}
-              aria-label={`Drag to reorder ${item.label}`}
-            >
-              <GripVertical className="w-3 h-3 text-stone-400" />
-            </div>
-            <NavLink
-              to={item.to}
-              end={item.end}
-              className={({ isActive }) => clsx(
-                'flex-1 flex items-center gap-2.5 py-2 text-sm rounded-lg transition-all duration-150 relative overflow-hidden',
-                collapsed ? 'justify-center px-3' : 'pl-6 pr-3',
-                isActive
-                  ? 'bg-white text-blue-600 font-semibold shadow-sm border border-stone-200/70'
-                  : 'text-stone-500 hover:bg-white/70 hover:text-stone-800 hover:shadow-sm'
-              )}
-               title={collapsed ? item.label : undefined}
-            >
-              {({ isActive }) => (
-                <>
-                  {isActive && (
-                    <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-4 bg-blue-500 rounded-r-full" />
-                  )}
-                  <Icon className={clsx(
-                    'w-4 h-4 shrink-0 transition-all duration-150',
-                    isActive ? 'text-blue-500' : 'text-stone-400 group-hover:text-stone-600 group-hover:scale-110'
-                  )} />
-                   {!collapsed && <span>{item.label}</span>}
-                </>
-              )}
-            </NavLink>
-          </div>
-        );
-      })}
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full flex items-center justify-between mt-0.5 px-4 py-1.5 rounded-lg text-sm font-medium text-stone-700 hover:bg-white/70 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
+        aria-expanded={open}
+        aria-label={`${open ? 'Collapse' : 'Expand'} ${area.label}`}
+      >
+        <span>{area.label}</span>
+        <ChevronRight className={clsx('w-3.5 h-3.5 text-stone-400 transition-transform duration-200', open && 'rotate-90')} />
+      </button>
+      {open && <div className="space-y-0.5 pb-1">{items.map(item => <NavItemLink key={item.id} item={item} collapsed={false} indent />)}</div>}
     </div>
   );
 }
@@ -372,20 +250,23 @@ interface LeftNavProps {
 }
 
 export default function LeftNav({ collapsed, onToggleCollapsed, onNavigate }: LeftNavProps) {
-  const [orders, setOrders] = useState<Record<string, string[]>>(loadOrders);
+  const [collapsedAreas, setCollapsedAreas] = useState<string[]>(loadCollapsedAreas);
   const [showAdmin, setShowAdmin] = useState(false);
   const adminTriggerRef = useRef<HTMLButtonElement>(null);
   const { open: openPalette } = useCommandPalette();
   const user = useAuthStore(state => state.user);
-  const moduleVisible = (moduleKey: ModuleKey) => user?.moduleAccess?.[moduleKey] !== 'hidden';
+  const itemVisible = (item: NavItemDef) => !item.moduleKey || user?.moduleAccess?.[item.moduleKey] !== 'hidden';
   const canAccessPlatformAdmin = user?.role === 'admin' ||
     (isEditorRole(user?.role) && user?.moduleAccess?.design_books === 'manage');
-  const visibleSections = SECTIONS.filter(section => moduleVisible(section.moduleKey));
+  const sharedItems = SHARED_ITEMS.filter(itemVisible);
+  const visibleAreas = AREAS.map(area => ({ area, items: area.items.filter(itemVisible) })).filter(entry => entry.items.length > 0);
 
-  const handleOrderChange = (sectionId: string, newOrder: string[]) => {
-    const next = { ...orders, [sectionId]: newOrder };
-    setOrders(next);
-    saveOrders(next);
+  const toggleArea = (areaId: string) => {
+    setCollapsedAreas(current => {
+      const next = current.includes(areaId) ? current.filter(id => id !== areaId) : [...current, areaId];
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch { /* storage unavailable */ }
+      return next;
+    });
   };
 
   const closeAdminMenu = () => {
@@ -457,26 +338,32 @@ export default function LeftNav({ collapsed, onToggleCollapsed, onNavigate }: Le
               ⌘K
             </kbd>}
           </button>
-           <NavLink to="/my-work" title={collapsed ? 'My Work' : undefined}
-             className={({ isActive }) => clsx(navLinkClass({ isActive }), collapsed && 'justify-center px-3')}>
-             <ClipboardCheck className="w-4 h-4 shrink-0 text-stone-400" />
-             {!collapsed && <span>My Work</span>}
-           </NavLink>
-           <NavLink to="/plans" title={collapsed ? 'Plans' : undefined}
-             className={({ isActive }) => clsx(navLinkClass({ isActive }), collapsed && 'justify-center px-3')}>
-             <CalendarRange className="w-4 h-4 shrink-0 text-stone-400" />
-             {!collapsed && <span>Plans</span>}
-           </NavLink>
+          <NavItemLink item={{ id: 'my-work', to: '/my-work', icon: ClipboardCheck, label: 'My Work' }} collapsed={collapsed} />
+          <NavItemLink item={{ id: 'plans', to: '/plans', icon: CalendarRange, label: 'My Plans' }} collapsed={collapsed} />
         </div>
 
-        {visibleSections.map((section, index) => (
-          <div key={section.id}>
-            {!collapsed && (index === 0 || visibleSections[index - 1].group !== section.group) && (
-              <div className="px-4 pt-4 text-[10px] font-bold uppercase tracking-[0.16em] text-stone-500">{section.group}</div>
-            )}
-            <DraggableSection section={section} savedOrder={orders[section.id]} onOrderChange={handleOrderChange} collapsed={collapsed} onNavigate={onNavigate} />
+        {sharedItems.length > 0 && (
+          <div className={clsx('px-1 space-y-0.5', collapsed && 'px-0.5 border-t border-stone-200/70 pt-1 mt-1')}>
+            {!collapsed && <GroupHeading>Company</GroupHeading>}
+            {sharedItems.map(item => <NavItemLink key={item.id} item={item} collapsed={collapsed} />)}
           </div>
-        ))}
+        )}
+
+        {visibleAreas.length > 0 && (
+          <div className={clsx('px-1', collapsed && 'px-0.5')}>
+            {!collapsed && <GroupHeading>Departments</GroupHeading>}
+            {visibleAreas.map(({ area, items }) => (
+              <NavAreaSection
+                key={area.id}
+                area={area}
+                items={items}
+                expanded={!collapsedAreas.includes(area.id)}
+                onToggle={() => toggleArea(area.id)}
+                collapsed={collapsed}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       {canAccessPlatformAdmin && <div className="border-t border-stone-200/80 p-2">

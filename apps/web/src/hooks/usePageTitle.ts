@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useLocation, matchPath } from 'react-router-dom';
+import { rememberRecord } from '../lib/recentRecords';
 
 const ROUTE_TITLES: { path: string; title: string }[] = [
   { path: '/login', title: 'Login' },
@@ -68,6 +69,7 @@ export function useRecordTitle(name: string | undefined) {
   useEffect(() => {
     if (name) {
       document.title = `${name} | ${APP_NAME}`;
+      rememberRecord(window.location.pathname, name);
     }
   }, [name]);
 }

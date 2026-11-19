@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import ShortcutMapModal from '../components/ui/ShortcutMapModal';
 import MyWorkPlanner from './my-work/MyWorkPlanner';
+import { NeedsAttentionPanel, RecentRecordsPanel } from './home/HomePanels';
 import { moduleForPath, ROUTES } from '../lib/navigation';
 import { supportError } from '../lib/supportError';
 
@@ -134,7 +135,7 @@ export default function HomeHub() {
       id: 'pim',
       href: '/pim',
       icon: Package,
-      title: 'PIM Management',
+      title: 'Products',
       description: 'Master catalog for products, components, pipes & fittings and tanks across all projects.',
       comingSoon: false,
       accent: {
@@ -156,7 +157,7 @@ export default function HomeHub() {
       id: 'orders',
       href: '/order-management',
       icon: ShoppingCart,
-      title: 'Order Management',
+      title: 'Purchase Orders',
       description: 'Track purchase orders through drafting, approval, engineering review and release.',
       comingSoon: false,
       accent: {
@@ -178,7 +179,7 @@ export default function HomeHub() {
       id: 'projects',
       href: '/projects',
       icon: FolderOpen,
-      title: 'Project Management',
+      title: 'Projects',
       description: 'Manage active projects, systems, equipment lists and engineering deliverables.',
       comingSoon: false,
       accent: {
@@ -199,7 +200,7 @@ export default function HomeHub() {
       id: 'design-book-engine',
       href: '/design-book-engine',
       icon: BookMarked,
-      title: 'Design Book Engine',
+      title: 'Design Books',
       description: 'Generate, manage and version engineering design books with exhibits, LSS calculations and specifications.',
       comingSoon: false,
       accent: {
@@ -252,7 +253,7 @@ export default function HomeHub() {
 
   return (
     <div className="min-h-full" style={{ background: 'linear-gradient(160deg, #fafaf9 0%, #f5f3f0 100%)' }}>
-      <div className="max-w-6xl mx-auto px-8 py-12">
+      <div className="max-w-6xl mx-auto px-4 sm:px-8 py-8">
         {(statsError || posError || workError || booksError) && (
           <div role="alert" className="mb-6 rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-900">
             Some dashboard figures are unavailable or may be out of date.{' '}
@@ -266,7 +267,7 @@ export default function HomeHub() {
           </div>
         )}
 
-        <div className="mb-10 animate-fade-in-up">
+        <div className="mb-6 animate-fade-in-up">
           <h1
             className="text-3xl font-bold tracking-tight"
             style={{ background: 'linear-gradient(135deg, #1c1917 0%, #44403c 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}
@@ -274,7 +275,7 @@ export default function HomeHub() {
             Welcome back, {firstName}
           </h1>
           <div className="flex items-center gap-3 mt-1">
-            <p className="text-stone-400 text-sm">Your week at a glance, and every module below</p>
+            <p className="text-stone-400 text-sm">What needs you, what you were working on, and your week</p>
             <button
               onClick={() => setShortcutMapOpen(true)}
               className="flex items-center gap-1 text-xs text-stone-400 hover:text-blue-600 transition-colors"
@@ -288,58 +289,34 @@ export default function HomeHub() {
 
         {shortcutMapOpen && <ShortcutMapModal onClose={() => setShortcutMapOpen(false)} />}
 
+        <div className="mb-8 grid grid-cols-1 gap-5 lg:grid-cols-3">
+          <div className="lg:col-span-2"><NeedsAttentionPanel /></div>
+          <RecentRecordsPanel />
+        </div>
+
         <MyWorkPlanner />
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mb-10">
-          {visibleModules.map((mod, i) => {
+        <div className="mb-8 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
+          {visibleModules.map(mod => {
             const Icon = mod.icon;
-            if (mod.comingSoon) {
-              return (
-                <div
-                  key={mod.id}
-                  style={{ animationDelay: `${i * 60}ms` }}
-                  className="animate-fade-in-up text-left rounded-2xl border border-stone-200/60 bg-white/50 backdrop-blur-sm shadow-sm p-6 flex flex-col overflow-hidden relative cursor-default opacity-70"
-                >
-                  <div className={`absolute top-0 left-0 right-0 h-px bg-gradient-to-r ${mod.accent.topBar}`} />
-                  <div className="flex items-start justify-between mb-4">
-                    <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${mod.accent.iconGradient} flex items-center justify-center shadow-md ${mod.accent.iconShadow} shrink-0`}>
-                      <Icon className="w-6 h-6 text-white" />
-                    </div>
-                    <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-violet-100 text-violet-500 border border-violet-200/70 shrink-0">
-                      Coming Soon
-                    </span>
-                  </div>
-                  <h2 className="text-base font-semibold text-stone-400 mb-2">{mod.title}</h2>
-                  <p className="text-sm text-stone-300 leading-relaxed flex-1">{mod.description}</p>
-                </div>
-              );
-            }
-
             return (
               <button
                 key={mod.id}
+                type="button"
                 onClick={() => navigate(mod.href)}
-                style={{ animationDelay: `${i * 60}ms` }}
-                className={`animate-fade-in-up text-left rounded-2xl border border-stone-200/80 bg-white/80 backdrop-blur-sm shadow-sm hover:shadow-xl ${mod.accent.glow} ${mod.accent.border} transition-all duration-300 p-6 group cursor-pointer flex flex-col active:scale-[0.98] overflow-hidden relative`}
+                className="group flex flex-col rounded-xl border border-stone-200 bg-white p-4 text-left shadow-sm transition-all hover:border-blue-300 hover:shadow-md"
               >
-                <div className={`absolute top-0 left-0 right-0 h-px bg-gradient-to-r ${mod.accent.topBar}`} />
-                <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${mod.accent.iconGradient} flex items-center justify-center mb-4 shadow-lg ${mod.accent.iconShadow} shrink-0 group-hover:scale-105 group-hover:shadow-xl transition-all duration-300`}>
-                  <Icon className="w-6 h-6 text-white" />
-                </div>
-                <h2 className="text-base font-semibold text-stone-800 mb-2 group-hover:text-stone-900 transition-colors">{mod.title}</h2>
-                <p className="text-sm text-stone-400 leading-relaxed mb-4 flex-1">{mod.description}</p>
-                <div className="flex flex-wrap gap-2 mb-5">
+                <span className="flex items-center gap-2 text-sm font-semibold text-stone-700 group-hover:text-blue-700">
+                  <Icon className="h-4 w-4 text-stone-400 group-hover:text-blue-500" />
+                  {mod.title}
+                </span>
+                <span className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
                   {mod.stats.map(s => (
-                    <span key={s.label} className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full ${mod.accent.badge}`}>
-                      <span className={`w-1.5 h-1.5 rounded-full ${mod.accent.badgeDot} shrink-0`} />
-                      {s.value} {s.label}
+                    <span key={s.label} className="text-xs text-stone-500">
+                      <span className="text-lg font-semibold text-stone-800">{s.value}</span> {s.label}
                     </span>
                   ))}
-                </div>
-                <div className={`inline-flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg text-white bg-gradient-to-r ${mod.accent.btn} transition-all duration-200 w-fit shadow-md group-hover:shadow-lg group-hover:gap-3`}>
-                  Open module
-                  <ArrowRight className="w-4 h-4 transition-transform duration-200 group-hover:translate-x-1" />
-                </div>
+                </span>
               </button>
             );
           })}

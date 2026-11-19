@@ -48,19 +48,21 @@ describe('LeftNav accessibility behavior', () => {
     const user = userEvent.setup();
     renderNav();
 
-    const sectionToggle = screen.getByRole('button', { name: 'Collapse PIM Management' });
+    const sectionToggle = screen.getByRole('button', { name: 'Collapse Engineering' });
     expect(sectionToggle).toHaveAttribute('aria-expanded', 'true');
-    expect(screen.getByRole('link', { name: 'Products' })).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Components' })).toBeVisible();
 
     await user.click(sectionToggle);
-    expect(screen.getByRole('button', { name: 'Expand PIM Management' }))
+    expect(screen.getByRole('button', { name: 'Expand Engineering' }))
       .toHaveAttribute('aria-expanded', 'false');
-    expect(screen.queryByRole('link', { name: 'Products' })).not.toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: 'Expand PIM Management' }));
-    expect(screen.getByRole('button', { name: 'Collapse PIM Management' }))
-      .toHaveAttribute('aria-expanded', 'true');
+    expect(screen.queryByRole('link', { name: 'Components' })).not.toBeInTheDocument();
+    // Shared records stay one click away regardless of department sections.
     expect(screen.getByRole('link', { name: 'Products' })).toBeVisible();
+
+    await user.click(screen.getByRole('button', { name: 'Expand Engineering' }));
+    expect(screen.getByRole('button', { name: 'Collapse Engineering' }))
+      .toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('link', { name: 'Components' })).toBeVisible();
   });
 
   it('makes the Platform Admin menu keyboard-operable and restores focus on close', async () => {
@@ -114,8 +116,9 @@ describe('LeftNav accessibility behavior', () => {
 
     renderNav();
 
-    expect(screen.queryByText('PIM Management')).not.toBeInTheDocument();
-    expect(screen.getByText('Order Management')).toBeVisible();
+    expect(screen.queryByRole('link', { name: 'Products' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Components' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Purchase Orders' })).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Platform Admin' })).not.toBeInTheDocument();
   });
 
