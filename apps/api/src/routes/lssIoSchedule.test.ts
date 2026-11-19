@@ -70,7 +70,7 @@ async function extractPdfText(pdf: Buffer) {
   const pdfPath = path.join(directory, 'schedule.pdf');
   try {
     await writeFile(pdfPath, pdf);
-    const { stdout } = await execFileAsync('pdftotext', [pdfPath, '-']);
+    const { stdout } = await execFileAsync('pdftotext', ['-enc', 'UTF-8', pdfPath, '-']);
     return stdout;
   } finally {
     await rm(directory, { recursive: true, force: true });
