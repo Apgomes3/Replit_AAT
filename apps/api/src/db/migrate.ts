@@ -686,6 +686,10 @@ ON CONFLICT (name) DO NOTHING;
 -- Job position (e.g. "Drafting Supervisor"); separate from the access role.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS job_title VARCHAR(150);
 
+-- Department (engineering, business_development, procurement, management, logistics, factory):
+-- decides which navigation areas open by default. Separate from the access role.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS department VARCHAR(40);
+
 -- Direct manager (line management). Separate from team managers: a person can be in teams run by
 -- other people. Loops (A reports to B reports to A) are refused by the API.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS reports_to_user_id UUID REFERENCES users(id) ON DELETE SET NULL;

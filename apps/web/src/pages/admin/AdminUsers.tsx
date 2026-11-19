@@ -18,6 +18,7 @@ import QueryError from '../../components/ui/QueryError';
 import EmptyState from '../../components/ui/EmptyState';
 import SkeletonTable from '../../components/ui/SkeletonTable';
 import { useModalFocus } from '../../hooks/useModalFocus';
+import { DEPARTMENTS, DEPARTMENT_LABELS } from '../../lib/departments';
 
 interface UserRow {
   id: string;
@@ -25,6 +26,7 @@ interface UserRow {
   first_name: string;
   last_name: string;
   job_title: string | null;
+  department?: string | null;
   reports_to_user_id: string | null;
   reports_to_name: string | null;
   role: string;
@@ -1131,7 +1133,7 @@ export default function AdminUsers() {
           onClose={() => setEditUser(null)}
           initialValues={{
             first_name: editUser.first_name, last_name: editUser.last_name, job_title: editUser.job_title ?? '',
-            reports_to_user_id: editUser.reports_to_user_id ?? '', role: editUser.role,
+            reports_to_user_id: editUser.reports_to_user_id ?? '', role: editUser.role, department: editUser.department ?? '',
           }}
           fields={[
             { name: 'first_name', label: 'First Name' },
@@ -1139,6 +1141,7 @@ export default function AdminUsers() {
             { name: 'job_title', label: 'Job Position' },
             { name: 'reports_to_user_id', label: 'Reports to (direct manager)', options: managerOptions },
             { name: 'role', label: 'Role (access)', options: roleOptions },
+            { name: 'department', label: 'Department (opens these menu areas)', options: [{ value: '', label: 'None (all areas open)' }, ...DEPARTMENTS.map(d => ({ value: d, label: DEPARTMENT_LABELS[d] }))] },
           ]}
           onSubmit={async (values) => {
             try {
@@ -1148,6 +1151,7 @@ export default function AdminUsers() {
                 job_title: values.job_title || null,
                 reports_to_user_id: values.reports_to_user_id || null,
                 role: values.role,
+                department: values.department || null,
                 is_active: editUser.is_active,
               });
               toast.success('User updated');

@@ -6,9 +6,11 @@ import { useCommandPalette } from '../../store/commandPaletteStore';
 import { useAuthStore } from '../../store/authStore';
 import { ModuleKey, ROUTES } from '../../lib/navigation';
 import { isEditorRole } from '../../lib/roles';
+import { Department, DEPARTMENT_AREAS } from '../../lib/departments';
 
 type NavItemDef = { id: string; to: string; icon: any; label: string; moduleKey?: ModuleKey; end?: boolean };
-type NavArea = { id: string; label: string; items: NavItemDef[] };
+/** `emptyFor`: departments that still see the area while it has no pages yet. */
+type NavArea = { id: string; label: string; items: NavItemDef[]; emptyFor?: Department[] };
 
 /** Shared records everyone works from: one click, no sub-menus. */
 const SHARED_ITEMS: NavItemDef[] = [
@@ -46,6 +48,8 @@ const AREAS: NavArea[] = [
     { id: 'initiatives', to: '/initiatives', icon: Lightbulb, label: 'Initiatives', moduleKey: 'initiatives' },
     { id: 'graph', to: ROUTES.graph, icon: Network, label: 'Relationship Graph', moduleKey: 'graph' },
   ] },
+  { id: 'logistics', label: 'Logistics', items: [], emptyFor: ['logistics', 'management'] },
+  { id: 'factory', label: 'Factory', items: [], emptyFor: ['factory', 'management'] },
 ];
 
 const ADMIN_ITEMS: NavItemDef[] = [
@@ -76,11 +80,19 @@ const ADMIN_ITEMS: NavItemDef[] = [
 
 const STORAGE_KEY = 'nav-collapsed-areas';
 
-function loadCollapsedAreas(): string[] {
+/** Areas folded by default: everything outside the person's department (none for management or no department). */
+export function defaultCollapsedAreas(department: Department | null | undefined): string[] {
+  const open = department ? DEPARTMENT_AREAS[department] : null;
+  return open ? AREAS.map(area => area.id).filter(id => !open.includes(id)) : [];
+}
+
+/** The person's own fold/unfold choices win over the department default once they make one. */
+function loadCollapsedAreas(userId: string | undefined, department: Department | null | undefined): string[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch { return []; }
+    const raw = localStorage.getItem(`${STORAGE_KEY}:${userId ?? 'anonymous'}`);
+    if (raw) return JSON.parse(raw);
+  } catch { /* storage unavailable */ }
+  return defaultCollapsedAreas(department);
 }
 
 function NavItemLink({ item, collapsed, indent = false }: { item: NavItemDef; collapsed: boolean; indent?: boolean }) {
@@ -131,7 +143,10 @@ function NavAreaSection({ area, items, expanded, onToggle, collapsed }: {
         <span>{area.label}</span>
         <ChevronRight className={clsx('w-3.5 h-3.5 text-stone-400 transition-transform duration-200', open && 'rotate-90')} />
       </button>
-      {open && <div className="space-y-0.5 pb-1">{items.map(item => <NavItemLink key={item.id} item={item} collapsed={false} indent />)}</div>}
+      {open && <div className="space-y-0.5 pb-1">
+        {items.map(item => <NavItemLink key={item.id} item={item} collapsed={false} indent />)}
+        {items.length === 0 && <p className="pl-6 pr-3 py-1.5 text-xs text-stone-400">Nothing here yet</p>}
+      </div>}
     </div>
   );
 }
@@ -250,21 +265,26 @@ interface LeftNavProps {
 }
 
 export default function LeftNav({ collapsed, onToggleCollapsed, onNavigate }: LeftNavProps) {
-  const [collapsedAreas, setCollapsedAreas] = useState<string[]>(loadCollapsedAreas);
   const [showAdmin, setShowAdmin] = useState(false);
   const adminTriggerRef = useRef<HTMLButtonElement>(null);
   const { open: openPalette } = useCommandPalette();
   const user = useAuthStore(state => state.user);
+  const [collapsedAreas, setCollapsedAreas] = useState<string[]>(() => loadCollapsedAreas(user?.id, user?.department));
+  // The user record can arrive after the first render (page reload): apply their default then.
+  useEffect(() => { setCollapsedAreas(loadCollapsedAreas(user?.id, user?.department)); }, [user?.id, user?.department]);
   const itemVisible = (item: NavItemDef) => !item.moduleKey || user?.moduleAccess?.[item.moduleKey] !== 'hidden';
   const canAccessPlatformAdmin = user?.role === 'admin' ||
     (isEditorRole(user?.role) && user?.moduleAccess?.design_books === 'manage');
   const sharedItems = SHARED_ITEMS.filter(itemVisible);
-  const visibleAreas = AREAS.map(area => ({ area, items: area.items.filter(itemVisible) })).filter(entry => entry.items.length > 0);
+  const showsEmptyArea = (area: NavArea) => user?.role === 'admin' || (!!user?.department && !!area.emptyFor?.includes(user.department));
+  const visibleAreas = AREAS
+    .map(area => ({ area, items: area.items.filter(itemVisible) }))
+    .filter(entry => entry.items.length > 0 || (entry.area.items.length === 0 && showsEmptyArea(entry.area)));
 
   const toggleArea = (areaId: string) => {
     setCollapsedAreas(current => {
       const next = current.includes(areaId) ? current.filter(id => id !== areaId) : [...current, areaId];
-      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch { /* storage unavailable */ }
+      try { localStorage.setItem(`${STORAGE_KEY}:${user?.id ?? 'anonymous'}`, JSON.stringify(next)); } catch { /* storage unavailable */ }
       return next;
     });
   };

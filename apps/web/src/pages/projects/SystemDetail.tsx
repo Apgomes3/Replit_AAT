@@ -384,7 +384,7 @@ export default function SystemDetail() {
         >Product</button>
         <button
           onClick={() => { setInlineType('component'); setInlineSelectedProduct(null); setInlineProductSearch(''); }}
-          className={`px-2 py-0.5 rounded text-xs font-medium transition-colors ${inlineType === 'component' ? 'bg-violet-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+          className={`px-2 py-0.5 rounded text-xs font-medium transition-colors ${inlineType === 'component' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
         >Component</button>
       </div>
       {inlineType === 'product' ? (

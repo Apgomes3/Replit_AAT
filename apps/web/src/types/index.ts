@@ -6,6 +6,8 @@ export interface User {
   role: 'admin' | 'manager' | 'user' | 'engineer' | 'viewer' | 'hq_manager' | 'pmo';
   /** Job position, e.g. "Drafting Supervisor"; separate from the access role. */
   job_title?: string | null;
+  /** Department; decides which navigation areas open by default. */
+  department?: import('../lib/departments').Department | null;
   canSeeAllPos?: boolean;
   moduleAccess?: Record<string, 'manage' | 'view' | 'hidden'>;
 }

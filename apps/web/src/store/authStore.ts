@@ -49,6 +49,7 @@ export const useAuthStore = create<AuthState>((set) => ({
           firstName: res.data.first_name,
           lastName: res.data.last_name,
           role: res.data.role,
+          department: res.data.department ?? null,
           canSeeAllPos: res.data.can_see_all_pos,
           moduleAccess: res.data.module_access,
         },

@@ -128,7 +128,7 @@ router.get('/users', authenticate, requireRole(...EDITOR_ROLES), async (req: Aut
   const [countResult, dataResult] = await Promise.all([
     query(`SELECT COUNT(*) FROM users ${where}`, countParams),
     query(
-      `SELECT id, email, first_name, last_name, job_title, reports_to_user_id,
+      `SELECT id, email, first_name, last_name, job_title, department, reports_to_user_id,
          (SELECT COALESCE(NULLIF(TRIM(CONCAT_WS(' ', m.first_name, m.last_name)), ''), m.email) FROM users m WHERE m.id = users.reports_to_user_id) AS reports_to_name,
          role, is_active, can_see_all_pos, created_at, last_login_at
        FROM users ${where} ORDER BY ${orderBy} LIMIT $${dataParams.length - 1} OFFSET $${dataParams.length}`,
@@ -416,6 +416,8 @@ router.post('/users/reporting-import', authenticate, requireRole('admin'), uploa
   }
 });
 
+const DEPARTMENTS = ['engineering', 'business_development', 'procurement', 'management', 'logistics', 'factory'];
+
 router.put('/users/:id', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
   const { first_name, last_name, role, is_active } = req.body;
   if (req.user!.id === req.params.id && is_active !== true) {
@@ -426,6 +428,12 @@ router.put('/users/:id', authenticate, requireRole('admin'), async (req: AuthReq
   const jobTitle = hasJobTitle ? cleanJobTitle(req.body.job_title) : null;
   if (jobTitle === undefined) {
     return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'Job position must be text of 150 characters or fewer' } });
+  }
+  // department is optional: left unchanged when absent; null or '' clears it.
+  const hasDepartment = Object.prototype.hasOwnProperty.call(req.body, 'department');
+  const department = hasDepartment ? (req.body.department || null) : null;
+  if (department !== null && !DEPARTMENTS.includes(department)) {
+    return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: `Department must be one of: ${DEPARTMENTS.join(', ')}` } });
   }
   // reports_to_user_id is optional too: null clears it; a manager cannot be the person or below them.
   const hasReportsTo = Object.prototype.hasOwnProperty.call(req.body, 'reports_to_user_id');
@@ -441,9 +449,10 @@ router.put('/users/:id', authenticate, requireRole('admin'), async (req: AuthReq
   const result = await query(
     `UPDATE users SET first_name=$1, last_name=$2, role=$3, is_active=$4,
        job_title = CASE WHEN $6 THEN $7 ELSE job_title END,
-       reports_to_user_id = CASE WHEN $8 THEN $9::uuid ELSE reports_to_user_id END, updated_at=NOW()
-     WHERE id=$5 RETURNING id, email, first_name, last_name, job_title, reports_to_user_id, role, is_active`,
-    [first_name, last_name, role, is_active, req.params.id, hasJobTitle, jobTitle, hasReportsTo, reportsTo]);
+       reports_to_user_id = CASE WHEN $8 THEN $9::uuid ELSE reports_to_user_id END,
+       department = CASE WHEN $10 THEN $11 ELSE department END, updated_at=NOW()
+     WHERE id=$5 RETURNING id, email, first_name, last_name, job_title, department, reports_to_user_id, role, is_active`,
+    [first_name, last_name, role, is_active, req.params.id, hasJobTitle, jobTitle, hasReportsTo, reportsTo, hasDepartment, department]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'User not found' } });
   const updated = result.rows[0];
   let action = 'UPDATE';

@@ -122,6 +122,36 @@ describe('LeftNav accessibility behavior', () => {
     expect(screen.queryByRole('button', { name: 'Platform Admin' })).not.toBeInTheDocument();
   });
 
+  it('opens only the department area by default and remembers the person\'s own choice', async () => {
+    const user = userEvent.setup();
+    useAuthStore.setState({
+      user: { id: 'eng-2', email: 'e@example.com', firstName: 'E', lastName: 'Ng', role: 'engineer', department: 'engineering', moduleAccess: {} },
+    });
+
+    const { unmount } = renderNav();
+    expect(screen.getByRole('button', { name: 'Collapse Engineering' })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('button', { name: 'Expand Procurement' })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('link', { name: 'Purchase Orders' })).not.toBeInTheDocument();
+    // Empty future areas are not shown to other departments.
+    expect(screen.queryByRole('button', { name: /Logistics/ })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Expand Procurement' }));
+    unmount();
+    renderNav();
+    expect(screen.getByRole('link', { name: 'Purchase Orders' })).toBeVisible();
+  });
+
+  it('shows the empty Logistics area to logistics people with a placeholder', () => {
+    useAuthStore.setState({
+      user: { id: 'log-1', email: 'l@example.com', firstName: 'L', lastName: 'Og', role: 'user', department: 'logistics', moduleAccess: {} },
+    });
+
+    renderNav();
+    expect(screen.getByRole('button', { name: 'Collapse Logistics' })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('Nothing here yet')).toBeVisible();
+    expect(screen.queryByRole('button', { name: /Factory/ })).not.toBeInTheDocument();
+  });
+
   it('shows only Thermal governance to engineers with Design Book manage access', async () => {
     const user = userEvent.setup();
     useAuthStore.setState({
