@@ -18,6 +18,7 @@ import EmptyState from '../../components/ui/EmptyState';
 import { isEditorRole } from '../../lib/roles';
 import ClientPicker from '../../components/clients/ClientPicker';
 import ClientLink from '../../components/clients/ClientLink';
+import { useSuggestedProjectCode } from '../../lib/useSuggestedProjectCode';
 
 const ProjectsMap = lazy(() => import('../../components/ui/ProjectsMap'));
 
@@ -39,6 +40,12 @@ export default function ProjectsList() {
   const [showNew, setShowNew] = useState(false);
   const [view, setView] = useState<'table' | 'map'>('table');
   const [form, setForm] = useState(EMPTY_FORM);
+  // The code follows the country's suggestion (CCC-NNN) until the user types their own.
+  const [codeTouched, setCodeTouched] = useState(false);
+  const suggestedCode = useSuggestedProjectCode(showNew ? form.country : null);
+  useEffect(() => {
+    if (suggestedCode && !codeTouched) setForm(f => (f.project_code === suggestedCode ? f : { ...f, project_code: suggestedCode }));
+  }, [suggestedCode, codeTouched]);
   const [saving, setSaving] = useState(false);
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const logoInputRef = useRef<HTMLInputElement>(null);
@@ -117,7 +124,7 @@ export default function ProjectsList() {
     { key: 'target_completion_date', header: 'Target', sortable: true, sortValue: r => r.target_completion_date ?? '', render: r => r.target_completion_date ? r.target_completion_date.split('T')[0] : '—' },
   ];
 
-  const openNew = () => { setForm(EMPTY_FORM); setPmMode('pick'); setPmSearch(''); setLogoFile(null); setSelectedScopes(['LSS', 'Tanks', 'Waterproofing', 'Theming', 'Acrylic']); setShowNew(true); };
+  const openNew = () => { setForm(EMPTY_FORM); setCodeTouched(false); setPmMode('pick'); setPmSearch(''); setLogoFile(null); setSelectedScopes(['LSS', 'Tanks', 'Waterproofing', 'Theming', 'Acrylic']); setShowNew(true); };
   const closeNew = () => { setShowNew(false); setLogoFile(null); };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -145,7 +152,7 @@ export default function ProjectsList() {
 
   return (
     <div className="h-full flex flex-col">
-      <PageHeader title="Projects" crumbs={[{ label: 'Project Management', href: '/project-management' }, { label: 'Projects' }]} subtitle={`${data?.pagination?.total ?? 0} projects`}
+      <PageHeader title="Projects" crumbs={[{ label: 'Projects' }]} subtitle={`${data?.pagination?.total ?? 0} projects`}
         actions={
           <div className="flex items-center gap-2">
             <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden">
@@ -222,8 +229,8 @@ export default function ProjectsList() {
             <form onSubmit={handleSubmit} className="p-5 space-y-3">
               <div>
                 <label className="block text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">Project Code <span className="text-red-400">*</span></label>
-                <input autoFocus required value={form.project_code} onChange={e => setForm(f => ({ ...f, project_code: e.target.value }))}
-                  placeholder="PRJ-TY-002"
+                <input autoFocus required value={form.project_code} onChange={e => { setCodeTouched(e.target.value.trim() !== ''); setForm(f => ({ ...f, project_code: e.target.value })); }}
+                  placeholder="Pick a country to suggest e.g. 086-001"
                   className="w-full border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-600" />
               </div>
               <div>

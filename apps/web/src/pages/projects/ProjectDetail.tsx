@@ -23,6 +23,7 @@ import { useAuthStore } from '../../store/authStore';
 import { useRecordTitle } from '../../hooks/usePageTitle';
 import ProjectReleasePOModal from './ProjectReleasePOModal';
 import { isEditorRole } from '../../lib/roles';
+import { useSuggestedProjectCode } from '../../lib/useSuggestedProjectCode';
 
 const ProjectsMap = lazy(() => import('../../components/ui/ProjectsMap'));
 
@@ -110,6 +111,8 @@ export default function ProjectDetail() {
   const [inlineNewSysSaving, setInlineNewSysSaving] = useState(false);
   const [editingProject, setEditingProject] = useState(false);
   const [projectForm, setProjectForm] = useState<any>(null);
+  const suggestedCode = useSuggestedProjectCode(editingProject ? projectForm?.country : null);
+  const suggestedPrefix = suggestedCode?.split('-')[0];
   const [projectSaving, setProjectSaving] = useState(false);
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const [logoUploading, setLogoUploading] = useState(false);
@@ -1240,6 +1243,13 @@ export default function ProjectDetail() {
                       className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-600/30" />
                     {projectForm.project_code?.trim() !== project.project_code && (
                       <p className="text-[11px] text-amber-700 mt-1">Currently {project.project_code}. You'll be asked to confirm.</p>
+                    )}
+                    {suggestedCode && suggestedPrefix && !String(projectForm.project_code ?? '').trim().startsWith(`${suggestedPrefix}-`) && (
+                      <p className="text-[11px] text-slate-500 mt-1">
+                        Suggested for {projectForm.country}: <span className="font-mono">{suggestedCode}</span>{' '}
+                        <button type="button" className="text-blue-700 hover:underline"
+                          onClick={() => setProjectForm((f: any) => ({ ...f, project_code: suggestedCode }))}>Use</button>
+                      </p>
                     )}
                   </div>
                   <div />

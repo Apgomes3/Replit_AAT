@@ -32,6 +32,7 @@ import PDFDocument from 'pdfkit';
 import { buildTankDesignSheet } from '../lib/tankDesignSheet';
 import { versionMatches, versionConflict, withVersion } from '../lib/concurrency';
 import { EDITOR_ROLES } from '../lib/roles';
+import { nextProjectCode, projectCodePrefix } from '../lib/projectCodes';
 
 const uploadsDir = path.join(__dirname, '../../uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
@@ -425,6 +426,16 @@ router.get('/projects', authenticate, async (req: AuthRequest, res: Response) =>
   res.json({ items: result.rows, pagination: { page, page_size, total } });
 });
 
+/** Suggested `CCC-NNN` code for a country: calling-code prefix + next free number in that prefix. */
+router.get('/projects/next-code', authenticate, async (req: AuthRequest, res: Response) => {
+  const prefix = projectCodePrefix(req.query.country);
+  if (!prefix) return res.status(404).json({ error: { code: 'UNKNOWN_COUNTRY', message: 'No calling code known for that country' } });
+  const existing = await query(
+    `SELECT project_code FROM projects WHERE project_code ~ $1`, [`^${prefix}-[0-9]+$`],
+  );
+  res.json({ prefix, code: nextProjectCode(prefix, existing.rows.map((r: { project_code: string }) => r.project_code)) });
+});
+
 router.get('/projects/:id', authenticate, async (req: AuthRequest, res: Response) => {
   const result = await query('SELECT * FROM projects WHERE id::text = $1 OR project_code = $1', [req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Project not found' } });
@@ -457,10 +468,14 @@ router.post('/projects', authenticate, async (req: AuthRequest, res: Response) =
   const client = await resolveProjectClient(req.body);
   if ('error' in client) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: client.error } });
   const resolvedScopes = (Array.isArray(scopes) && scopes.length > 0) ? scopes : ['LSS', 'Tanks', 'Waterproofing', 'Theming', 'Acrylic'];
+  const cleaned = cleanProjectCode(project_code);
+  if ('error' in cleaned) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: cleaned.error } });
+  const taken = await query('SELECT project_name FROM projects WHERE LOWER(project_code) = LOWER($1)', [cleaned.code]);
+  if (taken.rows[0]) return res.status(409).json({ error: { code: 'CONFLICT', message: `Project code ${cleaned.code} is already used by "${taken.rows[0].project_name}"` } });
   const result = await query(
     `INSERT INTO projects (project_code, project_name, client_name, site_name, country, city, timezone, project_status, start_date, target_completion_date, project_manager, engineering_manager, qa_owner, notes, project_scopes, created_by, client_id)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *`,
-    [project_code, project_name, client.client_name, toStr(site_name), toStr(country), toStr(city), toStr(timezone), project_status || 'Concept', toDate(start_date), toDate(target_completion_date), toStr(project_manager), toStr(engineering_manager), toStr(qa_owner), toStr(notes), resolvedScopes, req.user!.id, client.client_id]
+    [cleaned.code, project_name, client.client_name, toStr(site_name), toStr(country), toStr(city), toStr(timezone), project_status || 'Concept', toDate(start_date), toDate(target_completion_date), toStr(project_manager), toStr(engineering_manager), toStr(qa_owner), toStr(notes), resolvedScopes, req.user!.id, client.client_id]
   );
   res.status(201).json(result.rows[0]);
 });

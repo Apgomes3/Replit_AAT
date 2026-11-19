@@ -143,3 +143,10 @@ vendor options; product cost / sell price on the product; kW, dimensions and san
 - [ ] **D.6 Link tasks to deliverables** · M — project documents, design books.
 
 Drafters have Shark OS logins (added 2026-11-12, role `drafter`, which keeps **manage** access to Drafting).
+
+## Backlog: project code from country phone code
+
+- Format `CCC-NNN`. `CCC` is the country's phone code, zero-padded to 3 digits (China +86 → `086`).
+- When a country is selected, `CCC` is filled automatically. `NNN` is the next free number for that country (for example `086-001`, then `086-002`).
+- Users can override the code by hand so codes can be cleaned up during the migration. The generated code is the default, not a lock.
+- Open points: how to handle countries with 4-digit codes (e.g. +1-xxx) and countries that share +1 or +7; whether existing codes such as `001-033` are kept or renumbered.
