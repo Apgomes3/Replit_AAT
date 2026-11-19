@@ -34,7 +34,7 @@ function useGoogleEvents(from: string, to: string) {
 }
 
 const tone = (item: WorkItem) => item.status === 'done' ? 'bg-stone-100 text-stone-400 line-through border-stone-200'
-  : item.kind === 'plan' ? 'bg-sky-50 text-sky-900 border-sky-200' : 'bg-[#e4f2ee] text-[#0b4f48] border-[#bcdcd3]';
+  : item.kind === 'plan' ? 'bg-sky-50 text-sky-900 border-sky-200' : 'bg-blue-50 text-[#0b4f48] border-[#bcdcd3]';
 
 /** The task's details and controls (the list row), shown when a bar is clicked. */
 function TaskPopover({ item, onClose, children }: { item: WorkItem; onClose: () => void; children: ReactNode }) {
@@ -91,8 +91,8 @@ export function WeekCalendar({ from, items, commitments, days, onShift, onToday,
 
   return <div className="p-4">
     <div className="flex items-center gap-2 mb-3">
-      <button aria-label="Previous week" onClick={() => onShift(-1)} className="p-1.5 rounded-lg border border-stone-200 text-stone-500 hover:text-[#087f73]"><ChevronLeft className="w-4 h-4" /></button>
-      <button aria-label="Next week" onClick={() => onShift(1)} className="p-1.5 rounded-lg border border-stone-200 text-stone-500 hover:text-[#087f73]"><ChevronRight className="w-4 h-4" /></button>
+      <button aria-label="Previous week" onClick={() => onShift(-1)} className="p-1.5 rounded-lg border border-stone-200 text-stone-500 hover:text-blue-600"><ChevronLeft className="w-4 h-4" /></button>
+      <button aria-label="Next week" onClick={() => onShift(1)} className="p-1.5 rounded-lg border border-stone-200 text-stone-500 hover:text-blue-600"><ChevronRight className="w-4 h-4" /></button>
       <button onClick={onToday} className="px-2.5 py-1 rounded-lg border border-stone-200 text-xs font-bold text-stone-600">Today</button>
       <span className="text-sm font-bold text-stone-800">{dayName(from, { day: 'numeric', month: 'short' })} – {dayName(addDays(from, 6), { day: 'numeric', month: 'short', year: 'numeric' })}</span>
       <span className="ml-auto text-[11px] text-stone-500 hidden md:inline">Drag your own tasks to another day. Plan tasks move in their plan.</span>
@@ -107,10 +107,10 @@ export function WeekCalendar({ from, items, commitments, days, onShift, onToday,
           const used = (day?.booked ?? 0) + meet;
           const cap = day?.capacity ?? 0;
           const pct = cap ? used / cap : used ? 2 : 0;
-          const bar = pct > 1.0001 ? 'bg-rose-500' : pct >= 0.9 ? 'bg-amber-500' : 'bg-[#087f73]';
+          const bar = pct > 1.0001 ? 'bg-rose-500' : pct >= 0.9 ? 'bg-amber-500' : 'bg-blue-600';
           const off = !cap && !(day?.leave);
           return <div key={d} className={`px-2 py-1.5 ${isLocalToday(d) ? 'bg-[#eef8f5]' : off ? 'bg-stone-50' : 'bg-white'}`}>
-            <div className={`text-[11px] font-bold ${isLocalToday(d) ? 'text-[#087f73]' : 'text-stone-600'}`}>{dayName(d, { weekday: 'short', day: 'numeric' })}</div>
+            <div className={`text-[11px] font-bold ${isLocalToday(d) ? 'text-blue-600' : 'text-stone-600'}`}>{dayName(d, { weekday: 'short', day: 'numeric' })}</div>
             {off ? <div className="text-[10px] text-stone-400 mt-1">Not working</div> : <>
               <div className="text-[10px] tabular-nums text-stone-500 mt-0.5" title={`Tasks and commitments ${h(day?.booked ?? 0)} · meetings ${h(meet)} · can work ${h(cap)}${day?.leave ? ` · leave ${h(day.leave)}` : ''}`}>
                 {h(used)} / {h(cap)}{day?.leave ? <span className="text-amber-700"> · leave</span> : null}
@@ -146,7 +146,7 @@ export function WeekCalendar({ from, items, commitments, days, onShift, onToday,
         onDragLeave={() => setDropCol(null)}
         onDrop={e => { e.preventDefault(); drop(e.clientX); }}>
         <div aria-hidden className="absolute inset-0 grid grid-cols-7 pointer-events-none">
-          {dates.map((d, i) => <div key={d} className={`${i ? 'border-l border-stone-100' : ''} ${dropCol === i ? 'bg-[#087f73]/10' : isLocalToday(d) ? 'bg-[#eef8f5]/60' : ''}`} />)}
+          {dates.map((d, i) => <div key={d} className={`${i ? 'border-l border-stone-100' : ''} ${dropCol === i ? 'bg-blue-600/10' : isLocalToday(d) ? 'bg-[#eef8f5]/60' : ''}`} />)}
         </div>
         <div className="relative py-2 space-y-1">
           {!rows.length && <p className="text-xs text-stone-400 text-center py-10">No dated tasks this week.</p>}
@@ -171,7 +171,7 @@ export function WeekCalendar({ from, items, commitments, days, onShift, onToday,
     </div></div>
 
     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-3 text-[11px] text-stone-500">
-      <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-[#e4f2ee] border border-[#bcdcd3]" />Own task</span>
+      <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-blue-50 border border-[#bcdcd3]" />Own task</span>
       <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-sky-50 border border-sky-200" />Plan task</span>
       <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-violet-100" />Google Calendar</span>
       <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-amber-50 border border-amber-200" />Regular commitment</span>
@@ -215,8 +215,8 @@ export function MonthCalendar({ month, items, onMonth, onPickWeek, renderRow }: 
 
   return <div className="p-4">
     <div className="flex items-center gap-2 mb-3">
-      <button aria-label="Previous month" onClick={() => onMonth(addDays(first, -1))} className="p-1.5 rounded-lg border border-stone-200 text-stone-500 hover:text-[#087f73]"><ChevronLeft className="w-4 h-4" /></button>
-      <button aria-label="Next month" onClick={() => onMonth(addDays(first, 32))} className="p-1.5 rounded-lg border border-stone-200 text-stone-500 hover:text-[#087f73]"><ChevronRight className="w-4 h-4" /></button>
+      <button aria-label="Previous month" onClick={() => onMonth(addDays(first, -1))} className="p-1.5 rounded-lg border border-stone-200 text-stone-500 hover:text-blue-600"><ChevronLeft className="w-4 h-4" /></button>
+      <button aria-label="Next month" onClick={() => onMonth(addDays(first, 32))} className="p-1.5 rounded-lg border border-stone-200 text-stone-500 hover:text-blue-600"><ChevronRight className="w-4 h-4" /></button>
       <span className="text-sm font-bold text-stone-800">{dayName(first, { month: 'long', year: 'numeric' })}</span>
       <span className="ml-auto text-[11px] text-stone-500 hidden md:inline">Tasks on their due date. Click a week number to open that week.</span>
     </div>
@@ -230,11 +230,11 @@ export function MonthCalendar({ month, items, onMonth, onPickWeek, renderRow }: 
         const day = load.get(d);
         const over = day && day.capacity > 0 && day.booked + meetingHours(google.events, d) > day.capacity + 0.01;
         return [
-          i % 7 === 0 ? <button key={`w${d}`} onClick={() => onPickWeek(mondayOf(d))} title="Open this week" className="bg-stone-50 text-[10px] text-stone-400 hover:text-[#087f73] font-mono">
+          i % 7 === 0 ? <button key={`w${d}`} onClick={() => onPickWeek(mondayOf(d))} title="Open this week" className="bg-stone-50 text-[10px] text-stone-400 hover:text-blue-600 font-mono">
             {Math.ceil(((Date.parse(`${addDays(d, 3)}T00:00:00Z`) - Date.parse(`${addDays(d, 3).slice(0, 4)}-01-01T00:00:00Z`)) / 86_400_000 + 1) / 7)}</button> : null,
           <div key={d} className={`min-h-[92px] px-1.5 py-1 ${isLocalToday(d) ? 'bg-[#eef8f5]' : inMonth ? 'bg-white' : 'bg-stone-50/80'}`}>
             <div className="flex items-center gap-1">
-              <span className={`text-[11px] font-bold ${isLocalToday(d) ? 'text-white bg-[#087f73] rounded-full px-1.5' : inMonth ? 'text-stone-700' : 'text-stone-400'}`}>{Number(d.slice(8))}</span>
+              <span className={`text-[11px] font-bold ${isLocalToday(d) ? 'text-white bg-blue-600 rounded-full px-1.5' : inMonth ? 'text-stone-700' : 'text-stone-400'}`}>{Number(d.slice(8))}</span>
               {over && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-rose-500" title="Booked beyond what you can work" />}
             </div>
             <div className="mt-0.5 space-y-0.5">
@@ -242,7 +242,7 @@ export function MonthCalendar({ month, items, onMonth, onPickWeek, renderRow }: 
               {evs.length > 2 && <div className="text-[10px] text-violet-500">+{evs.length - 2} meetings</div>}
               {tasks.slice(0, 3).map(t => <button key={t.key} type="button" onClick={() => setOpen(t)} title={t.title}
                 className={`block w-full text-left truncate text-[10.5px] border rounded px-1 ${tone(t)}`}>{t.title}</button>)}
-              {tasks.length > 3 && <button type="button" onClick={() => onPickWeek(mondayOf(d))} className="text-[10px] text-stone-500 hover:text-[#087f73]">+{tasks.length - 3} more</button>}
+              {tasks.length > 3 && <button type="button" onClick={() => onPickWeek(mondayOf(d))} className="text-[10px] text-stone-500 hover:text-blue-600">+{tasks.length - 3} more</button>}
             </div>
           </div>,
         ];

@@ -38,16 +38,16 @@ export default function ClientPersonSelect({ clientId, value, onChange, label = 
   };
   // Enter in these fields must add the person, not submit the form around them.
   const enterAdds = (e: React.KeyboardEvent) => { if (e.key === 'Enter') { e.preventDefault(); add(); } };
-  const input = 'mt-1 w-full border border-[#dce7e2] rounded-lg px-2.5 py-1.5 text-sm font-normal bg-white';
+  const input = 'mt-1 w-full border border-stone-200 rounded-lg px-2.5 py-1.5 text-sm font-normal bg-white';
 
-  return <div className={`text-xs font-bold text-[#53686b] ${className}`}>
+  return <div className={`text-xs font-bold text-stone-600 ${className}`}>
     <label>{label}
       <select value={adding ? ADD : value} disabled={company.isLoading}
         onChange={e => {
           if (e.target.value === ADD) { setAdding(true); onChange(null); return; }
           setAdding(false); onChange(people.find(p => p.id === e.target.value) ?? null);
         }}
-        className="mt-1.5 w-full border border-[#dce7e2] rounded-lg px-3 py-2 text-sm font-normal bg-white">
+        className="mt-1.5 w-full border border-stone-200 rounded-lg px-3 py-2 text-sm font-normal bg-white">
         <option value="">{company.isLoading ? 'Loading people…' : people.length ? emptyLabel : 'No one recorded for this company yet'}</option>
         {people.map(p => <option key={p.id} value={p.id}>{p.name}{p.job_title ? ` — ${p.job_title}` : ''}{p.is_primary ? ' (main contact)' : ''}</option>)}
         {canAdd && <option value={ADD}>+ Add a person…</option>}
@@ -60,7 +60,7 @@ export default function ClientPersonSelect({ clientId, value, onChange, label = 
       <label className="font-semibold">Phone<input value={draft.phone} onKeyDown={enterAdds} onChange={e => setDraft({ ...draft, phone: e.target.value })} className={input} /></label>
       <div className="col-span-2 flex justify-end gap-2 pt-1">
         <button type="button" onClick={() => { setAdding(false); setDraft(BLANK); }} className="px-3 py-1.5 text-xs">Cancel</button>
-        <button type="button" onClick={add} disabled={save.isPending} className="px-3 py-1.5 rounded-lg bg-[#087f73] text-white text-xs font-bold">{save.isPending ? 'Adding…' : 'Add to contacts'}</button>
+        <button type="button" onClick={add} disabled={save.isPending} className="px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 text-xs font-bold">{save.isPending ? 'Adding…' : 'Add to contacts'}</button>
       </div>
     </div>}
   </div>;

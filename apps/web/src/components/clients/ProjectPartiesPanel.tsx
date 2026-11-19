@@ -83,15 +83,15 @@ export default function ProjectPartiesPanel({ projectId, clientId, clientName }:
       {!parties.isLoading && rows.length === 0 && !adding && <p className="mt-3 text-xs text-slate-400">No one else recorded yet: add the client's people, consultants, contractors…</p>}
 
       {adding && <form onSubmit={submit} className="mt-3 pt-3 border-t border-slate-100 grid sm:grid-cols-2 gap-3">
-        <div className="text-xs font-bold text-[#53686b]">Company
+        <div className="text-xs font-bold text-stone-600">Company
           <ClientPicker className="mt-1.5" value={form.client_id || null} valueLabel={form.client_name || null} placeholder="Search or add a company…"
             onChange={c => setForm(f => ({ ...f, client_id: c?.id ?? '', client_name: c?.name ?? '', contact_id: '' }))} />
         </div>
         {form.client_id ? <ClientPersonSelect clientId={form.client_id} value={form.contact_id} label="Person" emptyLabel="The company as a whole"
           onChange={p => setForm(f => ({ ...f, contact_id: p?.id ?? '' }))} /> : <div />}
-        <label className="text-xs font-bold text-[#53686b]">Role
+        <label className="text-xs font-bold text-stone-600">Role
           <input list={listId} value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))}
-            placeholder={form.contact_id ? 'e.g. Client project manager' : 'e.g. Consultant'} className="mt-1.5 w-full border border-[#dce7e2] rounded-lg px-3 py-2 text-sm font-normal" />
+            placeholder={form.contact_id ? 'e.g. Client project manager' : 'e.g. Consultant'} className="mt-1.5 w-full border border-stone-200 rounded-lg px-3 py-2 text-sm font-normal" />
           <datalist id={listId}>{roleOptions.map(r => <option key={r} value={r} />)}</datalist>
         </label>
         <div className="flex items-end justify-end gap-2">

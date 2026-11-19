@@ -20,7 +20,7 @@ import { useConfirm } from '../../hooks/useConfirm';
 const PRIORITY_STYLE: Record<TaskPriority, string> = {
   urgent: 'bg-rose-50 text-rose-700',
   important: 'bg-amber-50 text-amber-800',
-  medium: 'bg-[#eef4f1] text-[#53686b]',
+  medium: 'bg-[#eef4f1] text-stone-600',
   low: 'bg-stone-50 text-stone-500',
 };
 
@@ -28,7 +28,7 @@ const STATUS_STYLE: Record<TaskStatus, string> = {
   not_started: 'border-stone-200 text-stone-600',
   in_progress: 'border-sky-200 bg-sky-50 text-sky-800',
   review: 'border-violet-200 bg-violet-50 text-violet-800',
-  done: 'border-[#b8d9d0] bg-[#e4f2ee] text-[#087f73]',
+  done: 'border-stone-300 bg-blue-50 text-blue-600',
 };
 
 const formatDay = (iso: string | null) =>
@@ -138,19 +138,19 @@ export default function PlanBoard() {
 
   return <div className={`p-6 mx-auto ${view === 'gantt' ? 'max-w-[1600px]' : 'max-w-7xl'}`}>
     {plan.team?.department.toLowerCase() === 'drafting' && location.pathname.startsWith('/drafting')
-      ? <Link to="/drafting" className="inline-flex items-center gap-1 text-xs font-bold text-[#087f73]"><ArrowLeft className="w-3.5 h-3.5" /> Drafting plans</Link>
-      : <Link to="/plans" className="inline-flex items-center gap-1 text-xs font-bold text-[#087f73]"><ArrowLeft className="w-3.5 h-3.5" /> My plans</Link>}
+      ? <Link to="/drafting" className="inline-flex items-center gap-1 text-xs font-bold text-blue-600"><ArrowLeft className="w-3.5 h-3.5" /> Drafting plans</Link>
+      : <Link to="/plans" className="inline-flex items-center gap-1 text-xs font-bold text-blue-600"><ArrowLeft className="w-3.5 h-3.5" /> My plans</Link>}
     <header className="mt-3 mb-5 flex flex-wrap items-start justify-between gap-4">
       <div>
-        <div className="flex items-center gap-2 text-xs text-[#6f8082]"><span className="font-mono">{plan.plan_code}</span><StatusBadge status={plan.status} /></div>
+        <div className="flex items-center gap-2 text-xs text-stone-500"><span className="font-mono">{plan.plan_code}</span><StatusBadge status={plan.status} /></div>
         <h1 className="text-2xl font-extrabold mt-1">{plan.name}</h1>
-        <p className="text-sm text-[#6f8082] mt-1">
+        <p className="text-sm text-stone-500 mt-1">
           {planContext(plan)}
         </p>
       </div>
       {canManage && <div className="flex gap-2">
-        <button onClick={() => setAddingGroup(true)} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-[#dce7e2] bg-white text-sm font-bold text-[#53686b]"><FolderPlus className="w-4 h-4" /> Add group</button>
-        <button onClick={() => setModal({ defaults: {} })} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#087f73] text-white text-sm font-bold"><Plus className="w-4 h-4" /> New task</button>
+        <button onClick={() => setAddingGroup(true)} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-stone-200 bg-white text-sm font-bold text-stone-600"><FolderPlus className="w-4 h-4" /> Add group</button>
+        <button onClick={() => setModal({ defaults: {} })} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 text-sm font-bold"><Plus className="w-4 h-4" /> New task</button>
       </div>}
     </header>
 
@@ -161,24 +161,24 @@ export default function PlanBoard() {
     </div>
 
     <div className="flex flex-wrap items-center gap-3 mb-4">
-      <div role="tablist" aria-label="View" className="inline-flex rounded-lg border border-[#dce7e2] bg-white p-0.5">
+      <div role="tablist" aria-label="View" className="inline-flex rounded-lg border border-stone-200 bg-white p-0.5">
         {([['list', 'List', List], ['gantt', 'Gantt', ChartGantt]] as const).map(([v, label, Icon]) =>
           <button key={v} role="tab" aria-selected={view === v} onClick={() => setParam('view', v, 'list')}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold ${view === v ? 'bg-[#087f73] text-white' : 'text-[#53686b] hover:bg-[#f2f7f4]'}`}>
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold ${view === v ? 'bg-blue-600 text-white hover:bg-blue-700' : 'text-stone-600 hover:bg-stone-50'}`}>
             <Icon className="w-3.5 h-3.5" /> {label}
           </button>)}
       </div>
-      <label className="flex items-center gap-2 text-xs font-bold text-[#53686b]">Group by
-        <select value={groupBy} onChange={e => setParam('group', e.target.value, 'group')} className="border border-[#dce7e2] rounded-lg px-2 py-1.5 text-sm font-normal bg-white">
+      <label className="flex items-center gap-2 text-xs font-bold text-stone-600">Group by
+        <select value={groupBy} onChange={e => setParam('group', e.target.value, 'group')} className="border border-stone-200 rounded-lg px-2 py-1.5 text-sm font-normal bg-white">
           {GROUP_BY.map(g => <option key={g} value={g}>{GROUP_BY_LABELS[g]}</option>)}
         </select>
       </label>
       <div className="ml-auto flex items-center gap-3">
-        <select aria-label="Filter by person" value={personFilter} onChange={e => setPersonFilter(e.target.value)} className="border border-[#dce7e2] rounded-lg px-3 py-1.5 text-sm bg-white">
+        <select aria-label="Filter by person" value={personFilter} onChange={e => setPersonFilter(e.target.value)} className="border border-stone-200 rounded-lg px-3 py-1.5 text-sm bg-white">
           <option value="">Everyone</option>
           {people.map(([pid, name]) => <option key={pid} value={pid}>{name}</option>)}
         </select>
-        <label className="flex items-center gap-1.5 text-xs font-bold text-[#53686b]"><input type="checkbox" checked={hideDone} onChange={e => setHideDone(e.target.checked)} /> Hide done</label>
+        <label className="flex items-center gap-1.5 text-xs font-bold text-stone-600"><input type="checkbox" checked={hideDone} onChange={e => setHideDone(e.target.checked)} /> Hide done</label>
       </div>
     </div>
 
@@ -215,7 +215,7 @@ const shiftOf = (c: { start_date: string | null; old_start_date: string | null; 
 };
 
 function Chip({ label, value }: { label: string; value: number }) {
-  return <span className="px-3 py-1.5 rounded-lg bg-white border border-[#dce7e2] text-xs text-[#53686b]"><b className="text-[#20333a]">{value}</b> {label}</span>;
+  return <span className="px-3 py-1.5 rounded-lg bg-white border border-stone-200 text-xs text-stone-600"><b className="text-stone-800">{value}</b> {label}</span>;
 }
 
 function NewGroupRow({ planId, onDone }: { planId: string; onDone: () => void }) {
@@ -229,8 +229,8 @@ function NewGroupRow({ planId, onDone }: { planId: string; onDone: () => void })
   };
   return <form onSubmit={submit} className="mb-4 flex items-center gap-2">
     <input autoFocus aria-label="New group name" value={name} onChange={e => setName(e.target.value)} placeholder="Group name, e.g. LSS Compact Units"
-      className="flex-1 max-w-md border border-[#dce7e2] rounded-lg px-3 py-2 text-sm" />
-    <button disabled={save.isPending} className="px-3 py-2 rounded-lg bg-[#087f73] text-white text-sm font-bold">Add</button>
+      className="flex-1 max-w-md border border-stone-200 rounded-lg px-3 py-2 text-sm" />
+    <button disabled={save.isPending} className="px-3 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 text-sm font-bold">Add</button>
     <button type="button" onClick={onDone} className="px-3 py-2 text-sm">Cancel</button>
   </form>;
 }
@@ -281,28 +281,28 @@ function BoardSection({ planId, section, groupBy, today, canManage, showHeader, 
   const clickSort = (key: SortKey) => onSort(
     sort.key !== key ? { key, desc: false } : sort.desc ? { key: 'manual', desc: false } : { key, desc: true });
 
-  return <section className="bg-white rounded-xl border border-[#dce7e2] overflow-hidden shadow-sm">
-    {showHeader && <header className="px-4 py-2.5 bg-[#f2f7f4] border-b border-[#dce7e2] flex items-center gap-2">
+  return <section className="bg-white rounded-xl border border-stone-200 overflow-hidden shadow-sm">
+    {showHeader && <header className="px-4 py-2.5 bg-stone-50 border-b border-stone-200 flex items-center gap-2">
       {renaming !== null
         ? <><input autoFocus aria-label="Group name" value={renaming} onChange={e => setRenaming(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') rename(); if (e.key === 'Escape') setRenaming(null); }}
-            className="border border-[#dce7e2] rounded px-2 py-1 text-sm font-bold" />
-          <button onClick={rename} aria-label="Save group name" className="p-1 text-[#087f73]"><Check className="w-4 h-4" /></button>
-          <button onClick={() => setRenaming(null)} aria-label="Cancel rename" className="p-1 text-[#80908f]"><X className="w-4 h-4" /></button></>
+            className="border border-stone-200 rounded px-2 py-1 text-sm font-bold" />
+          <button onClick={rename} aria-label="Save group name" className="p-1 text-blue-600"><Check className="w-4 h-4" /></button>
+          <button onClick={() => setRenaming(null)} aria-label="Cancel rename" className="p-1 text-stone-400"><X className="w-4 h-4" /></button></>
         : <h2 className="font-extrabold text-sm">{section.label}</h2>}
-      <span className="text-xs text-[#6f8082]">{tasks.length} {tasks.length === 1 ? 'task' : 'tasks'}</span>
+      <span className="text-xs text-stone-500">{tasks.length} {tasks.length === 1 ? 'task' : 'tasks'}</span>
       {group && groupBy === 'group' && canManage && renaming === null && <div className="ml-auto flex">
-        <button onClick={() => setRenaming(group.name)} aria-label={`Rename ${group.name}`} className="p-1.5 text-[#80908f] hover:text-[#087f73]"><Pencil className="w-3.5 h-3.5" /></button>
-        <button onClick={removeGroup} aria-label={`Delete ${group.name}`} className="p-1.5 text-[#80908f] hover:text-rose-700"><Trash2 className="w-3.5 h-3.5" /></button>
+        <button onClick={() => setRenaming(group.name)} aria-label={`Rename ${group.name}`} className="p-1.5 text-stone-400 hover:text-blue-600"><Pencil className="w-3.5 h-3.5" /></button>
+        <button onClick={removeGroup} aria-label={`Delete ${group.name}`} className="p-1.5 text-stone-400 hover:text-rose-700"><Trash2 className="w-3.5 h-3.5" /></button>
       </div>}
     </header>}
 
     <div className="overflow-x-auto">
       <table className="w-full text-sm min-w-[880px]">
-        <thead><tr className="border-b border-[#edf2ef]">{COLUMNS.map(c =>
+        <thead><tr className="border-b border-stone-100">{COLUMNS.map(c =>
           <th key={c.label} aria-sort={c.sort && sort.key === c.sort ? (sort.desc ? 'descending' : 'ascending') : undefined}
-            title={c.title} className="text-left px-4 py-2 text-[10px] uppercase tracking-[.13em] text-[#6f8082] font-extrabold">
+            title={c.title} className="text-left px-4 py-2 text-xs font-semibold text-stone-500 uppercase tracking-wide">
             {c.sort
-              ? <button onClick={() => clickSort(c.sort!)} className="inline-flex items-center gap-1 uppercase tracking-[.13em] hover:text-[#087f73]">
+              ? <button onClick={() => clickSort(c.sort!)} className="inline-flex items-center gap-1 uppercase tracking-[.13em] hover:text-blue-600">
                   {c.label}{sort.key === c.sort && (sort.desc ? <ArrowDown className="w-3 h-3" /> : <ArrowUp className="w-3 h-3" />)}
                 </button>
               : c.label}
@@ -313,16 +313,16 @@ function BoardSection({ planId, section, groupBy, today, canManage, showHeader, 
             const elapsed = timeElapsedPercent(task.start_date, task.due_date, today);
             const behind = !late && task.status !== 'done' && elapsed !== null && elapsed - task.progress_pct >= 25;
             const li = linkInfo.get(task.id);
-            return <tr key={task.id} className="border-b border-[#edf2ef] last:border-0 hover:bg-[#f8fbf9]">
+            return <tr key={task.id} className="border-b border-stone-100 last:border-0 hover:bg-stone-50">
               <td className="px-4 py-2.5 max-w-[340px]">
-                {task.is_milestone && <Diamond className="inline w-3.5 h-3.5 mr-1 -mt-0.5 text-[#087f73] fill-current" aria-label="Milestone" />}
-                <button onClick={() => onOpen({ task })} className={`text-left font-semibold hover:text-[#087f73] ${task.status === 'done' ? 'line-through text-[#8a9b9a]' : ''}`}>{task.title}</button>
+                {task.is_milestone && <Diamond className="inline w-3.5 h-3.5 mr-1 -mt-0.5 text-blue-600 fill-current" aria-label="Milestone" />}
+                <button onClick={() => onOpen({ task })} className={`text-left font-semibold hover:text-blue-600 ${task.status === 'done' ? 'line-through text-stone-400' : ''}`}>{task.title}</button>
                 {task.critical && <span title="On the critical path: a delay here delays the plan's end" className="ml-2 rounded px-1.5 py-0.5 text-[10px] font-bold align-middle bg-rose-100 text-rose-700">Critical</span>}
                 {li && <span title={li.earlyBy ? `Starts ${li.earlyBy} ${li.earlyBy === 1 ? 'day' : 'days'} before the task it waits for allows` : `Waits for ${li.waitsFor} ${li.waitsFor === 1 ? 'task' : 'tasks'}`}
-                  className={`ml-2 inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-bold align-middle ${li.earlyBy ? 'bg-amber-100 text-amber-800' : 'bg-[#eef4f1] text-[#53686b]'}`}>
+                  className={`ml-2 inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-bold align-middle ${li.earlyBy ? 'bg-amber-100 text-amber-800' : 'bg-[#eef4f1] text-stone-600'}`}>
                   <Link2 className="w-3 h-3" />{li.waitsFor}{li.earlyBy ? ` · ${li.earlyBy}d early` : ''}
                 </span>}
-                {task.notes && <div className="text-xs text-[#8a9b9a] truncate">{task.notes}</div>}
+                {task.notes && <div className="text-xs text-stone-400 truncate">{task.notes}</div>}
               </td>
               <td className="px-4 py-2.5"><div className="flex -space-x-1.5" title={task.assignees.map(a => a.name).join(', ')}>
                 {task.assignees.length ? task.assignees.map(a => <Avatar key={a.id} person={a} />) : <span className="text-xs text-[#a3b1af]">—</span>}
@@ -334,29 +334,29 @@ function BoardSection({ planId, section, groupBy, today, canManage, showHeader, 
                     {TASK_STATUSES.map(s => <option key={s} value={s}>{TASK_STATUS_LABELS[s]}</option>)}
                   </select>
                 : <span className={`border rounded-md px-2 py-1 text-xs font-bold ${STATUS_STYLE[task.status]}`}>{TASK_STATUS_LABELS[task.status]}</span>}</td>
-              <td className="px-4 py-2.5 whitespace-nowrap text-[#53686b]">{formatDay(task.start_date)}</td>
-              <td className={`px-4 py-2.5 whitespace-nowrap ${late ? 'text-rose-700 font-bold' : 'text-[#53686b]'}`}>{formatDay(task.due_date)}
+              <td className="px-4 py-2.5 whitespace-nowrap text-stone-600">{formatDay(task.start_date)}</td>
+              <td className={`px-4 py-2.5 whitespace-nowrap ${late ? 'text-rose-700 font-bold' : 'text-stone-600'}`}>{formatDay(task.due_date)}
                 {!!task.slip_days && <span title={`Due date moved ${Math.abs(task.slip_days)} working days ${task.slip_days > 0 ? 'later' : 'earlier'} than the baseline (${formatDay(task.baseline_due ?? null)})`}
-                  className={`ml-1.5 rounded px-1 py-0.5 text-[10px] font-bold ${task.slip_days > 0 ? 'bg-rose-50 text-rose-700' : 'bg-[#e4f2ee] text-[#087f73]'}`}>{task.slip_days > 0 ? '+' : ''}{task.slip_days}d</span>}</td>
-              <td className="px-4 py-2.5 text-[#53686b]">{task.working_days ?? '—'}</td>
+                  className={`ml-1.5 rounded px-1 py-0.5 text-[10px] font-bold ${task.slip_days > 0 ? 'bg-rose-50 text-rose-700' : 'bg-blue-50 text-blue-600'}`}>{task.slip_days > 0 ? '+' : ''}{task.slip_days}d</span>}</td>
+              <td className="px-4 py-2.5 text-stone-600">{task.working_days ?? '—'}</td>
               <td className="px-4 py-2.5 w-44">{task.status === 'done'
-                ? <span className="text-xs font-bold text-[#087f73]">Done</span>
+                ? <span className="text-xs font-bold text-blue-600">Done</span>
                 : <div className="flex items-center gap-2" title={`${task.progress_pct}% done${elapsed !== null ? `, ${elapsed}% of the planned time used` : ''}`}>
-                    <div className="relative h-1.5 flex-1 rounded-full bg-[#edf2ef] overflow-hidden">
-                      <div className={`h-full rounded-full ${late ? 'bg-rose-500' : behind ? 'bg-amber-500' : 'bg-[#087f73]'}`} style={{ width: `${task.progress_pct}%` }} />
-                      {elapsed !== null && <div className="absolute top-0 h-full w-px bg-[#20333a]/40" style={{ left: `${elapsed}%` }} />}
+                    <div className="relative h-1.5 flex-1 rounded-full bg-stone-100 overflow-hidden">
+                      <div className={`h-full rounded-full ${late ? 'bg-rose-500' : behind ? 'bg-amber-500' : 'bg-blue-600'}`} style={{ width: `${task.progress_pct}%` }} />
+                      {elapsed !== null && <div className="absolute top-0 h-full w-px bg-stone-800/40" style={{ left: `${elapsed}%` }} />}
                     </div>
-                    <span className={`text-xs tabular-nums w-14 ${late ? 'text-rose-700 font-bold' : behind ? 'text-amber-700 font-bold' : 'text-[#53686b]'}`}>{late ? 'Late' : behind ? 'Behind' : `${task.progress_pct}%`}</span>
+                    <span className={`text-xs tabular-nums w-14 ${late ? 'text-rose-700 font-bold' : behind ? 'text-amber-700 font-bold' : 'text-stone-600'}`}>{late ? 'Late' : behind ? 'Behind' : `${task.progress_pct}%`}</span>
                   </div>}</td>
             </tr>;
           })}
-          {tasks.length === 0 && <tr><td colSpan={8} className="px-4 py-4 text-sm text-[#8a9b9a]">No tasks here yet.</td></tr>}
+          {tasks.length === 0 && <tr><td colSpan={8} className="px-4 py-4 text-sm text-stone-400">No tasks here yet.</td></tr>}
         </tbody>
       </table>
     </div>
 
-    {canManage && <form onSubmit={quickAdd} className="flex items-center gap-2 px-4 py-2 border-t border-[#edf2ef] bg-[#fbfdfc]">
-      <Plus className="w-4 h-4 text-[#80908f]" />
+    {canManage && <form onSubmit={quickAdd} className="flex items-center gap-2 px-4 py-2 border-t border-stone-100 bg-[#fbfdfc]">
+      <Plus className="w-4 h-4 text-stone-400" />
       <input aria-label={`Add a task${showHeader ? ` to ${section.label}` : ''}`} value={quickTitle} onChange={e => setQuickTitle(e.target.value)}
         placeholder="Add a task and press Enter" className="flex-1 bg-transparent text-sm py-1 outline-none" />
     </form>}

@@ -1,5 +1,6 @@
 // My plans: plans you own, are shared on or have tasks in, and (second tab) every plan you can see.
 import { useSearchParams } from 'react-router-dom';
+import PageHeader from '../../components/ui/PageHeader';
 import PlanList from './PlanList';
 import { usePlannerPlans } from './plansApi';
 
@@ -7,17 +8,23 @@ export default function MyPlansPage() {
   const [params, setParams] = useSearchParams();
   const all = params.get('show') === 'all';
   const plans = usePlannerPlans({ mine: !all });
-  const tab = (active: boolean) => `px-3 py-1.5 rounded-lg text-sm font-bold ${active ? 'bg-[#087f73] text-white' : 'text-[#53686b] hover:bg-[#edf2ef]'}`;
+  const tab = (active: boolean) => `px-3 py-1.5 rounded-lg text-sm font-bold ${active ? 'bg-blue-600 text-white' : 'text-stone-600 hover:bg-stone-100'}`;
 
-  return <div className="p-6 max-w-7xl mx-auto">
-    <h1 className="text-2xl font-extrabold">Plans</h1>
-    <p className="text-sm text-[#6f8082] mt-1">Task lists with dates and people. Link a plan to a project, design book or enquiry, or keep it standalone.</p>
-    <div className="flex gap-2 mt-4 mb-4" role="tablist">
+  return <div>
+    <PageHeader
+      crumbs={[{ label: 'My Plans' }]}
+      title="My Plans"
+      subtitle="Task lists with dates and people. Link a plan to a project, design book or enquiry, or keep it standalone."
+    />
+    <div className="p-6 max-w-7xl mx-auto">
+    
+    <div className="flex gap-2 mb-4" role="tablist">
       <button role="tab" aria-selected={!all} className={tab(!all)} onClick={() => setParams({}, { replace: true })}>My plans</button>
       <button role="tab" aria-selected={all} className={tab(all)} onClick={() => setParams({ show: 'all' }, { replace: true })}>All plans I can see</button>
     </div>
     <PlanList plans={plans.data} loading={plans.isLoading} error={plans.isError} onRetry={() => plans.refetch()}
       emptyText={all ? 'No plans you can see yet.' : 'You have no plans yet. Plans you create, are shared on or have tasks in show here.'} />
+    </div>
   </div>;
 }
 

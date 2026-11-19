@@ -12,7 +12,7 @@ type FormState = PlanPayload & { id?: string; plan_code?: string };
 
 const STATUS_STYLE: Record<PlanStatus, string> = {
   planning: 'bg-sky-50 text-sky-700',
-  active: 'bg-[#e4f2ee] text-[#087f73]',
+  active: 'bg-blue-50 text-blue-600',
   on_hold: 'bg-amber-50 text-amber-700',
   completed: 'bg-indigo-50 text-indigo-700',
   archived: 'bg-stone-100 text-stone-500',
@@ -77,57 +77,57 @@ export default function PlansPanel({ onGoToTeams }: { onGoToTeams: () => void })
   return <div>
     <div className="flex flex-wrap items-end justify-between gap-3 mb-4">
       <div className="flex flex-wrap gap-2">
-        <select aria-label="Filter by project" value={projectFilter} onChange={e => setProjectFilter(e.target.value)} className="border border-[#dce7e2] rounded-lg px-3 py-2 text-sm bg-white">
+        <select aria-label="Filter by project" value={projectFilter} onChange={e => setProjectFilter(e.target.value)} className="border border-stone-200 rounded-lg px-3 py-2 text-sm bg-white">
           <option value="">All projects</option>
           {projectsInUse.map(p => <option key={p.id} value={p.id}>{p.code} · {p.name}</option>)}
         </select>
-        <select aria-label="Filter by team" value={teamFilter} onChange={e => setTeamFilter(e.target.value)} className="border border-[#dce7e2] rounded-lg px-3 py-2 text-sm bg-white">
+        <select aria-label="Filter by team" value={teamFilter} onChange={e => setTeamFilter(e.target.value)} className="border border-stone-200 rounded-lg px-3 py-2 text-sm bg-white">
           <option value="">All teams</option>
           {(teams.data ?? []).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
         </select>
-        <select aria-label="Filter by status" value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)} className="border border-[#dce7e2] rounded-lg px-3 py-2 text-sm bg-white">
+        <select aria-label="Filter by status" value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)} className="border border-stone-200 rounded-lg px-3 py-2 text-sm bg-white">
           <option value="open">Open plans</option>
           <option value="all">All statuses</option>
           {PLAN_STATUSES.map(s => <option key={s} value={s}>{PLAN_STATUS_LABELS[s]}</option>)}
         </select>
       </div>
       {canManage && <button onClick={openNew} disabled={noTeams} title={noTeams ? 'Create a team first' : undefined}
-        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-[#087f73] text-white text-sm font-bold disabled:opacity-50"><Plus className="w-4 h-4" /> New plan</button>}
+        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 text-sm font-bold disabled:opacity-50"><Plus className="w-4 h-4" /> New plan</button>}
     </div>
 
     {plans.isLoading ? <div className="space-y-3">{[1, 2, 3].map(i => <div key={i} className="h-14 skeleton rounded-xl" />)}</div>
       : noTeams && !plans.data?.length ? <div className="bg-white rounded-xl border border-dashed border-[#c9d9d2] p-16 text-center">
-        <CalendarRange className="mx-auto w-9 h-9 text-[#b8d9d0] mb-3" />
+        <CalendarRange className="mx-auto w-9 h-9 text-stone-300 mb-3" />
         <p className="font-bold">Start by creating a drafting team</p>
-        <p className="text-sm text-[#6f8082] mt-1">Every plan belongs to a team and a project.</p>
-        {canManage && <button onClick={onGoToTeams} className="mt-4 text-sm font-bold text-[#087f73] underline">Go to Teams</button>}
+        <p className="text-sm text-stone-500 mt-1">Every plan belongs to a team and a project.</p>
+        {canManage && <button onClick={onGoToTeams} className="mt-4 text-sm font-bold text-blue-600 underline">Go to Teams</button>}
       </div>
       : groups.length === 0 ? <div className="bg-white rounded-xl border border-dashed border-[#c9d9d2] p-16 text-center">
-        <CalendarRange className="mx-auto w-9 h-9 text-[#b8d9d0] mb-3" />
+        <CalendarRange className="mx-auto w-9 h-9 text-stone-300 mb-3" />
         <p className="font-bold">{plans.data?.length ? 'No plans match these filters' : 'No drafting plans yet'}</p>
-        {!plans.data?.length && <p className="text-sm text-[#6f8082] mt-1">Create a plan for a project and assign it to a team.</p>}
+        {!plans.data?.length && <p className="text-sm text-stone-500 mt-1">Create a plan for a project and assign it to a team.</p>}
       </div>
-      : <div className="space-y-4">{groups.map(group => <section key={group.project.id || 'none'} className="bg-white rounded-xl border border-[#dce7e2] overflow-hidden shadow-sm">
-        <header className="px-5 py-3 bg-[#f2f7f4] border-b border-[#dce7e2] flex items-center gap-2">
-          <FolderOpen className="w-4 h-4 text-[#087f73]" />
-          <span className="font-mono text-xs text-[#6f8082]">{group.project.code}</span>
+      : <div className="space-y-4">{groups.map(group => <section key={group.project.id || 'none'} className="bg-white rounded-xl border border-stone-200 overflow-hidden shadow-sm">
+        <header className="px-5 py-3 bg-stone-50 border-b border-stone-200 flex items-center gap-2">
+          <FolderOpen className="w-4 h-4 text-blue-600" />
+          <span className="font-mono text-xs text-stone-500">{group.project.code}</span>
           <h3 className="font-extrabold text-sm">{group.project.name}</h3>
-          <span className="ml-auto text-xs text-[#6f8082]">{group.plans.length} {group.plans.length === 1 ? 'plan' : 'plans'}</span>
+          <span className="ml-auto text-xs text-stone-500">{group.plans.length} {group.plans.length === 1 ? 'plan' : 'plans'}</span>
         </header>
         <table className="w-full text-sm">
-          <thead><tr className="border-b border-[#edf2ef]">{['Plan', 'Team', 'Status', 'Progress', 'Start', 'Target', ''].map(h => <th key={h} className="text-left px-5 py-2 text-[10px] uppercase tracking-[.13em] text-[#6f8082] font-extrabold">{h}</th>)}</tr></thead>
-          <tbody>{group.plans.map(p => <tr key={p.id} className="border-b border-[#edf2ef] last:border-0 hover:bg-[#f4faf7]">
-            <td className="px-5 py-3"><Link to={`/drafting/plans/${p.id}`} className="font-bold hover:text-[#087f73] hover:underline">{p.name}</Link><div className="text-xs text-[#6f8082] font-mono mt-0.5">{p.plan_code}</div></td>
-            <td className="px-5 py-3 text-[#53686b]">{p.team?.name ?? '—'}<div className="text-xs text-[#8a9b9a]">{p.team?.manager_name ? `Manager: ${p.team.manager_name}` : 'No manager'}</div></td>
+          <thead><tr className="border-b border-stone-100">{['Plan', 'Team', 'Status', 'Progress', 'Start', 'Target', ''].map(h => <th key={h} className="text-left px-5 py-2 text-xs font-semibold text-stone-500 uppercase tracking-wide">{h}</th>)}</tr></thead>
+          <tbody>{group.plans.map(p => <tr key={p.id} className="border-b border-stone-100 last:border-0 hover:bg-stone-50">
+            <td className="px-5 py-3"><Link to={`/drafting/plans/${p.id}`} className="font-bold hover:text-blue-600 hover:underline">{p.name}</Link><div className="text-xs text-stone-500 font-mono mt-0.5">{p.plan_code}</div></td>
+            <td className="px-5 py-3 text-stone-600">{p.team?.name ?? '—'}<div className="text-xs text-stone-400">{p.team?.manager_name ? `Manager: ${p.team.manager_name}` : 'No manager'}</div></td>
             <td className="px-5 py-3"><StatusBadge status={p.status} /></td>
             <td className="px-5 py-3 whitespace-nowrap">{p.task_count
-              ? <div className="text-xs text-[#53686b]"><b className="text-[#20333a]">{p.done_count}/{p.task_count}</b> done
+              ? <div className="text-xs text-stone-600"><b className="text-stone-800">{p.done_count}/{p.task_count}</b> done
                   {p.late_count > 0 && <span className="ml-2 px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 font-bold">{p.late_count} late</span>}
-                  <div className="mt-1 h-1 w-24 rounded-full bg-[#edf2ef] overflow-hidden"><div className="h-full bg-[#087f73]" style={{ width: `${Math.round((p.done_count / p.task_count) * 100)}%` }} /></div></div>
+                  <div className="mt-1 h-1 w-24 rounded-full bg-stone-100 overflow-hidden"><div className="h-full bg-blue-600" style={{ width: `${Math.round((p.done_count / p.task_count) * 100)}%` }} /></div></div>
               : <span className="text-xs text-[#a3b1af]">No tasks</span>}</td>
-            <td className="px-5 py-3 text-[#53686b] whitespace-nowrap">{formatDate(p.start_date)}</td>
-            <td className="px-5 py-3 text-[#53686b] whitespace-nowrap">{formatDate(p.target_date)}</td>
-            <td className="px-5 py-3 text-right">{canManage && <button onClick={() => openEdit(p)} className="p-2 text-[#80908f] hover:text-[#087f73]" aria-label={`Edit ${p.name}`}><Pencil className="w-4 h-4" /></button>}</td>
+            <td className="px-5 py-3 text-stone-600 whitespace-nowrap">{formatDate(p.start_date)}</td>
+            <td className="px-5 py-3 text-stone-600 whitespace-nowrap">{formatDate(p.target_date)}</td>
+            <td className="px-5 py-3 text-right">{canManage && <button onClick={() => openEdit(p)} className="p-2 text-stone-400 hover:text-blue-600" aria-label={`Edit ${p.name}`}><Pencil className="w-4 h-4" /></button>}</td>
           </tr>)}</tbody>
         </table>
       </section>)}</div>}

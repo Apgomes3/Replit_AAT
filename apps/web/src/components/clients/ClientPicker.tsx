@@ -42,14 +42,14 @@ export default function ClientPicker({ value, valueLabel, onChange, kind, exclud
   const choose = (c: Company) => { onChange(c); setText(''); setOpen(false); };
 
   if (value && label) {
-    return <div className={`flex items-center justify-between gap-2 border border-[#dce7e2] rounded-lg px-3 py-2 text-sm bg-white ${className}`}>
-      <span className="inline-flex items-center gap-1.5 font-semibold text-[#20333a] min-w-0"><Building2 className="w-4 h-4 text-[#087f73] shrink-0" /><span className="truncate">{label}</span></span>
-      <button type="button" onClick={() => onChange(null)} aria-label={`Clear ${label}`} className="text-[#80908f] hover:text-rose-700"><X className="w-4 h-4" /></button>
+    return <div className={`flex items-center justify-between gap-2 border border-stone-200 rounded-lg px-3 py-2 text-sm bg-white ${className}`}>
+      <span className="inline-flex items-center gap-1.5 font-semibold text-stone-800 min-w-0"><Building2 className="w-4 h-4 text-blue-600 shrink-0" /><span className="truncate">{label}</span></span>
+      <button type="button" onClick={() => onChange(null)} aria-label={`Clear ${label}`} className="text-stone-400 hover:text-rose-700"><X className="w-4 h-4" /></button>
     </div>;
   }
 
   return <div ref={boxRef} className={`relative ${className}`}>
-    <Search className="absolute left-3 top-2.5 w-4 h-4 text-[#8da09d]" aria-hidden />
+    <Search className="absolute left-3 top-2.5 w-4 h-4 text-stone-400" aria-hidden />
     <input id={id} value={text} placeholder={placeholder} role="combobox" aria-expanded={open} aria-controls={listId} aria-autocomplete="list"
       onFocus={() => setOpen(true)}
       onChange={e => { setText(e.target.value); setOpen(true); setActive(0); }}
@@ -59,18 +59,18 @@ export default function ClientPicker({ value, valueLabel, onChange, kind, exclud
         else if (e.key === 'Enter' && open && options[active]) { e.preventDefault(); choose(options[active]); }
         else if (e.key === 'Escape') setOpen(false);
       }}
-      className="w-full pl-9 pr-3 py-2 border border-[#dce7e2] rounded-lg bg-white text-sm font-normal" />
-    {open && <ul id={listId} role="listbox" className="absolute z-30 mt-1 w-full max-h-72 overflow-auto rounded-lg border border-[#dce7e2] bg-white shadow-lg text-sm">
-      {results.isLoading && <li className="px-3 py-2 text-[#6f8082]">Searching…</li>}
-      {!results.isLoading && options.length === 0 && <li className="px-3 py-2 text-[#6f8082]">{text.trim() ? 'No company matches' : 'No companies yet'}</li>}
+      className="w-full pl-9 pr-3 py-2 border border-stone-200 rounded-lg bg-white text-sm font-normal" />
+    {open && <ul id={listId} role="listbox" className="absolute z-30 mt-1 w-full max-h-72 overflow-auto rounded-lg border border-stone-200 bg-white shadow-lg text-sm">
+      {results.isLoading && <li className="px-3 py-2 text-stone-500">Searching…</li>}
+      {!results.isLoading && options.length === 0 && <li className="px-3 py-2 text-stone-500">{text.trim() ? 'No company matches' : 'No companies yet'}</li>}
       {options.map((c, i) => <li key={c.id} role="option" aria-selected={i === active}
         onMouseDown={e => { e.preventDefault(); choose(c); }} onMouseEnter={() => setActive(i)}
         className={`px-3 py-2 cursor-pointer ${i === active ? 'bg-[#f0f7f4]' : ''}`}>
-        <div className="font-semibold text-[#20333a]">{c.name}</div>
-        <div className="text-xs text-[#6f8082]">{[c.client_code, placeOf(c), c.parent_name ? `part of ${c.parent_name}` : null].filter(Boolean).join(' · ')}</div>
+        <div className="font-semibold text-stone-800">{c.name}</div>
+        <div className="text-xs text-stone-500">{[c.client_code, placeOf(c), c.parent_name ? `part of ${c.parent_name}` : null].filter(Boolean).join(' · ')}</div>
       </li>)}
       {canCreate && <li role="option" aria-selected={false} onMouseDown={e => { e.preventDefault(); setOpen(false); setCreating(true); }}
-        className="px-3 py-2 cursor-pointer border-t border-[#edf2ef] text-[#087f73] font-bold inline-flex items-center gap-1.5 w-full hover:bg-[#f0f7f4]">
+        className="px-3 py-2 cursor-pointer border-t border-stone-100 text-blue-600 font-bold inline-flex items-center gap-1.5 w-full hover:bg-[#f0f7f4]">
         <Plus className="w-4 h-4" /> Add “{text.trim()}” as a new company
       </li>}
     </ul>}

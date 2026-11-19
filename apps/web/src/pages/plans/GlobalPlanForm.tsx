@@ -100,8 +100,8 @@ export default function GlobalPlanForm({ plan, defaults, onClose, onSaved }: {
     <div />
 
     <fieldset className="sm:col-span-2">
-      <legend className="text-xs font-bold text-[#53686b] mb-1">Share with (they can see and edit it)</legend>
-      <div className="max-h-36 overflow-y-auto border border-[#dce7e2] rounded-lg p-2 grid grid-cols-1 sm:grid-cols-2 gap-1">
+      <legend className="text-xs font-bold text-stone-600 mb-1">Share with (they can see and edit it)</legend>
+      <div className="max-h-36 overflow-y-auto border border-stone-200 rounded-lg p-2 grid grid-cols-1 sm:grid-cols-2 gap-1">
         {o?.people.map(p => <label key={p.id} className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={form.member_ids.includes(p.id)} onChange={() => toggleMember(p.id)} /> {p.name}
         </label>)}

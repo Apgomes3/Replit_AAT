@@ -61,7 +61,7 @@ export default function GoogleCalendarCard({ from }: { from: string }) {
   const s = status.data;
   if (!s || (s.configured && !s.allowed && !s.connected)) return null;
   if (!s.configured) return <aside className="bg-white rounded-2xl border border-stone-200/70 shadow-sm p-4">
-    <h3 className="text-sm font-bold text-stone-800 flex items-center gap-1.5 mb-1"><CalendarDays className="w-4 h-4 text-[#087f73]" />Google Calendar</h3>
+    <h3 className="text-sm font-bold text-stone-800 flex items-center gap-1.5 mb-1"><CalendarDays className="w-4 h-4 text-blue-600" />Google Calendar</h3>
     <p className="text-xs text-stone-500">Not set up on this server yet. An admin needs to add the Google OAuth settings to <code>.env</code> (see docs/google-calendar-setup.md) and restart.</p>
   </aside>;
 
@@ -74,14 +74,14 @@ export default function GoogleCalendarCard({ from }: { from: string }) {
 
   return <aside aria-labelledby="gcal-title" className="bg-white rounded-2xl border border-stone-200/70 shadow-sm p-4">
     <div className="flex items-center justify-between gap-2 mb-2">
-      <h3 id="gcal-title" className="text-sm font-bold text-stone-800 flex items-center gap-1.5"><CalendarDays className="w-4 h-4 text-[#087f73]" />Google Calendar</h3>
+      <h3 id="gcal-title" className="text-sm font-bold text-stone-800 flex items-center gap-1.5"><CalendarDays className="w-4 h-4 text-blue-600" />Google Calendar</h3>
       {s.connected && <button type="button" className="text-[11px] text-stone-500 hover:text-rose-700 underline"
         disabled={disconnect.isPending} onClick={() => confirm('Disconnect Google Calendar? Shark OS will forget its access.') && disconnect.mutate()}>Disconnect</button>}
     </div>
     {!s.connected ? <>
       <p className="text-xs text-stone-500 mb-3">See your Google Calendar events for the week here. Shark OS only reads your calendar; it never changes it.</p>
       <button type="button" disabled={connect.isPending} onClick={() => connect.mutate()}
-        className="w-full rounded-lg bg-[#087f73] text-white text-sm font-semibold py-2 hover:bg-[#066b61] disabled:opacity-60">Connect Google Calendar</button>
+        className="w-full rounded-lg bg-blue-600 text-white text-sm font-semibold py-2 hover:bg-[#066b61] disabled:opacity-60">Connect Google Calendar</button>
     </> : <>
       <p className="text-[11px] text-stone-500 mb-2">{s.google_email} · week of {dayLabel(from)}</p>
       {events.isLoading ? <div className="h-16 skeleton rounded-lg" />
@@ -92,7 +92,7 @@ export default function GoogleCalendarCard({ from }: { from: string }) {
             <ul>{list.map(e => <li key={e.id} className={`text-xs flex gap-2 py-0.5 ${e.busy ? 'text-stone-800' : 'text-stone-400'}`}>
               <span className="w-20 shrink-0 tabular-nums text-stone-500">{e.all_day ? 'All day' : `${timeOf(e.start)}–${timeOf(e.end)}`}</span>
               <span className="min-w-0 truncate" title={e.location ?? undefined}>{e.title}</span>
-              {e.link && <a href={e.link} target="_blank" rel="noreferrer" aria-label={`Open ${e.title} in Google Calendar`} className="ml-auto text-stone-400 hover:text-[#087f73]"><ExternalLink className="w-3 h-3" /></a>}
+              {e.link && <a href={e.link} target="_blank" rel="noreferrer" aria-label={`Open ${e.title} in Google Calendar`} className="ml-auto text-stone-400 hover:text-blue-600"><ExternalLink className="w-3 h-3" /></a>}
             </li>)}</ul>
           </li>)}</ul>}
     </>}

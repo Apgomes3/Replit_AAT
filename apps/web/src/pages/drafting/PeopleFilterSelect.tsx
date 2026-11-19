@@ -16,7 +16,7 @@ export default function PeopleFilterSelect({ value, onChange, everyoneLabel }: {
   const groups = byDepartment(teams);
 
   return <select aria-label={company ? 'Department or team' : 'Team'} value={value} onChange={e => onChange(e.target.value)}
-    className="border border-[#dce7e2] rounded-lg px-3 py-2 text-sm bg-white font-bold max-w-xs">
+    className="border border-stone-200 rounded-lg px-3 py-2 text-sm bg-white font-bold max-w-xs">
     <option value="">{everyoneLabel ?? (company ? 'Whole company' : 'Everyone')}</option>
     {company
       ? <>

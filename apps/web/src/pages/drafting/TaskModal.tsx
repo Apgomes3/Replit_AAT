@@ -27,34 +27,34 @@ function TaskLinks({ planId, task, board }: { planId: string; task: Task; board:
 
   return <fieldset className="sm:col-span-2">
     <legend className={fieldLabel}>Waits for</legend>
-    <div className="mt-1.5 rounded-lg border border-[#dce7e2] divide-y divide-[#edf2ef]">
+    <div className="mt-1.5 rounded-lg border border-stone-200 divide-y divide-stone-100">
       {waitsFor.map(l => {
         const early = l.early_days ?? 0;
         return <div key={l.id} className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm">
           <span className="flex-1 min-w-[160px] font-semibold truncate" title={label(l.predecessor_id)}>{label(l.predecessor_id)}</span>
           {early > 0 && <span className="inline-flex items-center gap-1 text-xs font-bold text-amber-700" title="This task starts before the link allows"><AlertTriangle className="w-3.5 h-3.5" /> {early}d early</span>}
           <select aria-label="Link type" value={l.link_type} onChange={e => update.mutateAsync({ id: l.id, link_type: e.target.value as LinkType }).catch(fail('Could not change link'))}
-            className="border border-[#dce7e2] rounded-md px-1.5 py-1 text-xs">
+            className="border border-stone-200 rounded-md px-1.5 py-1 text-xs">
             {LINK_TYPES.map(t => <option key={t} value={t}>{LINK_TYPE_LABELS[t]}</option>)}
           </select>
-          <label className="flex items-center gap-1 text-xs text-[#6f8082]">+<input aria-label="Lag in days" type="number" min={-365} max={365} defaultValue={l.lag_days}
+          <label className="flex items-center gap-1 text-xs text-stone-500">+<input aria-label="Lag in days" type="number" min={-365} max={365} defaultValue={l.lag_days}
             onBlur={e => { const v = Number(e.target.value); if (Number.isInteger(v) && v !== l.lag_days) update.mutateAsync({ id: l.id, lag_days: v }).catch(fail('Could not change lag')); }}
-            className="w-14 border border-[#dce7e2] rounded-md px-1.5 py-1 text-xs" />days</label>
+            className="w-14 border border-stone-200 rounded-md px-1.5 py-1 text-xs" />days</label>
           <button type="button" aria-label={`Remove link to ${label(l.predecessor_id)}`} onClick={() => remove.mutateAsync(l.id).catch(fail('Could not remove link'))}
-            className="p-1 text-[#80908f] hover:text-rose-700"><X className="w-3.5 h-3.5" /></button>
+            className="p-1 text-stone-400 hover:text-rose-700"><X className="w-3.5 h-3.5" /></button>
         </div>;
       })}
       <div className="flex items-center gap-2 px-3 py-2">
-        <select aria-label="Add a task this one waits for" value={adding} onChange={e => setAdding(e.target.value)} className="flex-1 border border-[#dce7e2] rounded-md px-2 py-1 text-sm">
+        <select aria-label="Add a task this one waits for" value={adding} onChange={e => setAdding(e.target.value)} className="flex-1 border border-stone-200 rounded-md px-2 py-1 text-sm">
           <option value="">{waitsFor.length ? 'Add another task it waits for…' : 'Choose a task it waits for…'}</option>
           {options.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}
         </select>
         <button type="button" disabled={!adding || create.isPending}
           onClick={() => create.mutateAsync({ successorId: task.id, predecessorId: adding }).then(() => setAdding('')).catch(fail('Could not add link'))}
-          className="px-3 py-1 rounded-md bg-[#087f73] text-white text-xs font-bold disabled:opacity-40">Add</button>
+          className="px-3 py-1 rounded-md bg-blue-600 text-white hover:bg-blue-700 text-xs font-bold disabled:opacity-40">Add</button>
       </div>
     </div>
-    {waitedOnBy.length > 0 && <p className="mt-1.5 text-xs text-[#6f8082]">Waited on by: {waitedOnBy.map(l => label(l.successor_id)).join(' · ')}</p>}
+    {waitedOnBy.length > 0 && <p className="mt-1.5 text-xs text-stone-500">Waited on by: {waitedOnBy.map(l => label(l.successor_id)).join(' · ')}</p>}
   </fieldset>;
 }
 
@@ -157,12 +157,12 @@ export default function TaskModal({ planId, groups, teamPeopleIds, task, default
       </select></label>
       <label className={fieldLabel}>{form.is_milestone ? 'Date' : 'Start'}<input type="date" value={form.start_date ?? ''} onChange={e => setForm({ ...form, start_date: e.target.value || null })} className={fieldInput} /></label>
       {form.is_milestone
-        ? <div className={`${fieldLabel} self-end pb-2 text-[#6f8082] font-normal`}>A milestone is a single day, such as "Drawings issued to client".</div>
+        ? <div className={`${fieldLabel} self-end pb-2 text-stone-500 font-normal`}>A milestone is a single day, such as "Drawings issued to client".</div>
         : <label className={fieldLabel}>Due<input type="date" value={form.due_date ?? ''} min={form.start_date ?? undefined} onChange={e => setForm({ ...form, due_date: e.target.value || null })} className={fieldInput} /></label>}
       <label className={fieldLabel}>Progress
         <div className="mt-1.5 flex items-center gap-2">
           <input type="range" min={0} max={100} step={5} value={form.status === 'done' ? 100 : form.progress_pct} disabled={form.status === 'done'}
-            onChange={e => setForm({ ...form, progress_pct: Number(e.target.value) })} className="flex-1 accent-[#087f73]" aria-label="Progress percentage" />
+            onChange={e => setForm({ ...form, progress_pct: Number(e.target.value) })} className="flex-1 accent-blue-600" aria-label="Progress percentage" />
           <span className="w-10 text-right text-sm font-bold tabular-nums">{form.status === 'done' ? 100 : form.progress_pct}%</span>
         </div>
       </label>
@@ -176,22 +176,22 @@ export default function TaskModal({ planId, groups, teamPeopleIds, task, default
 
       <fieldset className="sm:col-span-2">
         <legend className={fieldLabel}>Assigned to</legend>
-        <div className="mt-1.5 flex items-center justify-between text-xs text-[#6f8082]">
+        <div className="mt-1.5 flex items-center justify-between text-xs text-stone-500">
           <span>{form.assignee_ids.length} selected · {showEveryone ? 'everyone' : 'plan team'}</span>
-          <button type="button" onClick={() => setShowEveryone(v => !v)} className="font-bold text-[#087f73]">{showEveryone ? 'Show team only' : 'Show everyone'}</button>
+          <button type="button" onClick={() => setShowEveryone(v => !v)} className="font-bold text-blue-600">{showEveryone ? 'Show team only' : 'Show everyone'}</button>
         </div>
-        <div className="mt-1.5 max-h-48 overflow-auto rounded-lg border border-[#dce7e2] divide-y divide-[#edf2ef]">
-          {people.isLoading ? <div className="p-3 text-xs text-[#6f8082]">Loading people…</div>
-            : candidates.length === 0 ? <div className="p-3 text-xs text-[#6f8082]">No team members yet — use “Show everyone” or add people to the team.</div>
-            : candidates.map(p => <label key={p.id} className="flex items-center gap-3 px-3 py-2 text-sm hover:bg-[#f4faf7] cursor-pointer">
+        <div className="mt-1.5 max-h-48 overflow-auto rounded-lg border border-stone-200 divide-y divide-stone-100">
+          {people.isLoading ? <div className="p-3 text-xs text-stone-500">Loading people…</div>
+            : candidates.length === 0 ? <div className="p-3 text-xs text-stone-500">No team members yet — use “Show everyone” or add people to the team.</div>
+            : candidates.map(p => <label key={p.id} className="flex items-center gap-3 px-3 py-2 text-sm hover:bg-stone-50 cursor-pointer">
               <input type="checkbox" aria-label={`Assign ${p.name}`} checked={form.assignee_ids.includes(p.id)} onChange={() => toggle(p.id)} />
               <Avatar person={p} />
               <span className="font-semibold">{p.name}</span>
-              <span className="text-xs text-[#8a9b9a] truncate">{p.role}</span>
-              {form.assignee_ids.includes(p.id) && <span className="ml-auto inline-flex items-center gap-1 text-xs text-[#6f8082]" title="Share of this person's working day spent on the task">
+              <span className="text-xs text-stone-400 truncate">{p.role}</span>
+              {form.assignee_ids.includes(p.id) && <span className="ml-auto inline-flex items-center gap-1 text-xs text-stone-500" title="Share of this person's working day spent on the task">
                 <input aria-label={`Allocation of ${p.name}`} type="number" min={1} max={100} step={5} value={form.allocations[p.id] ?? 100}
                   onChange={e => setForm({ ...form, allocations: { ...form.allocations, [p.id]: Number(e.target.value) } })}
-                  className="w-14 border border-[#dce7e2] rounded px-1.5 py-0.5 text-xs" />% of day
+                  className="w-14 border border-stone-200 rounded px-1.5 py-0.5 text-xs" />% of day
               </span>}
             </label>)}
         </div>

@@ -19,7 +19,7 @@ const BAR: Record<TaskStatus, string> = {
   not_started: 'bg-stone-300 text-stone-800',
   in_progress: 'bg-sky-500 text-white',
   review: 'bg-violet-500 text-white',
-  done: 'bg-[#087f73]/60 text-white',
+  done: 'bg-blue-600/60 text-white',
 };
 
 type Dates = { start: string; due: string };
@@ -243,14 +243,14 @@ export default function GanttView({ planId, sections, groupBy, tasks, links, ext
     .map(d => ({ day: d, name: calendar.days[d] === 0 ? 'Holiday' : 'Day off' })), [range, calendar]);
   const criticalCount = tasks.filter(t => t.critical).length;
 
-  return <div className="bg-white rounded-xl border border-[#dce7e2] shadow-sm overflow-hidden">
-    <div className="flex flex-wrap items-center gap-3 px-4 py-2 border-b border-[#dce7e2] bg-[#f8fbf9] text-xs text-[#53686b]">
-      <div role="radiogroup" aria-label="Zoom" className="inline-flex rounded-lg border border-[#dce7e2] bg-white p-0.5">
+  return <div className="bg-white rounded-xl border border-stone-200 shadow-sm overflow-hidden">
+    <div className="flex flex-wrap items-center gap-3 px-4 py-2 border-b border-stone-200 bg-stone-50 text-xs text-stone-600">
+      <div role="radiogroup" aria-label="Zoom" className="inline-flex rounded-lg border border-stone-200 bg-white p-0.5">
         {(Object.keys(ZOOMS) as Zoom[]).map(z => <button key={z} role="radio" aria-checked={zoom === z} onClick={() => setZoom(z)}
-          className={`px-2.5 py-1 rounded-md font-bold capitalize ${zoom === z ? 'bg-[#087f73] text-white' : 'hover:bg-[#f2f7f4]'}`}>{z}s</button>)}
+          className={`px-2.5 py-1 rounded-md font-bold capitalize ${zoom === z ? 'bg-blue-600 text-white hover:bg-blue-700' : 'hover:bg-stone-50'}`}>{z}s</button>)}
       </div>
       <button onClick={() => scrollTo(today)}
-        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-[#dce7e2] bg-white font-bold"><CalendarDays className="w-3.5 h-3.5" /> Today</button>
+        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-stone-200 bg-white font-bold"><CalendarDays className="w-3.5 h-3.5" /> Today</button>
       <label className="inline-flex items-center gap-1.5 font-bold" title="Tasks with no slack: a delay on any of them delays the plan's last task">
         <input type="checkbox" checked={showCritical} onChange={e => setShowCritical(e.target.checked)} />
         <span className="inline-block w-2.5 h-2.5 rounded-sm bg-rose-500" /> Critical path ({criticalCount})
@@ -265,11 +265,11 @@ export default function GanttView({ planId, sections, groupBy, tasks, links, ext
     <div ref={scrollRef} className="overflow-auto max-h-[72vh]">
       <div ref={innerRef} className="relative select-none" style={{ width: NAME_W + width, height: HEAD + rows.length * ROW }}>
         {/* header */}
-        <div className="sticky top-0 z-20 flex bg-white border-b border-[#dce7e2]" style={{ height: HEAD }}>
-          <div className="sticky left-0 z-10 bg-white border-r border-[#dce7e2] px-4 flex items-end pb-1.5 text-[10px] uppercase tracking-[.13em] font-extrabold text-[#6f8082]" style={{ width: NAME_W, minWidth: NAME_W }}>Task</div>
+        <div className="sticky top-0 z-20 flex bg-white border-b border-stone-200" style={{ height: HEAD }}>
+          <div className="sticky left-0 z-10 bg-white border-r border-stone-200 px-4 flex items-end pb-1.5 text-[10px] uppercase tracking-[.13em] font-extrabold text-stone-500" style={{ width: NAME_W, minWidth: NAME_W }}>Task</div>
           <div className="relative" style={{ width }}>
-            {months.map(m => <div key={m.key} className="absolute top-0 h-6 border-l border-[#dce7e2] px-1.5 text-[11px] font-bold text-[#20333a] leading-6 truncate" style={{ left: m.x, width: m.w }}>{m.label}</div>)}
-            {ticks.map(d => <div key={d} className={`absolute top-6 h-6 text-center text-[10px] leading-6 ${d === today ? 'text-rose-600 font-bold' : 'text-[#6f8082]'}`}
+            {months.map(m => <div key={m.key} className="absolute top-0 h-6 border-l border-stone-200 px-1.5 text-[11px] font-bold text-stone-800 leading-6 truncate" style={{ left: m.x, width: m.w }}>{m.label}</div>)}
+            {ticks.map(d => <div key={d} className={`absolute top-6 h-6 text-center text-[10px] leading-6 ${d === today ? 'text-rose-600 font-bold' : 'text-stone-500'}`}
               style={{ left: xOf(d), width: zoom === 'day' ? dayW : 7 * dayW, textAlign: zoom === 'day' ? 'center' : 'left' }}>
               {zoom === 'day' ? Number(d.slice(8)) : <span className="pl-1">{Number(d.slice(8))}</span>}
             </div>)}
@@ -278,9 +278,9 @@ export default function GanttView({ planId, sections, groupBy, tasks, links, ext
 
         {/* rows */}
         {rows.map(r => r.kind === 'section'
-          ? <div key={r.key} className="flex bg-[#f2f7f4] border-b border-[#dce7e2]" style={{ height: ROW }}>
-              <div className="sticky left-0 z-10 bg-[#f2f7f4] px-4 flex items-center gap-2 text-sm font-extrabold" style={{ width: NAME_W, minWidth: NAME_W }}>
-                <span className="truncate">{r.label}</span><span className="text-xs font-normal text-[#6f8082]">{r.count}</span>
+          ? <div key={r.key} className="flex bg-stone-50 border-b border-stone-200" style={{ height: ROW }}>
+              <div className="sticky left-0 z-10 bg-stone-50 px-4 flex items-center gap-2 text-sm font-extrabold" style={{ width: NAME_W, minWidth: NAME_W }}>
+                <span className="truncate">{r.label}</span><span className="text-xs font-normal text-stone-500">{r.count}</span>
               </div>
               <div style={{ width }} />
             </div>
@@ -312,11 +312,11 @@ export default function GanttView({ planId, sections, groupBy, tasks, links, ext
               <title>{`${a.pred.title} → ${a.succ.title}\n${LINK_TYPE_LABELS[a.link.link_type]}${a.link.lag_days ? `, ${a.link.lag_days > 0 ? '+' : ''}${a.link.lag_days} days` : ''}${a.early ? `\nStarts ${a.early} days too early` : ''}`}</title>
             </path>
           </g>)}
-          {linking && <line x1={linking.x1} y1={linking.y1} x2={linking.x2} y2={linking.y2} stroke="#087f73" strokeWidth={1.5} strokeDasharray="4 3" markerEnd="url(#gantt-arrow-ok)" />}
+          {linking && <line x1={linking.x1} y1={linking.y1} x2={linking.x2} y2={linking.y2} stroke="#2563eb" strokeWidth={1.5} strokeDasharray="4 3" markerEnd="url(#gantt-arrow-ok)" />}
         </svg>
       </div>
     </div>
-    {rows.length === 0 && <p className="px-4 py-6 text-sm text-[#8a9b9a]">No tasks to show.</p>}
+    {rows.length === 0 && <p className="px-4 py-6 text-sm text-stone-400">No tasks to show.</p>}
     {dialog}
   </div>;
 }
@@ -335,23 +335,23 @@ function TaskRow({ task, dates, today, dayW, width, grid, xOf, canManage, extern
     onPointerDown: (e: React.PointerEvent) => onBarDown(e, task), onPointerMove: onBarMove, onPointerUp: (e: React.PointerEvent) => onBarUp(e, task),
   };
   const linkDot = canManage && <span data-handle="link" title="Drag onto another task to make it wait for this one"
-    className="absolute -right-3.5 top-1/2 -translate-y-1/2 h-2.5 w-2.5 rounded-full border-2 border-[#087f73] bg-white opacity-0 group-hover/bar:opacity-100 cursor-crosshair" />;
-  const who = <span className="pointer-events-none absolute left-full top-0 ml-4 whitespace-nowrap text-[11px] leading-5 text-[#6f8082]">
+    className="absolute -right-3.5 top-1/2 -translate-y-1/2 h-2.5 w-2.5 rounded-full border-2 border-blue-600 bg-white opacity-0 group-hover/bar:opacity-100 cursor-crosshair" />;
+  const who = <span className="pointer-events-none absolute left-full top-0 ml-4 whitespace-nowrap text-[11px] leading-5 text-stone-500">
     {task.assignees.map(a => a.name.split(' ')[0]).join(', ')}
   </span>;
-  return <div className="group/row flex border-b border-[#edf2ef] hover:bg-[#f8fbf9]" style={{ height: ROW }}>
-    <div className="sticky left-0 z-10 bg-white group-hover/row:bg-[#f8fbf9] border-r border-[#dce7e2] px-4 flex items-center gap-2 min-w-0" style={{ width: NAME_W, minWidth: NAME_W }}>
+  return <div className="group/row flex border-b border-stone-100 hover:bg-stone-50" style={{ height: ROW }}>
+    <div className="sticky left-0 z-10 bg-white group-hover/row:bg-stone-50 border-r border-stone-200 px-4 flex items-center gap-2 min-w-0" style={{ width: NAME_W, minWidth: NAME_W }}>
       <button onClick={() => onOpen(task)} title={task.title}
-        className={`truncate text-left text-sm font-semibold hover:text-[#087f73] ${done ? 'line-through text-[#8a9b9a]' : ''}`}>{task.title}</button>
+        className={`truncate text-left text-sm font-semibold hover:text-blue-600 ${done ? 'line-through text-stone-400' : ''}`}>{task.title}</button>
       {externalPreds.length > 0 && <span title={`Waits for: ${externalPreds.map(t => `${t.plan_code} · ${t.title}`).join('; ')}`}
-        className="shrink-0 inline-flex items-center gap-0.5 rounded bg-[#eef4f1] px-1 py-0.5 text-[10px] font-bold text-[#53686b]"><Link2 className="w-3 h-3" />{externalPreds[0]!.plan_code}</span>}
+        className="shrink-0 inline-flex items-center gap-0.5 rounded bg-[#eef4f1] px-1 py-0.5 text-[10px] font-bold text-stone-600"><Link2 className="w-3 h-3" />{externalPreds[0]!.plan_code}</span>}
     </div>
     <div className="relative" style={{ width, backgroundImage: grid, backgroundPosition: '0 0' }}>
       {baseline && <div title={`Baseline: ${baseline.start} to ${baseline.due}`} className="absolute z-[3] top-[28px] h-1 rounded-full bg-stone-400/70 pointer-events-none"
         style={{ left: xOf(baseline.start), width: Math.max(dayW, (daysBetween(baseline.start, baseline.due) + 1) * dayW) - 1 }} />}
       {dates && task.is_milestone
         ? <div {...events} aria-label={`Milestone ${task.title}: ${dates.start}, ${TASK_STATUS_LABELS[task.status]}`}
-            className={`group/bar absolute z-[3] top-[9px] h-4 w-4 rotate-45 rounded-[2px] shadow-sm ${critical && !done ? 'bg-rose-600' : done ? 'bg-[#087f73]/60' : 'bg-[#087f73]'} ${late ? 'ring-2 ring-rose-500' : ''} ${canManage ? 'cursor-grab' : 'cursor-pointer'}`}
+            className={`group/bar absolute z-[3] top-[9px] h-4 w-4 rotate-45 rounded-[2px] shadow-sm ${critical && !done ? 'bg-rose-600' : done ? 'bg-blue-600/60' : 'bg-blue-600'} ${late ? 'ring-2 ring-rose-500' : ''} ${canManage ? 'cursor-grab' : 'cursor-pointer'}`}
             style={{ left: xOf(dates.start) + dayW / 2 - 8, touchAction: 'none' }}>
             <span className="-rotate-45 absolute inset-0">{linkDot}{who}</span>
           </div>
@@ -367,7 +367,7 @@ function TaskRow({ task, dates, today, dayW, width, grid, xOf, canManage, extern
             </>}
             {linkDot}{who}
           </div>
-        : <button onClick={e => onSchedule(e, task)} className="absolute inset-0 text-left px-3 text-xs text-[#a3b1af] hover:text-[#087f73]">
+        : <button onClick={e => onSchedule(e, task)} className="absolute inset-0 text-left px-3 text-xs text-[#a3b1af] hover:text-blue-600">
             <span className="sticky inline-block" style={{ left: NAME_W + 12 }}>{canManage ? 'No dates — click a day to schedule it' : 'No dates'}</span>
           </button>}
     </div>

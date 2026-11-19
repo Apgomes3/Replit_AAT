@@ -7,6 +7,7 @@ import EntityCode from '../../components/ui/EntityCode';
 import StatusBadge from '../../components/ui/StatusBadge';
 import { currentReturnContext } from '../../lib/navigation';
 import QueryError from '../../components/ui/QueryError';
+import PageHeader from '../../components/ui/PageHeader';
 import { supportError } from '../../lib/supportError';
 
 const labels: Record<string, string> = {
@@ -44,11 +45,14 @@ export default function SearchPage({ work = false }: { work?: boolean }) {
   });
   const title = work ? 'My Work' : 'Search';
   return (
+    <div>
+    <PageHeader
+      crumbs={[{ label: title }]}
+      title={title}
+      subtitle={work ? 'Approvals and records waiting on you, most urgent first.' : 'Find people, projects, clients and products by name or code.'}
+      actions={<Link className="text-sm font-medium text-blue-600 hover:text-blue-800" to={work ? '/search' : '/my-work'}>{work ? 'Search all records' : 'My Work'}</Link>}
+    />
     <div className="p-6 max-w-5xl mx-auto">
-      <div className="flex items-center justify-between mb-5">
-        <h1 className="text-2xl font-semibold text-slate-800">{title}</h1>
-        <Link className="text-sm text-blue-600 hover:underline" to={work ? '/search' : '/my-work'}>{work ? 'Search all records' : 'My Work'}</Link>
-      </div>
       <form onSubmit={e => { e.preventDefault(); update('q', draft.trim()); }} className="flex gap-2 mb-4">
         <input aria-label="Search records" value={draft} onChange={e => setDraft(e.target.value)}
           placeholder={work ? 'Filter your work' : 'Search people, projects, clients, products… by name or code'}
@@ -106,6 +110,7 @@ export default function SearchPage({ work = false }: { work?: boolean }) {
             <button disabled={page * (data?.page_size ?? 25) >= (data?.total ?? 0)} onClick={() => update('page', String(page + 1))} className="disabled:opacity-40 text-blue-600">Next</button>
           </div>}
         </>}
+    </div>
     </div>
   );
 }

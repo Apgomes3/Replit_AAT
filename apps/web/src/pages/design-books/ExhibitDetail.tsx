@@ -3813,7 +3813,7 @@ export default function ExhibitDetail() {
                   </span>
                 )}
               </div>
-              <h1 className="text-2xl font-bold text-stone-800">{exhibit.exhibit_name}</h1>
+              <h1 className="text-xl font-semibold text-stone-800 leading-tight">{exhibit.exhibit_name}</h1>
               <div className="flex items-center gap-5 mt-2 flex-wrap">
                 {(exhibit.design_temperature_min != null || exhibit.design_temperature_max != null) && (
                   <span className="flex items-center gap-1.5 text-sm text-stone-500">

@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import api from '../../lib/api';
 import EntityCode from '../../components/ui/EntityCode';
 import StatusBadge from '../../components/ui/StatusBadge';
+import PageHeader from '../../components/ui/PageHeader';
 import { Ruler, Box, Network, Zap, FileText, FileSearch, FileCheck, Download, Search } from 'lucide-react';
 
 const DRAWING_TYPES = [
@@ -88,15 +89,11 @@ export default function DrawingsLibrary() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="border-b border-slate-200 bg-white px-6 py-4">
-        <div className="flex items-center justify-between mb-1">
-          <div>
-            <h1 className="text-lg font-semibold text-slate-800">Drawings &amp; Models Library</h1>
-            <p className="text-sm text-slate-500">Approved drawings, 3D models, P&amp;IDs, and diagrams across all products and components</p>
-          </div>
-          <div className="text-sm text-slate-400">{total} document{total !== 1 ? 's' : ''}</div>
-        </div>
-      </div>
+      <PageHeader
+        crumbs={[{ label: 'Products', href: '/products/masters' }, { label: 'Drawings & Models' }]}
+        title="Drawings & Models Library"
+        subtitle={`Approved drawings, 3D models, P&IDs and diagrams across all products and components · ${total} document${total !== 1 ? 's' : ''}`}
+      />
 
       <div className="bg-white border-b border-slate-200 px-6 py-3 flex items-center gap-4">
         <div className="relative min-w-48 max-w-64">

@@ -19,7 +19,7 @@ function load(w: WorkloadWeek) {
 const CELL: Record<string, string> = {
   over: 'bg-rose-50 text-rose-700 border-rose-200',
   full: 'bg-amber-50 text-amber-800 border-amber-200',
-  free: 'bg-[#e4f2ee] text-[#087f73] border-[#b8d9d0]',
+  free: 'bg-blue-50 text-blue-600 border-stone-300',
   none: 'bg-stone-50 text-stone-400 border-stone-200',
 };
 
@@ -61,12 +61,12 @@ export default function WorkloadPanel() {
   return <div>
     <div className="flex flex-wrap items-center gap-3 mb-4">
       <PeopleFilterSelect value={value} onChange={v => { setPicked(v); setOpen(null); }} />
-      {team ? <span className="text-sm text-[#6f8082]">Manager: {team.manager?.name ?? '—'} · {rows.length} people</span>
-        : workload.data && <span className="text-sm text-[#6f8082]">{rows.length} people</span>}
+      {team ? <span className="text-sm text-stone-500">Manager: {team.manager?.name ?? '—'} · {rows.length} people</span>
+        : workload.data && <span className="text-sm text-stone-500">{rows.length} people</span>}
       <div className="ml-auto flex items-center gap-1">
-        <button aria-label="Earlier weeks" onClick={() => setFrom(addDays(from, -7))} className="p-2 rounded-lg border border-[#dce7e2] bg-white"><ChevronLeft className="w-4 h-4" /></button>
-        <button onClick={() => setFrom(mondayOf(todayIso()))} className="px-3 py-2 rounded-lg border border-[#dce7e2] bg-white text-xs font-bold">This week</button>
-        <button aria-label="Later weeks" onClick={() => setFrom(addDays(from, 7))} className="p-2 rounded-lg border border-[#dce7e2] bg-white"><ChevronRight className="w-4 h-4" /></button>
+        <button aria-label="Earlier weeks" onClick={() => setFrom(addDays(from, -7))} className="p-2 rounded-lg border border-stone-200 bg-white"><ChevronLeft className="w-4 h-4" /></button>
+        <button onClick={() => setFrom(mondayOf(todayIso()))} className="px-3 py-2 rounded-lg border border-stone-200 bg-white text-xs font-bold">This week</button>
+        <button aria-label="Later weeks" onClick={() => setFrom(addDays(from, 7))} className="p-2 rounded-lg border border-stone-200 bg-white"><ChevronRight className="w-4 h-4" /></button>
       </div>
     </div>
 
@@ -74,29 +74,29 @@ export default function WorkloadPanel() {
       <Stat label="Capacity, next 4 weeks" value={`${totals.capacity} h`} />
       <Stat label="Booked, next 4 weeks" value={`${totals.booked} h`} />
       <Stat label="Overbooked weeks" value={String(totals.over)} tone={totals.over ? 'text-rose-700' : undefined} />
-      <Stat label="Most free next week" value={freeNext ? `${freeNext.r.name.split(' ')[0]}, ${Math.round(freeNext.free)} h` : '—'} tone="text-[#087f73]" />
+      <Stat label="Most free next week" value={freeNext ? `${freeNext.r.name.split(' ')[0]}, ${Math.round(freeNext.free)} h` : '—'} tone="text-blue-600" />
     </div>
 
     {workload.isLoading ? <div className="h-40 skeleton rounded-xl" />
       : workload.isError ? <p className="text-sm text-rose-700">The workload could not be loaded.</p>
-      : !rows.length ? <p className="text-sm text-[#6f8082]">This team has no members yet. Add people in the Teams tab.</p>
-      : <div className="bg-white rounded-xl border border-[#dce7e2] overflow-x-auto shadow-sm">
+      : !rows.length ? <p className="text-sm text-stone-500">This team has no members yet. Add people in the Teams tab.</p>
+      : <div className="bg-white rounded-xl border border-stone-200 overflow-x-auto shadow-sm">
           <table className="w-full text-sm min-w-[900px]">
-            <thead><tr className="bg-[#f2f7f4] border-b border-[#dce7e2]">
-              <th className="text-left px-4 py-2 text-[10px] uppercase tracking-[.13em] text-[#6f8082] font-extrabold w-56">Person</th>
-              {rows[0]!.weeks.map(w => <th key={w.week_start} className="px-2 py-2 text-[10px] uppercase tracking-[.1em] text-[#6f8082] font-extrabold">
+            <thead><tr className="bg-stone-50 border-b border-stone-200">
+              <th className="text-left px-4 py-2 text-xs font-semibold text-stone-500 uppercase tracking-wide w-56">Person</th>
+              {rows[0]!.weeks.map(w => <th key={w.week_start} className="px-2 py-2 text-[10px] uppercase tracking-[.1em] text-stone-500 font-extrabold">
                 {w.week_start === mondayOf(todayIso()) ? 'This week' : `Wk ${fmtWeek(w.week_start)}`}</th>)}
             </tr></thead>
             <tbody>{sections
               ? sections.map(s => {
                   const hidden = !s.team && !showLoose;
                   return <Fragment key={s.key}>
-                    <tr className="bg-[#f8fbf9] border-b border-[#edf2ef]">
+                    <tr className="bg-stone-50 border-b border-stone-100">
                       <td colSpan={WEEKS + 1} className="px-4 py-1.5">
                         {s.team
-                          ? <span className="text-xs font-extrabold text-[#20333a]">{s.team.name}
-                              <span className="ml-2 font-semibold text-[#8a9b9a]">{s.team.department} · {s.rows.length} {s.rows.length === 1 ? 'person' : 'people'}</span></span>
-                          : <button onClick={() => setShowLoose(v => !v)} className="inline-flex items-center gap-1 text-xs font-extrabold text-[#6f8082]">
+                          ? <span className="text-xs font-extrabold text-stone-800">{s.team.name}
+                              <span className="ml-2 font-semibold text-stone-400">{s.team.department} · {s.rows.length} {s.rows.length === 1 ? 'person' : 'people'}</span></span>
+                          : <button onClick={() => setShowLoose(v => !v)} className="inline-flex items-center gap-1 text-xs font-extrabold text-stone-500">
                               <ChevronDown className={`w-3.5 h-3.5 transition-transform ${hidden ? '-rotate-90' : ''}`} />
                               {company ? 'Not in a team' : 'Not in a drafting team'} · {s.rows.length} {s.rows.length === 1 ? 'person' : 'people'}</button>}
                       </td>
@@ -108,42 +108,42 @@ export default function WorkloadPanel() {
           </table>
         </div>}
 
-    <div className="flex flex-wrap gap-4 mt-2 text-xs text-[#6f8082]">
-      <span><i className="inline-block w-2.5 h-2.5 rounded-sm bg-[#e4f2ee] border border-[#b8d9d0] mr-1 align-[-1px]" />Room left</span>
+    <div className="flex flex-wrap gap-4 mt-2 text-xs text-stone-500">
+      <span><i className="inline-block w-2.5 h-2.5 rounded-sm bg-blue-50 border border-stone-300 mr-1 align-[-1px]" />Room left</span>
       <span><i className="inline-block w-2.5 h-2.5 rounded-sm bg-amber-50 border border-amber-200 mr-1 align-[-1px]" />90–100%</span>
       <span><i className="inline-block w-2.5 h-2.5 rounded-sm bg-rose-50 border border-rose-200 mr-1 align-[-1px]" />Overbooked</span>
       <span className="ml-auto">Booked hours come from every plan, people's own tasks and their standing commitments. Finished tasks and completed plans are not counted. Click a week to see its tasks.</span>
     </div>
 
-    {openRow && openWeek && <div className="mt-4 bg-white rounded-xl border border-[#dce7e2] p-4 shadow-sm">
+    {openRow && openWeek && <div className="mt-4 bg-white rounded-xl border border-stone-200 p-4 shadow-sm">
       <h3 className="font-extrabold text-sm">{openRow.name} · week of {fmtWeek(openWeek.week_start)}</h3>
-      <p className="text-xs text-[#6f8082] mt-0.5">{openWeek.booked} h booked of {openWeek.capacity} h available{openWeek.leave ? ` (${openWeek.leave} h leave)` : ''} · calendar {openRow.calendar_name}{openRow.capacity_pct < 100 ? ` at ${openRow.capacity_pct}%` : ''}</p>
+      <p className="text-xs text-stone-500 mt-0.5">{openWeek.booked} h booked of {openWeek.capacity} h available{openWeek.leave ? ` (${openWeek.leave} h leave)` : ''} · calendar {openRow.calendar_name}{openRow.capacity_pct < 100 ? ` at ${openRow.capacity_pct}%` : ''}</p>
       {openWeek.tasks.length
-        ? <ul className="mt-3 divide-y divide-[#edf2ef]">{openWeek.tasks.map(t => <li key={t.id} className="py-2 flex items-center gap-3 text-sm">
-            <span className="font-mono text-xs text-[#6f8082] w-20">{t.project_code ?? '—'}</span>
+        ? <ul className="mt-3 divide-y divide-stone-100">{openWeek.tasks.map(t => <li key={t.id} className="py-2 flex items-center gap-3 text-sm">
+            <span className="font-mono text-xs text-stone-500 w-20">{t.project_code ?? '—'}</span>
             {t.plan_id
-              ? <Link to={`/drafting/plans/${t.plan_id}`} className="flex-1 font-semibold hover:text-[#087f73] truncate">{t.title}</Link>
+              ? <Link to={`/drafting/plans/${t.plan_id}`} className="flex-1 font-semibold hover:text-blue-600 truncate">{t.title}</Link>
               : <span className="flex-1 font-semibold truncate">{t.title}</span>}
-            <span className="text-xs text-[#6f8082]">{t.kind === 'plan' ? t.plan_code : t.kind === 'task' ? 'Own task' : 'Commitment'}</span>
+            <span className="text-xs text-stone-500">{t.kind === 'plan' ? t.plan_code : t.kind === 'task' ? 'Own task' : 'Commitment'}</span>
             <span className="w-14 text-right tabular-nums font-bold">{t.hours} h</span>
           </li>)}</ul>
-        : <p className="mt-3 text-sm text-[#6f8082]">No tasks booked this week.</p>}
+        : <p className="mt-3 text-sm text-stone-500">No tasks booked this week.</p>}
     </div>}
   </div>;
 }
 
 function Stat({ label, value, tone }: { label: string; value: string; tone?: string }) {
-  return <div className="bg-white rounded-xl border border-[#dce7e2] px-4 py-3">
-    <div className="text-xs text-[#6f8082]">{label}</div>
+  return <div className="bg-white rounded-xl border border-stone-200 px-4 py-3">
+    <div className="text-xs text-stone-500">{label}</div>
     <div className={`text-xl font-extrabold mt-0.5 ${tone ?? ''}`}>{value}</div>
   </div>;
 }
 
 function PersonRow({ row, open, onOpen }: { row: WorkloadRow; open: { user: string; week: string } | null; onOpen: (o: { user: string; week: string } | null) => void }) {
-  return <tr className="border-b border-[#edf2ef] last:border-0">
+  return <tr className="border-b border-stone-100 last:border-0">
     <td className="px-4 py-2">
       <div className="font-semibold">{row.name}</div>
-      <div className="text-[11px] text-[#8a9b9a]">{row.calendar_name}{row.capacity_pct < 100 ? ` · ${row.capacity_pct}%` : ''}</div>
+      <div className="text-[11px] text-stone-400">{row.calendar_name}{row.capacity_pct < 100 ? ` · ${row.capacity_pct}%` : ''}</div>
     </td>
     {row.weeks.map(w => {
       const state = load(w);
@@ -151,7 +151,7 @@ function PersonRow({ row, open, onOpen }: { row: WorkloadRow; open: { user: stri
       return <td key={w.week_start} className="px-1.5 py-1.5">
         <button onClick={() => onOpen(selected ? null : { user: row.user_id, week: w.week_start })}
           title={`${w.booked} h booked of ${w.capacity} h${w.leave ? `, ${w.leave} h leave` : ''}`}
-          className={`w-full rounded-md border px-2 py-1.5 text-xs font-bold tabular-nums ${CELL[state]} ${selected ? 'ring-2 ring-[#087f73]' : ''}`}>
+          className={`w-full rounded-md border px-2 py-1.5 text-xs font-bold tabular-nums ${CELL[state]} ${selected ? 'ring-2 ring-blue-600' : ''}`}>
           {Math.round(w.booked)} / {Math.round(w.capacity)} h
           {w.leave > 0 && <Palmtree className="inline w-3 h-3 ml-1 -mt-0.5" aria-label="Has leave" />}
         </button>

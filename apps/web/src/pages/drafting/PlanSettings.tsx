@@ -24,25 +24,25 @@ export default function PlanSettings({ plan, calendarName, canManage }: { plan: 
     catch (err) { toast.error(apiErrorMessage(err, 'Could not save the baseline')); }
   };
 
-  return <div className="mb-4 flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border border-[#dce7e2] bg-white px-4 py-2 text-xs text-[#53686b]">
-    <label className="inline-flex items-center gap-1.5 font-bold"><CalendarCog className="w-3.5 h-3.5 text-[#087f73]" /> Calendar
+  return <div className="mb-4 flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border border-stone-200 bg-white px-4 py-2 text-xs text-stone-600">
+    <label className="inline-flex items-center gap-1.5 font-bold"><CalendarCog className="w-3.5 h-3.5 text-blue-600" /> Calendar
       {canManage
         ? <select value={plan.calendar_id ?? ''} onChange={e => change({ calendar_id: e.target.value || null }, 'Calendar changed')}
-            className="border border-[#dce7e2] rounded-md px-2 py-1 font-normal">
+            className="border border-stone-200 rounded-md px-2 py-1 font-normal">
             <option value="">Default{defaultCal ? ` (${defaultCal.name})` : ''}</option>
             {(calendars.data ?? []).filter(c => !c.is_default).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         : <span className="font-normal">{calendarName}</span>}
     </label>
     <label className="inline-flex items-center gap-1.5 font-bold" title="When a task's dates change, the tasks that wait for it move later automatically (you can undo).">
-      <Wand2 className="w-3.5 h-3.5 text-[#087f73]" /> Automatic scheduling
+      <Wand2 className="w-3.5 h-3.5 text-blue-600" /> Automatic scheduling
       <input type="checkbox" disabled={!canManage} checked={plan.auto_schedule}
         onChange={e => change({ auto_schedule: e.target.checked }, e.target.checked ? 'Automatic scheduling on' : 'Automatic scheduling off')} />
-      <span className="font-normal text-[#8a9b9a]">{plan.auto_schedule ? 'later tasks follow delays' : 'warnings only'}</span>
+      <span className="font-normal text-stone-400">{plan.auto_schedule ? 'later tasks follow delays' : 'warnings only'}</span>
     </label>
-    <span className="inline-flex items-center gap-1.5 font-bold"><Flag className="w-3.5 h-3.5 text-[#087f73]" /> Baseline
+    <span className="inline-flex items-center gap-1.5 font-bold"><Flag className="w-3.5 h-3.5 text-blue-600" /> Baseline
       <span className="font-normal">{plan.baseline_set_at ? `saved ${new Date(plan.baseline_set_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}` : 'none'}</span>
-      {canManage && <button onClick={() => saveBaseline(false)} className="font-bold text-[#087f73] hover:underline">{plan.baseline_set_at ? 'Replace' : 'Save now'}</button>}
+      {canManage && <button onClick={() => saveBaseline(false)} className="font-bold text-blue-600 hover:underline">{plan.baseline_set_at ? 'Replace' : 'Save now'}</button>}
       {canManage && plan.baseline_set_at && <button onClick={() => saveBaseline(true)} className="font-bold text-rose-700 hover:underline">Clear</button>}
     </span>
     {dialog}

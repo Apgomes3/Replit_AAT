@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import PageHeader from '../../components/ui/PageHeader';
+import Button from '../../components/ui/Button';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import api from '../../lib/api';
@@ -1000,6 +1002,9 @@ export default function LSSCompactUnitsCatalog() {
   );
 
   return (
+    <div>
+      <PageHeader crumbs={[{ label: 'Engineering' }, { label: 'LSS Unit Catalog' }]} title="LSS Unit Catalog" subtitle="Packaged life support units: flows, volumes, footprints and PIM links."
+        actions={<Button variant="primary" onClick={() => setModal('new')}><Plus className="w-4 h-4" /> Add Unit</Button>} />
     <div className="p-6 max-w-7xl mx-auto space-y-5">
       {modal && (
         <UnitModal
@@ -1010,29 +1015,6 @@ export default function LSSCompactUnitsCatalog() {
         />
       )}
 
-      {/* Breadcrumb */}
-      <nav className="flex items-center gap-1.5 text-sm text-stone-500">
-        <Link to="/design-book-engine" className="hover:text-blue-600 transition-colors">Design Book Engine</Link>
-        <span className="text-stone-300">/</span>
-        <span className="text-stone-800 font-medium">LSS Unit Catalog</span>
-      </nav>
-
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-violet-700 flex items-center justify-center shadow-lg shadow-violet-500/25">
-            <Layers className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-stone-800">LSS Compact Unit Catalog</h1>
-            <p className="text-stone-400 text-sm">Master catalog of packaged life support units — flows, volumes, footprints and PIM links</p>
-          </div>
-        </div>
-        <button onClick={() => setModal('new')}
-          className="flex items-center gap-1.5 px-4 py-2 text-sm text-white bg-violet-600 hover:bg-violet-700 rounded-lg shadow-sm transition-colors">
-          <Plus className="w-4 h-4" /> Add Unit
-        </button>
-      </div>
 
       {/* Summary chips */}
       {!isLoading && (units as any[]).length > 0 && (
@@ -1149,6 +1131,7 @@ export default function LSSCompactUnitsCatalog() {
         className="inline-flex items-center gap-1.5 text-sm text-stone-500 hover:text-violet-600 transition-colors">
         <ChevronLeft className="w-3.5 h-3.5" /> Back to Design Book Engine
       </Link>
+    </div>
     </div>
   );
 }

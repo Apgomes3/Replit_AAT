@@ -19,7 +19,7 @@ const savedView = (): View => { try { const v = localStorage.getItem(VIEW_KEY); 
 
 const mondayOf = (iso: string) => addDays(iso, -((new Date(`${iso}T00:00:00Z`).getUTCDay() + 6) % 7));
 const fmt = (iso: string | null) => iso ? new Date(`${iso}T00:00:00Z`).toLocaleDateString(undefined, { day: 'numeric', month: 'short', timeZone: 'UTC' }) : '';
-const input = 'border border-[#dce7e2] rounded-lg px-2.5 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#087f73]/30';
+const input = 'border border-stone-200 rounded-lg px-2.5 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-600/30';
 
 /** The signed-in person's planner: their week, every task they have (plans and their own), and standing commitments. */
 export default function MyWorkPlanner() {
@@ -44,9 +44,9 @@ export default function MyWorkPlanner() {
       <div className="flex items-center gap-3">
         <div role="tablist" aria-label="How to show my work" className="inline-flex rounded-lg border border-stone-200 bg-white p-0.5">
           {(['list', 'week', 'month'] as const).map(v => <button key={v} role="tab" aria-selected={view === v} onClick={() => setView(v)}
-            className={`px-3 py-1 rounded-md text-xs font-bold capitalize ${view === v ? 'bg-[#087f73] text-white' : 'text-stone-600 hover:text-[#087f73]'}`}>{v}</button>)}
+            className={`px-3 py-1 rounded-md text-xs font-bold capitalize ${view === v ? 'bg-blue-600 text-white' : 'text-stone-600 hover:text-blue-600'}`}>{v}</button>)}
         </div>
-        <Link to="/my-work" className="text-xs font-semibold text-[#087f73] hover:underline">Approvals and records assigned to me →</Link>
+        <Link to="/my-work" className="text-xs font-semibold text-blue-600 hover:underline">Approvals and records assigned to me →</Link>
       </div>
     </div>
 
@@ -99,13 +99,13 @@ function WeekStrip({ weeks, loading, from, today, onShift, onToday }: {
 }) {
   const thisMonday = mondayOf(today);
   return <div className="flex items-stretch gap-2">
-    <button aria-label="Earlier weeks" onClick={() => onShift(-1)} className="px-2 rounded-xl border border-stone-200 bg-white text-stone-500 hover:text-[#087f73]"><ChevronLeft className="w-4 h-4" /></button>
+    <button aria-label="Earlier weeks" onClick={() => onShift(-1)} className="px-2 rounded-xl border border-stone-200 bg-white text-stone-500 hover:text-blue-600"><ChevronLeft className="w-4 h-4" /></button>
     <div className="flex-1 grid grid-cols-2 md:grid-cols-4 gap-2">
       {loading ? [0, 1, 2, 3].map(i => <div key={i} className="h-16 skeleton rounded-xl" />)
         : weeks.map(w => {
             const pct = w.capacity ? w.booked / w.capacity : w.booked ? 2 : 0;
-            const tone = pct > 1.0001 ? 'bg-rose-500' : pct >= 0.9 ? 'bg-amber-500' : 'bg-[#087f73]';
-            return <div key={w.week_start} className={`rounded-xl border bg-white px-3 py-2 ${w.week_start === thisMonday ? 'border-[#087f73]/50' : 'border-stone-200'}`}>
+            const tone = pct > 1.0001 ? 'bg-rose-500' : pct >= 0.9 ? 'bg-amber-500' : 'bg-blue-600';
+            return <div key={w.week_start} className={`rounded-xl border bg-white px-3 py-2 ${w.week_start === thisMonday ? 'border-blue-600/50' : 'border-stone-200'}`}>
               <div className="text-[10px] font-bold uppercase tracking-[.1em] text-stone-500">{w.week_start === thisMonday ? 'This week' : `Week of ${fmt(w.week_start)}`}</div>
               <div className="text-sm font-bold text-stone-800 tabular-nums">{Math.round(w.booked)} <span className="font-normal text-stone-500">/ {Math.round(w.capacity)} h</span>
                 {w.leave > 0 && <span className="ml-1 text-[11px] font-normal text-amber-700">· {Math.round(w.leave)} h leave</span>}</div>
@@ -114,7 +114,7 @@ function WeekStrip({ weeks, loading, from, today, onShift, onToday }: {
           })}
     </div>
     <div className="flex flex-col gap-1">
-      <button aria-label="Later weeks" onClick={() => onShift(1)} className="flex-1 px-2 rounded-xl border border-stone-200 bg-white text-stone-500 hover:text-[#087f73]"><ChevronRight className="w-4 h-4" /></button>
+      <button aria-label="Later weeks" onClick={() => onShift(1)} className="flex-1 px-2 rounded-xl border border-stone-200 bg-white text-stone-500 hover:text-blue-600"><ChevronRight className="w-4 h-4" /></button>
       {from !== thisMonday && <button onClick={onToday} className="px-2 py-1 rounded-lg border border-stone-200 bg-white text-[10px] font-bold">Today</button>}
     </div>
   </div>;
@@ -173,12 +173,12 @@ function QuickAdd() {
     } catch (err) { toast.error(apiErrorMessage(err, 'Could not add the task')); }
   };
   return <form onSubmit={submit} className="p-4 flex flex-wrap items-center gap-2">
-    <Plus className="w-4 h-4 text-[#087f73]" />
+    <Plus className="w-4 h-4 text-blue-600" />
     <input aria-label="New task" value={f.title} onChange={e => setF({ ...f, title: e.target.value })} placeholder="Add a task… (Enter to save)"
       className="flex-1 min-w-[200px] text-sm px-2 py-1.5 rounded-lg focus:outline-none focus:bg-stone-50" />
     <input aria-label="Due date" type="date" value={f.due_date} onChange={e => setF({ ...f, due_date: e.target.value })} className={input} />
-    <button type="button" onClick={() => setMore(v => !v)} className="text-xs font-semibold text-stone-500 hover:text-[#087f73]">{more ? 'Less' : 'More'}</button>
-    <button disabled={save.isPending || !f.title.trim()} className="px-3 py-1.5 rounded-lg bg-[#087f73] text-white text-sm font-bold disabled:opacity-50">Add</button>
+    <button type="button" onClick={() => setMore(v => !v)} className="text-xs font-semibold text-stone-500 hover:text-blue-600">{more ? 'Less' : 'More'}</button>
+    <button disabled={save.isPending || !f.title.trim()} className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm font-bold disabled:opacity-50">Add</button>
     {more && <div className="basis-full flex flex-wrap items-center gap-2 pl-6">
       <WorkForSelect value={f.work_for} onChange={v => setF({ ...f, work_for: v })} />
       <label className="text-xs text-stone-500 flex items-center gap-1">Start<input aria-label="Start date" type="date" value={f.start_date} max={f.due_date || undefined} onChange={e => setF({ ...f, start_date: e.target.value })} className={input} /></label>
@@ -207,19 +207,19 @@ function WorkRow({ item, today }: { item: WorkItem; today: string }) {
 
   return <li className="group flex items-center gap-3 px-5 py-2 hover:bg-stone-50/70">
     <button aria-label={done ? `Reopen ${item.title}` : `Mark ${item.title} done`} onClick={() => update({ status: done ? 'in_progress' : 'done' })}
-      className={`w-5 h-5 shrink-0 rounded-full border flex items-center justify-center ${done ? 'bg-[#087f73] border-[#087f73] text-white' : 'border-stone-300 hover:border-[#087f73]'}`}>
+      className={`w-5 h-5 shrink-0 rounded-full border flex items-center justify-center ${done ? 'bg-blue-600 border-blue-600 text-white' : 'border-stone-300 hover:border-blue-600'}`}>
       {done && <Check className="w-3 h-3" />}
     </button>
     <div className="flex-1 min-w-0">
       <div className={`text-sm truncate ${done ? 'line-through text-stone-400' : 'text-stone-800 font-medium'}`}>
-        {item.is_milestone && <Diamond className="inline w-3 h-3 mr-1 -mt-0.5 text-[#087f73]" aria-label="Milestone" />}{item.title}
+        {item.is_milestone && <Diamond className="inline w-3 h-3 mr-1 -mt-0.5 text-blue-600" aria-label="Milestone" />}{item.title}
       </div>
       <div className="text-[11px] text-stone-500 truncate">
-        {item.plan ? <Link to={`/drafting/plans/${item.plan.id}`} className="hover:text-[#087f73]">{item.plan.code}</Link> : <span>Own task</span>}
+        {item.plan ? <Link to={`/drafting/plans/${item.plan.id}`} className="hover:text-blue-600">{item.plan.code}</Link> : <span>Own task</span>}
         {item.project && <> · <span className="font-mono">{item.project.code}</span> {item.project.name}</>}
-        {item.initiative && <> · <Link to={`/initiatives/${item.initiative.id}`} className="hover:text-[#087f73]"><span className="font-mono">{item.initiative.code}</span> {item.initiative.name}</Link></>}
-        {item.enquiry && <> · <Link to={`/enquiries/${item.enquiry.id}`} className="hover:text-[#087f73]"><span className="font-mono">{item.enquiry.code}</span> {item.enquiry.name}</Link></>}
-        {item.design_book && <> · <Link to={`/design-books/${item.design_book.id}`} className="hover:text-[#087f73]"><span className="font-mono">{item.design_book.code}</span> {item.design_book.name}</Link></>}
+        {item.initiative && <> · <Link to={`/initiatives/${item.initiative.id}`} className="hover:text-blue-600"><span className="font-mono">{item.initiative.code}</span> {item.initiative.name}</Link></>}
+        {item.enquiry && <> · <Link to={`/enquiries/${item.enquiry.id}`} className="hover:text-blue-600"><span className="font-mono">{item.enquiry.code}</span> {item.enquiry.name}</Link></>}
+        {item.design_book && <> · <Link to={`/design-books/${item.design_book.id}`} className="hover:text-blue-600"><span className="font-mono">{item.design_book.code}</span> {item.design_book.name}</Link></>}
         {item.planned_hours ? <> · {item.planned_hours} h</> : null}
       </div>
     </div>
@@ -233,7 +233,7 @@ function WorkRow({ item, today }: { item: WorkItem; today: string }) {
     </div>
     <div className="w-12 flex justify-end gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100">
       {item.kind === 'task' && <>
-        <button aria-label={`Edit ${item.title}`} onClick={() => setEditing(true)} className="p-1 text-stone-400 hover:text-[#087f73]"><Pencil className="w-3.5 h-3.5" /></button>
+        <button aria-label={`Edit ${item.title}`} onClick={() => setEditing(true)} className="p-1 text-stone-400 hover:text-blue-600"><Pencil className="w-3.5 h-3.5" /></button>
         <button aria-label={`Delete ${item.title}`} onClick={() => { if (window.confirm(`Delete "${item.title}"?`)) remove.mutateAsync(item.id).catch(err => toast.error(apiErrorMessage(err, 'Could not delete'))); }}
           className="p-1 text-stone-400 hover:text-rose-600"><Trash2 className="w-3.5 h-3.5" /></button>
       </>}
@@ -266,7 +266,7 @@ function EditOwnTask({ item, onClose }: { item: WorkItem; onClose: () => void })
     <input aria-label="Due date" type="date" value={f.due_date} onChange={e => setF({ ...f, due_date: e.target.value })} className={input} />
     <input aria-label="Planned hours" type="number" min={0.5} step={0.5} placeholder="h" value={f.planned_hours} onChange={e => setF({ ...f, planned_hours: e.target.value })} className={`${input} w-20`} />
     <input aria-label="Notes" value={f.notes} onChange={e => setF({ ...f, notes: e.target.value })} placeholder="Notes" className={`${input} basis-full`} />
-    <button disabled={save.isPending} className="px-3 py-1.5 rounded-lg bg-[#087f73] text-white text-sm font-bold">Save</button>
+    <button disabled={save.isPending} className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm font-bold">Save</button>
     <button type="button" onClick={onClose} className="px-2 py-1.5 text-sm text-stone-500">Cancel</button>
   </form>;
 }
@@ -280,8 +280,8 @@ function Commitments({ list }: { list: Commitment[] }) {
   const [form, setForm] = useState<Commitment | 'new' | null>(null);
   return <aside className="bg-white rounded-2xl border border-stone-200/70 shadow-sm p-4 self-start">
     <div className="flex items-center justify-between">
-      <h3 className="text-sm font-bold text-stone-800 flex items-center gap-1.5"><Repeat className="w-4 h-4 text-[#087f73]" /> Regular commitments</h3>
-      {form === null && <button onClick={() => setForm('new')} className="text-xs font-semibold text-[#087f73] inline-flex items-center gap-1"><Plus className="w-3.5 h-3.5" /> Add</button>}
+      <h3 className="text-sm font-bold text-stone-800 flex items-center gap-1.5"><Repeat className="w-4 h-4 text-blue-600" /> Regular commitments</h3>
+      {form === null && <button onClick={() => setForm('new')} className="text-xs font-semibold text-blue-600 inline-flex items-center gap-1"><Plus className="w-3.5 h-3.5" /> Add</button>}
     </div>
     <p className="text-[11px] text-stone-500 mt-1">Meetings and roles that take part of your time every week. They count in your booked hours.</p>
     {form !== null && <CommitmentForm initial={form === 'new' ? null : form} onClose={() => setForm(null)} />}
@@ -294,7 +294,7 @@ function Commitments({ list }: { list: Commitment[] }) {
             <div className="text-[11px] text-stone-500">{describeCommitment(c)} · {c.end_date ? `until ${fmt(c.end_date)}` : 'ongoing'}{c.project ? ` · ${c.project.code}` : ''}</div>
           </div>
           <div className="flex gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100">
-            <button aria-label={`Edit ${c.title}`} onClick={() => setForm(c)} className="p-1 text-stone-400 hover:text-[#087f73]"><Pencil className="w-3.5 h-3.5" /></button>
+            <button aria-label={`Edit ${c.title}`} onClick={() => setForm(c)} className="p-1 text-stone-400 hover:text-blue-600"><Pencil className="w-3.5 h-3.5" /></button>
             <button aria-label={`Delete ${c.title}`} onClick={() => { if (window.confirm(`Delete "${c.title}"?`)) remove.mutateAsync(c.id).catch(err => toast.error(apiErrorMessage(err, 'Could not delete'))); }}
               className="p-1 text-stone-400 hover:text-rose-600"><Trash2 className="w-3.5 h-3.5" /></button>
           </div>
@@ -342,7 +342,7 @@ function CommitmentForm({ initial, onClose }: { initial: Commitment | null; onCl
       : <div className="space-y-1.5">
           <div className="flex flex-wrap gap-1" role="group" aria-label="Days">
             {WEEKDAY_SHORT.map((d, i) => <button type="button" key={d} aria-pressed={f.weekdays.includes(i)} onClick={() => toggleDay(i)}
-              className={`px-2 py-0.5 rounded-md text-xs border ${f.weekdays.includes(i) ? 'bg-[#087f73] text-white border-[#087f73]' : 'bg-white border-stone-200 text-stone-600'}`}>{d}</button>)}
+              className={`px-2 py-0.5 rounded-md text-xs border ${f.weekdays.includes(i) ? 'bg-blue-600 text-white border-blue-600' : 'bg-white border-stone-200 text-stone-600'}`}>{d}</button>)}
           </div>
           <label className="text-xs text-stone-600 flex items-center gap-1"><input aria-label="Hours each day" type="number" min={0.25} max={24} step={0.25} value={f.hours} onChange={e => setF({ ...f, hours: e.target.value })} className={`${input} w-20`} /> hours each day</label>
         </div>}
@@ -352,6 +352,6 @@ function CommitmentForm({ initial, onClose }: { initial: Commitment | null; onCl
       <input aria-label="Until (empty = ongoing)" type="date" value={f.end_date} min={f.start_date} onChange={e => setF({ ...f, end_date: e.target.value })} className={input} />
     </div>
     <ProjectSelect value={f.project_id} onChange={v => setF({ ...f, project_id: v })} label="Project (optional)" />
-    <button disabled={save.isPending} className="w-full px-3 py-1.5 rounded-lg bg-[#087f73] text-white text-sm font-bold">{initial ? 'Save' : 'Add commitment'}</button>
+    <button disabled={save.isPending} className="w-full px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm font-bold">{initial ? 'Save' : 'Add commitment'}</button>
   </form>;
 }

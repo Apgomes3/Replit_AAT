@@ -28,21 +28,21 @@ export default function PeoplePanel() {
   return <div>
     <div className="flex flex-wrap items-center gap-3 mb-4">
       <PeopleFilterSelect value={filter} onChange={setFilter} />
-      <p className="text-sm text-[#6f8082]">Each person works on a calendar (hours per day and holidays). Capacity below 100% is for part-time work. Leave is taken out of their available hours.</p>
+      <p className="text-sm text-stone-500">Each person works on a calendar (hours per day and holidays). Capacity below 100% is for part-time work. Leave is taken out of their available hours.</p>
     </div>
 
-    <div className="bg-white rounded-xl border border-[#dce7e2] overflow-x-auto shadow-sm">
+    <div className="bg-white rounded-xl border border-stone-200 overflow-x-auto shadow-sm">
       <table className="w-full text-sm min-w-[900px]">
-        <thead><tr className="bg-[#f2f7f4] border-b border-[#dce7e2]">{['Person', 'Teams', 'Calendar', 'Capacity', 'Hours / week', 'Upcoming leave'].map(h =>
-          <th key={h} className="text-left px-4 py-2 text-[10px] uppercase tracking-[.13em] text-[#6f8082] font-extrabold">{h}</th>)}</tr></thead>
+        <thead><tr className="bg-stone-50 border-b border-stone-200">{['Person', 'Teams', 'Calendar', 'Capacity', 'Hours / week', 'Upcoming leave'].map(h =>
+          <th key={h} className="text-left px-4 py-2 text-xs font-semibold text-stone-500 uppercase tracking-wide">{h}</th>)}</tr></thead>
         <tbody>
           {people.isLoading && <tr><td colSpan={6} className="p-4"><div className="h-8 skeleton rounded" /></td></tr>}
-          {(people.data ?? []).map(p => <tr key={p.user_id} className="border-b border-[#edf2ef] last:border-0 align-top">
-            <td className="px-4 py-2.5"><div className="font-semibold">{p.name}</div><div className="text-xs text-[#8a9b9a]">{p.role}</div></td>
-            <td className="px-4 py-2.5 text-xs text-[#53686b]">{p.team_names.join(', ') || '—'}</td>
+          {(people.data ?? []).map(p => <tr key={p.user_id} className="border-b border-stone-100 last:border-0 align-top">
+            <td className="px-4 py-2.5"><div className="font-semibold">{p.name}</div><div className="text-xs text-stone-400">{p.role}</div></td>
+            <td className="px-4 py-2.5 text-xs text-stone-600">{p.team_names.join(', ') || '—'}</td>
             <td className="px-4 py-2.5">{canManage
               ? <select aria-label={`Calendar for ${p.name}`} value={p.calendar_id ?? ''} onChange={e => update(p, { calendar_id: e.target.value || null })}
-                  className="border border-[#dce7e2] rounded-md px-2 py-1 text-sm">
+                  className="border border-stone-200 rounded-md px-2 py-1 text-sm">
                   <option value="">Default{defaultCal ? ` (${defaultCal.name})` : ''}</option>
                   {(calendars.data ?? []).filter(c => !c.is_default).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
@@ -50,9 +50,9 @@ export default function PeoplePanel() {
             <td className="px-4 py-2.5">{canManage
               ? <label className="inline-flex items-center gap-1"><input aria-label={`Capacity of ${p.name}`} type="number" min={0} max={100} step={5} defaultValue={p.capacity_pct}
                   onBlur={e => { const v = Number(e.target.value); if (Number.isInteger(v) && v >= 0 && v <= 100 && v !== p.capacity_pct) update(p, { capacity_pct: v }); }}
-                  className="w-16 border border-[#dce7e2] rounded-md px-2 py-1 text-sm" />%</label>
+                  className="w-16 border border-stone-200 rounded-md px-2 py-1 text-sm" />%</label>
               : `${p.capacity_pct}%`}</td>
-            <td className="px-4 py-2.5 tabular-nums text-[#53686b]">{Math.round(weekTotal(p.week_hours) * p.capacity_pct) / 100} h</td>
+            <td className="px-4 py-2.5 tabular-nums text-stone-600">{Math.round(weekTotal(p.week_hours) * p.capacity_pct) / 100} h</td>
             <td className="px-4 py-2.5"><LeaveCell person={p} leave={(leave.data ?? []).filter(l => l.user_id === p.user_id)} canManage={canManage} /></td>
           </tr>)}
         </tbody>
@@ -86,14 +86,14 @@ function LeaveCell({ person, leave, canManage }: { person: Resource; leave: Leav
     </div>)}
     {canManage && (form
       ? <form onSubmit={submit} className="flex flex-wrap items-center gap-1.5 text-xs">
-          <input aria-label="First day" type="date" required value={form.start} onChange={e => setForm({ ...form, start: e.target.value })} className="border border-[#dce7e2] rounded px-1.5 py-1" />
+          <input aria-label="First day" type="date" required value={form.start} onChange={e => setForm({ ...form, start: e.target.value })} className="border border-stone-200 rounded px-1.5 py-1" />
           <span>to</span>
-          <input aria-label="Last day" type="date" value={form.end} min={form.start} onChange={e => setForm({ ...form, end: e.target.value })} className="border border-[#dce7e2] rounded px-1.5 py-1" />
-          <input aria-label="Hours off per day (empty = whole days)" placeholder="whole days" type="number" min={0.5} max={24} step={0.5} value={form.hours} onChange={e => setForm({ ...form, hours: e.target.value })} className="w-20 border border-[#dce7e2] rounded px-1.5 py-1" />
-          <input aria-label="Reason" placeholder="Annual leave" value={form.reason} onChange={e => setForm({ ...form, reason: e.target.value })} className="w-28 border border-[#dce7e2] rounded px-1.5 py-1" />
-          <button disabled={add.isPending} className="px-2 py-1 rounded bg-[#087f73] text-white font-bold">Add</button>
+          <input aria-label="Last day" type="date" value={form.end} min={form.start} onChange={e => setForm({ ...form, end: e.target.value })} className="border border-stone-200 rounded px-1.5 py-1" />
+          <input aria-label="Hours off per day (empty = whole days)" placeholder="whole days" type="number" min={0.5} max={24} step={0.5} value={form.hours} onChange={e => setForm({ ...form, hours: e.target.value })} className="w-20 border border-stone-200 rounded px-1.5 py-1" />
+          <input aria-label="Reason" placeholder="Annual leave" value={form.reason} onChange={e => setForm({ ...form, reason: e.target.value })} className="w-28 border border-stone-200 rounded px-1.5 py-1" />
+          <button disabled={add.isPending} className="px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 font-bold">Add</button>
           <button type="button" onClick={() => setForm(null)} className="px-1.5 py-1">Cancel</button>
         </form>
-      : <button onClick={() => setForm({ start: '', end: '', hours: '', reason: '' })} className="inline-flex items-center gap-1 text-xs font-bold text-[#087f73]"><Plus className="w-3 h-3" /> Add leave</button>)}
+      : <button onClick={() => setForm({ start: '', end: '', hours: '', reason: '' })} className="inline-flex items-center gap-1 text-xs font-bold text-blue-600"><Plus className="w-3 h-3" /> Add leave</button>)}
   </div>;
 }

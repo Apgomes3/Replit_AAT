@@ -13,7 +13,7 @@ const emptyForm = (department?: string): FormState => ({
 
 export function Avatar({ person, size = 'sm' }: { person: Pick<Person, 'name'>; size?: 'sm' | 'md' }) {
   const cls = size === 'md' ? 'w-9 h-9 text-xs' : 'w-7 h-7 text-[10px]';
-  return <span title={person.name} className={`${cls} inline-flex items-center justify-center rounded-full bg-[#e4f2ee] text-[#087f73] font-extrabold ring-2 ring-white`}>{initials(person.name)}</span>;
+  return <span title={person.name} className={`${cls} inline-flex items-center justify-center rounded-full bg-blue-50 text-blue-600 font-extrabold ring-2 ring-white`}>{initials(person.name)}</span>;
 }
 
 export default function TeamsPanel() {
@@ -38,37 +38,37 @@ export default function TeamsPanel() {
 
   return <div>
     <div className="flex items-center justify-between mb-4">
-      <p className="text-sm text-[#6f8082]">{company
+      <p className="text-sm text-stone-500">{company
         ? 'Every team in the company, by department. A person can be in more than one team. Drafting teams are also managed from the Drafting screen.'
         : 'Each team has a manager and the drafters whose work they oversee.'}</p>
-      {canManage && <button onClick={() => setForm(emptyForm(company ? '' : undefined))} className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-[#087f73] text-white text-sm font-bold shrink-0"><Plus className="w-4 h-4" /> New team</button>}
+      {canManage && <button onClick={() => setForm(emptyForm(company ? '' : undefined))} className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 text-sm font-bold shrink-0"><Plus className="w-4 h-4" /> New team</button>}
     </div>
 
     {teams.isLoading ? <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">{[1, 2, 3].map(i => <div key={i} className="h-40 skeleton rounded-xl" />)}</div>
       : !teams.data?.length ? <div className="bg-white rounded-xl border border-dashed border-[#c9d9d2] p-16 text-center">
-        <UsersRound className="mx-auto w-9 h-9 text-[#b8d9d0] mb-3" />
+        <UsersRound className="mx-auto w-9 h-9 text-stone-300 mb-3" />
         <p className="font-bold">{company ? 'No teams yet' : 'No drafting teams yet'}</p>
-        <p className="text-sm text-[#6f8082] mt-1">{company ? 'Create a team, put it in a department, choose its manager and add its people.' : 'Create a team, choose its manager and add the drafters.'}</p>
+        <p className="text-sm text-stone-500 mt-1">{company ? 'Create a team, put it in a department, choose its manager and add its people.' : 'Create a team, choose its manager and add the drafters.'}</p>
       </div>
       : groups.map(g => <section key={g.department || 'all'} className="mb-6">
-        {company && <h2 className="text-[11px] font-extrabold uppercase tracking-[.14em] text-[#6f8082] mb-2">{g.department} · {g.teams.length} {g.teams.length === 1 ? 'team' : 'teams'}</h2>}
+        {company && <h2 className="text-[11px] font-extrabold uppercase tracking-[.14em] text-stone-500 mb-2">{g.department} · {g.teams.length} {g.teams.length === 1 ? 'team' : 'teams'}</h2>}
         <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
-        {g.teams.map(team => <article key={team.id} className={`bg-white rounded-xl border border-[#dce7e2] p-5 shadow-sm ${team.active ? '' : 'opacity-60'}`}>
+        {g.teams.map(team => <article key={team.id} className={`bg-white rounded-xl border border-stone-200 p-5 shadow-sm ${team.active ? '' : 'opacity-60'}`}>
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <h3 className="font-extrabold truncate">{team.name}</h3>
-              {team.description && <p className="text-xs text-[#6f8082] mt-1 line-clamp-2">{team.description}</p>}
+              {team.description && <p className="text-xs text-stone-500 mt-1 line-clamp-2">{team.description}</p>}
             </div>
             <div className="flex items-center gap-1 shrink-0">
               {!team.active && <span className="px-2 py-1 rounded-md text-[10px] uppercase font-extrabold bg-stone-100 text-stone-500">Inactive</span>}
-              {canManage && <button onClick={() => openEdit(team)} className="p-2 text-[#80908f] hover:text-[#087f73]" aria-label={`Edit ${team.name}`}><Pencil className="w-4 h-4" /></button>}
+              {canManage && <button onClick={() => openEdit(team)} className="p-2 text-stone-400 hover:text-blue-600" aria-label={`Edit ${team.name}`}><Pencil className="w-4 h-4" /></button>}
             </div>
           </div>
-          <div className="mt-4 text-[10px] uppercase tracking-[.13em] text-[#6f8082] font-extrabold">Manager</div>
-          <div className="mt-1.5 flex items-center gap-2 text-sm">{team.manager ? <><Avatar person={team.manager} /> <span className="font-semibold">{team.manager.name}</span></> : <span className="text-[#8a9b9a]">Not assigned</span>}</div>
-          <div className="mt-4 text-[10px] uppercase tracking-[.13em] text-[#6f8082] font-extrabold">Team · {team.members.length} {team.members.length === 1 ? 'person' : 'people'}</div>
-          <div className="mt-1.5 flex -space-x-1.5 flex-wrap">{team.members.length ? team.members.map(m => <Avatar key={m.id} person={m} />) : <span className="text-sm text-[#8a9b9a]">No members yet</span>}</div>
-          <div className="mt-4 pt-3 border-t border-[#edf2ef] text-xs text-[#53686b]"><b>{team.plan_count}</b> open {team.plan_count === 1 ? 'plan' : 'plans'}</div>
+          <div className="mt-4 text-xs font-semibold text-stone-500 uppercase tracking-wide">Manager</div>
+          <div className="mt-1.5 flex items-center gap-2 text-sm">{team.manager ? <><Avatar person={team.manager} /> <span className="font-semibold">{team.manager.name}</span></> : <span className="text-stone-400">Not assigned</span>}</div>
+          <div className="mt-4 text-xs font-semibold text-stone-500 uppercase tracking-wide">Team · {team.members.length} {team.members.length === 1 ? 'person' : 'people'}</div>
+          <div className="mt-1.5 flex -space-x-1.5 flex-wrap">{team.members.length ? team.members.map(m => <Avatar key={m.id} person={m} />) : <span className="text-sm text-stone-400">No members yet</span>}</div>
+          <div className="mt-4 pt-3 border-t border-stone-100 text-xs text-stone-600"><b>{team.plan_count}</b> open {team.plan_count === 1 ? 'plan' : 'plans'}</div>
         </article>)}
         </div>
       </section>)}
@@ -116,7 +116,7 @@ function TeamForm({ form, setForm, onClose, departments }: { form: FormState; se
     <label className={fieldLabel}>Team name<input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder={company ? 'e.g. ASW Engineering' : 'e.g. Fabrication Drawing Team'} className={fieldInput} /></label>
     {company && <label className={fieldLabel}>Department<input required list="team-departments" value={form.department ?? ''} onChange={e => setForm({ ...form, department: e.target.value })} placeholder="e.g. Engineering" className={fieldInput} />
       <datalist id="team-departments">{departmentOptions.map(d => <option key={d} value={d} />)}</datalist>
-      {form.id && form.department?.trim().toLowerCase() !== 'drafting' && <span className="block text-[11px] font-normal text-[#8a9b9a] mt-1">Only teams in Drafting show on the Drafting screen.</span>}
+      {form.id && form.department?.trim().toLowerCase() !== 'drafting' && <span className="block text-[11px] font-normal text-stone-400 mt-1">Only teams in Drafting show on the Drafting screen.</span>}
     </label>}
     <label className={fieldLabel}>Manager<select value={form.manager_user_id ?? ''} onChange={e => setForm({ ...form, manager_user_id: e.target.value || null })} className={fieldInput}>
       <option value="">Not assigned</option>
@@ -125,20 +125,20 @@ function TeamForm({ form, setForm, onClose, departments }: { form: FormState; se
     <label className={`sm:col-span-2 ${fieldLabel}`}>Description<textarea value={form.description ?? ''} onChange={e => setForm({ ...form, description: e.target.value })} rows={2} className={fieldInput} /></label>
     {form.id && <label className={`${fieldLabel} flex items-center gap-2`}><input type="checkbox" checked={form.active !== false} onChange={e => setForm({ ...form, active: e.target.checked })} /> Team is active</label>}
 
-    <fieldset className="sm:col-span-2 border-t border-[#edf2ef] pt-4">
+    <fieldset className="sm:col-span-2 border-t border-stone-100 pt-4">
       <legend className="sr-only">Team members</legend>
       <div className="flex items-center justify-between gap-3 mb-2">
-        <div><h3 className="font-extrabold text-sm">Members</h3><p className="text-xs text-[#6f8082]">{form.member_ids.length} selected. Drafters need a Shark OS user account (Admin › Users).</p></div>
-        <div className="relative w-48"><Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-[#8da09d]" /><input aria-label="Filter people" value={filter} onChange={e => setFilter(e.target.value)} placeholder="Filter people…" className="w-full pl-8 pr-2 py-1.5 border border-[#dce7e2] rounded-lg text-xs" /></div>
+        <div><h3 className="font-extrabold text-sm">Members</h3><p className="text-xs text-stone-500">{form.member_ids.length} selected. Drafters need a Shark OS user account (Admin › Users).</p></div>
+        <div className="relative w-48"><Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-stone-400" /><input aria-label="Filter people" value={filter} onChange={e => setFilter(e.target.value)} placeholder="Filter people…" className="w-full pl-8 pr-2 py-1.5 border border-stone-200 rounded-lg text-xs" /></div>
       </div>
-      <div className="max-h-56 overflow-auto rounded-lg border border-[#dce7e2] divide-y divide-[#edf2ef]">
-        {people.isLoading ? <div className="p-3 text-xs text-[#6f8082]">Loading people…</div>
-          : candidates.length === 0 ? <div className="p-3 text-xs text-[#6f8082]">No matching people.</div>
-          : candidates.map(p => <label key={p.id} className="flex items-center gap-3 px-3 py-2 text-sm hover:bg-[#f4faf7] cursor-pointer">
+      <div className="max-h-56 overflow-auto rounded-lg border border-stone-200 divide-y divide-stone-100">
+        {people.isLoading ? <div className="p-3 text-xs text-stone-500">Loading people…</div>
+          : candidates.length === 0 ? <div className="p-3 text-xs text-stone-500">No matching people.</div>
+          : candidates.map(p => <label key={p.id} className="flex items-center gap-3 px-3 py-2 text-sm hover:bg-stone-50 cursor-pointer">
             <input type="checkbox" aria-label={`${p.name} (${p.email})`} checked={form.member_ids.includes(p.id)} onChange={() => toggleMember(p.id)} />
             <Avatar person={p} />
             <span className="font-semibold">{p.name}</span>
-            <span className="text-xs text-[#8a9b9a] truncate">{p.email}</span>
+            <span className="text-xs text-stone-400 truncate">{p.email}</span>
           </label>)}
       </div>
     </fieldset>

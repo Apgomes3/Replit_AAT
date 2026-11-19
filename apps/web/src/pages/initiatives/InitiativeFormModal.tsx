@@ -74,7 +74,7 @@ export default function InitiativeFormModal({ initiative, onClose, onSaved }: { 
         </div>
         <div className="p-5 bg-stone-50 flex justify-end gap-2 rounded-b-2xl">
           <button type="button" onClick={onClose} className="px-4 py-2 text-sm">Cancel</button>
-          <button disabled={save.isPending} className="px-4 py-2 rounded-lg bg-[#087f73] text-white text-sm font-bold disabled:opacity-60">{save.isPending ? 'Saving…' : initiative ? 'Save' : 'Propose'}</button>
+          <button disabled={save.isPending} className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 text-sm font-bold disabled:opacity-60">{save.isPending ? 'Saving…' : initiative ? 'Save' : 'Propose'}</button>
         </div>
       </form>
     </div>

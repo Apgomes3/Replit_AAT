@@ -1,3 +1,4 @@
+import { useRecordTitle } from '../../hooks/usePageTitle';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
 import FollowRecordButton from '../../components/ui/FollowRecordButton';
@@ -4675,6 +4676,7 @@ export default function DesignBookDetail() {
     queryFn: () => api.get(`/design-books/${id}`).then(r => r.data),
     enabled: !!id,
   });
+  useRecordTitle(book?.book_title);
 
   const { data: projectsData } = useQuery({
     queryKey: ['projects-for-select'],
@@ -5066,7 +5068,7 @@ export default function DesignBookDetail() {
                   <span className="font-mono text-xs bg-stone-100 text-stone-600 px-1.5 py-0.5 rounded">Rev {book.revision}</span>
                   <StatusBadge status={book.status} />
                 </div>
-                <h1 className="text-xl font-bold text-stone-900">{book.book_title}</h1>
+                <h1 className="text-xl font-semibold text-stone-800 leading-tight">{book.book_title}</h1>
                 {book.description && <p className="text-stone-500 text-sm mt-1">{book.description}</p>}
                 {book.project_code && (
                   <Link

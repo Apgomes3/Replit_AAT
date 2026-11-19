@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import PageHeader from '../../components/ui/PageHeader';
+import Button from '../../components/ui/Button';
 import { Link, useNavigate } from 'react-router-dom';
 import { Lightbulb, Plus, Search } from 'lucide-react';
 import InitiativeFormModal from './InitiativeFormModal';
@@ -38,15 +40,15 @@ export default function InitiativesBoard() {
   const rows = list.data ?? [];
   const columns = showDropped ? [...COLUMNS, 'dropped' as Stage] : COLUMNS;
 
-  return <div className="p-6">
-    <header className="flex flex-wrap items-start justify-between gap-4 mb-5">
-      <div>
-        <div className="text-[11px] font-bold uppercase tracking-[.16em] text-[#087f73]">Internal work</div>
-        <h1 className="text-2xl font-extrabold mt-2">Initiatives</h1>
-        <p className="text-sm text-stone-500 mt-1">New products, better processes, standards, tools and training: work that is not a client project.</p>
-      </div>
-      <button onClick={() => setProposing(true)} className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-[#087f73] text-white text-sm font-bold"><Plus className="w-4 h-4" /> Propose an initiative</button>
-    </header>
+  return <div>
+    <PageHeader
+      crumbs={[{ label: 'Management' }, { label: 'Initiatives' }]}
+      title="Initiatives"
+      subtitle="New products, better processes, standards, tools and training: work that is not a client project."
+      actions={<Button variant="primary" onClick={() => setProposing(true)}><Plus className="w-4 h-4" /> Propose an initiative</Button>}
+    />
+    <div className="p-6">
+    
 
     <div className="flex flex-wrap items-center gap-3 mb-4">
       <div className="relative w-full max-w-xs">
@@ -81,5 +83,6 @@ export default function InitiativesBoard() {
         </div>}
 
     {proposing && <InitiativeFormModal onClose={() => setProposing(false)} onSaved={i => navigate(`/initiatives/${i.id}`)} />}
+    </div>
   </div>;
 }

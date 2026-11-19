@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import PageHeader from '../../components/ui/PageHeader';
 import { Link, useNavigate } from 'react-router-dom';
 import api from '../../lib/api';
 import { Package, Boxes, Pipette, Container, ArrowRight, ChevronLeft, ArrowUpRight } from 'lucide-react';
@@ -146,25 +147,9 @@ export default function PIMDashboard() {
   ];
 
   return (
+    <div>
+      <PageHeader crumbs={[{ label: 'Products' }]} title="Products overview" subtitle="Master catalog: products, components, pipes & fittings and tanks." />
     <div className="p-6 max-w-6xl">
-      <div className="flex items-center gap-3 mb-6">
-        <button
-          onClick={() => navigate('/')}
-          className="flex items-center gap-1.5 text-sm text-stone-400 hover:text-blue-600 transition-colors duration-150 group"
-        >
-          <ChevronLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform duration-150" />
-          Home
-        </button>
-        <span className="text-stone-300">/</span>
-        <span className="text-sm text-stone-600 font-medium">PIM Management</span>
-      </div>
-
-      <div className="flex items-start justify-between mb-7">
-        <div>
-          <h1 className="text-2xl font-bold text-stone-800 mb-1">PIM Management</h1>
-          <p className="text-stone-400 text-sm">Product Information Management — master catalog overview</p>
-        </div>
-      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
         {sections.map(sec => {
@@ -215,6 +200,7 @@ export default function PIMDashboard() {
           );
         })}
       </div>
+    </div>
     </div>
   );
 }

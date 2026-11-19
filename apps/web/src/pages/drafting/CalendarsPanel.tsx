@@ -22,10 +22,10 @@ export default function CalendarsPanel() {
   return <div className="grid lg:grid-cols-[260px_1fr] gap-5">
     <aside className="space-y-2">
       {list.map(c => <button key={c.id} onClick={() => setSelected(c.id)}
-        className={`w-full text-left rounded-xl border px-4 py-3 ${cal?.id === c.id ? 'border-[#087f73] bg-[#f2f7f4]' : 'border-[#dce7e2] bg-white hover:bg-[#f8fbf9]'}`}>
+        className={`w-full text-left rounded-xl border px-4 py-3 ${cal?.id === c.id ? 'border-blue-600 bg-stone-50' : 'border-stone-200 bg-white hover:bg-stone-50'}`}>
         <div className="flex items-center gap-1.5 font-bold text-sm">{c.is_default && <Star className="w-3.5 h-3.5 text-amber-500" aria-label="Default" />}{c.name}</div>
-        <div className="text-xs text-[#6f8082] mt-0.5">{weekTotal(c.week_hours)} h/week · {c.exception_count} special days</div>
-        <div className="text-[11px] text-[#8a9b9a]">{c.plan_count} plans · {c.people_count} people{c.is_default ? ' · plus everyone without a calendar' : ''}</div>
+        <div className="text-xs text-stone-500 mt-0.5">{weekTotal(c.week_hours)} h/week · {c.exception_count} special days</div>
+        <div className="text-[11px] text-stone-400">{c.plan_count} plans · {c.people_count} people{c.is_default ? ' · plus everyone without a calendar' : ''}</div>
       </button>)}
       {canManage && <NewCalendar defaultId={list.find(c => c.is_default)?.id} onCreated={setSelected} />}
     </aside>
@@ -45,8 +45,8 @@ function NewCalendar({ defaultId, onCreated }: { defaultId?: string; onCreated: 
     } catch (err) { toast.error(apiErrorMessage(err, 'Could not add calendar')); }
   };
   return <form onSubmit={create} className="flex gap-2">
-    <input aria-label="New calendar name" value={name} onChange={e => setName(e.target.value)} placeholder="Part-time Mon-Fri" className="flex-1 min-w-0 border border-[#dce7e2] rounded-lg px-3 py-2 text-sm" />
-    <button disabled={save.isPending} aria-label="Add calendar" className="px-3 rounded-lg bg-[#087f73] text-white"><Plus className="w-4 h-4" /></button>
+    <input aria-label="New calendar name" value={name} onChange={e => setName(e.target.value)} placeholder="Part-time Mon-Fri" className="flex-1 min-w-0 border border-stone-200 rounded-lg px-3 py-2 text-sm" />
+    <button disabled={save.isPending} aria-label="Add calendar" className="px-3 rounded-lg bg-blue-600 text-white hover:bg-blue-700"><Plus className="w-4 h-4" /></button>
   </form>;
 }
 
@@ -79,24 +79,24 @@ function CalendarEditor({ cal, canManage, onDeleted }: { cal: Calendar; canManag
     catch (err) { toast.error(apiErrorMessage(err, 'Could not delete calendar')); }
   };
 
-  return <section className="bg-white rounded-xl border border-[#dce7e2] shadow-sm">
-    <div className="p-5 border-b border-[#edf2ef] grid sm:grid-cols-2 gap-4">
-      <label className="text-xs font-bold text-[#53686b]">Name<input disabled={!canManage} value={name} onChange={e => setName(e.target.value)} className="mt-1.5 w-full border border-[#dce7e2] rounded-lg px-3 py-2 text-sm font-normal" /></label>
-      <label className="text-xs font-bold text-[#53686b]">Description<input disabled={!canManage} value={description} onChange={e => setDescription(e.target.value)} className="mt-1.5 w-full border border-[#dce7e2] rounded-lg px-3 py-2 text-sm font-normal" /></label>
+  return <section className="bg-white rounded-xl border border-stone-200 shadow-sm">
+    <div className="p-5 border-b border-stone-100 grid sm:grid-cols-2 gap-4">
+      <label className="text-xs font-bold text-stone-600">Name<input disabled={!canManage} value={name} onChange={e => setName(e.target.value)} className="mt-1.5 w-full border border-stone-200 rounded-lg px-3 py-2 text-sm font-normal" /></label>
+      <label className="text-xs font-bold text-stone-600">Description<input disabled={!canManage} value={description} onChange={e => setDescription(e.target.value)} className="mt-1.5 w-full border border-stone-200 rounded-lg px-3 py-2 text-sm font-normal" /></label>
       <fieldset className="sm:col-span-2">
-        <legend className="text-xs font-bold text-[#53686b]">Working hours per day <span className="font-normal text-[#8a9b9a]">(0 = day off)</span></legend>
+        <legend className="text-xs font-bold text-stone-600">Working hours per day <span className="font-normal text-stone-400">(0 = day off)</span></legend>
         <div className="mt-1.5 grid grid-cols-7 gap-2">
-          {WEEKDAYS.map((d, i) => <label key={d} className="text-center text-xs text-[#6f8082]">{d}
+          {WEEKDAYS.map((d, i) => <label key={d} className="text-center text-xs text-stone-500">{d}
             <input disabled={!canManage} aria-label={`${d} hours`} type="number" min={0} max={24} step={0.5} value={hours[i]}
               onChange={e => setHours(hours.map((h, j) => (j === i ? e.target.value : h)))}
-              className={`mt-1 w-full border rounded-lg px-1 py-2 text-sm text-center ${Number(hours[i]) > 0 ? 'border-[#b8d9d0] bg-[#f2f7f4] font-bold text-[#20333a]' : 'border-[#dce7e2] text-[#8a9b9a]'}`} />
+              className={`mt-1 w-full border rounded-lg px-1 py-2 text-sm text-center ${Number(hours[i]) > 0 ? 'border-stone-300 bg-stone-50 font-bold text-stone-800' : 'border-stone-200 text-stone-400'}`} />
           </label>)}
         </div>
-        <p className="mt-1.5 text-xs text-[#6f8082]">{valid ? `${weekTotal(parsed)} hours a week, ${parsed.filter(h => h > 0).length} working days.` : 'Enter 0–24 hours, with at least one working day.'}</p>
+        <p className="mt-1.5 text-xs text-stone-500">{valid ? `${weekTotal(parsed)} hours a week, ${parsed.filter(h => h > 0).length} working days.` : 'Enter 0–24 hours, with at least one working day.'}</p>
       </fieldset>
       {canManage && <div className="sm:col-span-2 flex flex-wrap gap-2">
-        <button onClick={submit} disabled={!dirty || save.isPending} className="px-4 py-2 rounded-lg bg-[#087f73] text-white text-sm font-bold disabled:opacity-40">Save working week</button>
-        {!cal.is_default && <button onClick={makeDefault} className="px-3 py-2 rounded-lg border border-[#dce7e2] text-sm font-bold text-[#53686b]"><Star className="inline w-3.5 h-3.5 mr-1" />Make default</button>}
+        <button onClick={submit} disabled={!dirty || save.isPending} className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 text-sm font-bold disabled:opacity-40">Save working week</button>
+        {!cal.is_default && <button onClick={makeDefault} className="px-3 py-2 rounded-lg border border-stone-200 text-sm font-bold text-stone-600"><Star className="inline w-3.5 h-3.5 mr-1" />Make default</button>}
         {!cal.is_default && <button onClick={del} className="ml-auto px-3 py-2 text-sm font-bold text-rose-700"><Trash2 className="inline w-3.5 h-3.5 mr-1" />Delete</button>}
       </div>}
     </div>
@@ -133,27 +133,27 @@ function SpecialDays({ cal, canManage }: { cal: Calendar; canManage: boolean }) 
 
   return <div className="p-5">
     <div className="flex flex-wrap items-center gap-2 mb-3">
-      <h3 className="font-extrabold text-sm flex items-center gap-1.5"><CalendarDays className="w-4 h-4 text-[#087f73]" /> Holidays and make-up working days</h3>
+      <h3 className="font-extrabold text-sm flex items-center gap-1.5"><CalendarDays className="w-4 h-4 text-blue-600" /> Holidays and make-up working days</h3>
       <div className="ml-auto flex gap-1">{[...new Set([...years, String(new Date().getFullYear()), String(new Date().getFullYear() + 1)])].sort().map(y =>
-        <button key={y} onClick={() => setYear(y)} className={`px-2.5 py-1 rounded-md text-xs font-bold ${y === year ? 'bg-[#087f73] text-white' : 'border border-[#dce7e2] text-[#53686b]'}`}>{y}</button>)}</div>
+        <button key={y} onClick={() => setYear(y)} className={`px-2.5 py-1 rounded-md text-xs font-bold ${y === year ? 'bg-blue-600 text-white hover:bg-blue-700' : 'border border-stone-200 text-stone-600'}`}>{y}</button>)}</div>
     </div>
-    {canManage && <form onSubmit={add} className="flex flex-wrap items-end gap-2 mb-4 rounded-lg bg-[#f8fbf9] border border-[#edf2ef] p-3 text-xs">
-      <label className="font-bold text-[#53686b]">From<input type="date" required value={form.from} onChange={e => setForm({ ...form, from: e.target.value })} className="block mt-1 border border-[#dce7e2] rounded px-2 py-1.5 font-normal" /></label>
-      <label className="font-bold text-[#53686b]">To<input type="date" value={form.to} min={form.from} onChange={e => setForm({ ...form, to: e.target.value })} className="block mt-1 border border-[#dce7e2] rounded px-2 py-1.5 font-normal" /></label>
-      <label className="font-bold text-[#53686b]">Type<select value={form.kind} onChange={e => setForm({ ...form, kind: e.target.value })} className="block mt-1 border border-[#dce7e2] rounded px-2 py-1.5 font-normal">
+    {canManage && <form onSubmit={add} className="flex flex-wrap items-end gap-2 mb-4 rounded-lg bg-stone-50 border border-stone-100 p-3 text-xs">
+      <label className="font-bold text-stone-600">From<input type="date" required value={form.from} onChange={e => setForm({ ...form, from: e.target.value })} className="block mt-1 border border-stone-200 rounded px-2 py-1.5 font-normal" /></label>
+      <label className="font-bold text-stone-600">To<input type="date" value={form.to} min={form.from} onChange={e => setForm({ ...form, to: e.target.value })} className="block mt-1 border border-stone-200 rounded px-2 py-1.5 font-normal" /></label>
+      <label className="font-bold text-stone-600">Type<select value={form.kind} onChange={e => setForm({ ...form, kind: e.target.value })} className="block mt-1 border border-stone-200 rounded px-2 py-1.5 font-normal">
         <option value="holiday">Holiday (no work)</option><option value="working">Make-up working day</option></select></label>
-      {form.kind === 'working' && <label className="font-bold text-[#53686b]">Hours<input type="number" min={0.5} max={24} step={0.5} value={form.hours} onChange={e => setForm({ ...form, hours: e.target.value })} className="block mt-1 w-16 border border-[#dce7e2] rounded px-2 py-1.5 font-normal" /></label>}
-      <label className="font-bold text-[#53686b] flex-1 min-w-[160px]">Name<input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Spring Festival" className="block mt-1 w-full border border-[#dce7e2] rounded px-2 py-1.5 font-normal" /></label>
-      <button disabled={saveDays.isPending} className="px-3 py-1.5 rounded-lg bg-[#087f73] text-white font-bold">Add</button>
+      {form.kind === 'working' && <label className="font-bold text-stone-600">Hours<input type="number" min={0.5} max={24} step={0.5} value={form.hours} onChange={e => setForm({ ...form, hours: e.target.value })} className="block mt-1 w-16 border border-stone-200 rounded px-2 py-1.5 font-normal" /></label>}
+      <label className="font-bold text-stone-600 flex-1 min-w-[160px]">Name<input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Spring Festival" className="block mt-1 w-full border border-stone-200 rounded px-2 py-1.5 font-normal" /></label>
+      <button disabled={saveDays.isPending} className="px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 font-bold">Add</button>
     </form>}
     {days.isLoading ? <div className="h-24 skeleton rounded" />
-      : !shown.length ? <p className="text-sm text-[#6f8082]">No special days in {year}.{canManage ? ' Add the official public holidays once they are published.' : ''}</p>
-      : <ul className="grid sm:grid-cols-2 xl:grid-cols-3 gap-x-6">{shown.map(d => <li key={d.day} className="flex items-center gap-2 py-1.5 border-b border-[#edf2ef] text-sm">
-          <span className={`w-2 h-2 rounded-full ${d.hours > 0 ? 'bg-[#087f73]' : 'bg-rose-400'}`} />
+      : !shown.length ? <p className="text-sm text-stone-500">No special days in {year}.{canManage ? ' Add the official public holidays once they are published.' : ''}</p>
+      : <ul className="grid sm:grid-cols-2 xl:grid-cols-3 gap-x-6">{shown.map(d => <li key={d.day} className="flex items-center gap-2 py-1.5 border-b border-stone-100 text-sm">
+          <span className={`w-2 h-2 rounded-full ${d.hours > 0 ? 'bg-blue-600' : 'bg-rose-400'}`} />
           <span className="w-32 tabular-nums">{fmt(d.day)}</span>
-          <span className="flex-1 truncate text-[#53686b]">{d.name ?? (d.hours > 0 ? 'Working day' : 'Holiday')}{d.hours > 0 ? ` · ${d.hours} h` : ''}</span>
+          <span className="flex-1 truncate text-stone-600">{d.name ?? (d.hours > 0 ? 'Working day' : 'Holiday')}{d.hours > 0 ? ` · ${d.hours} h` : ''}</span>
           {canManage && <button aria-label={`Remove ${d.day}`} onClick={() => deleteDays.mutateAsync({ id: cal.id, days: [d.day] }).catch(err => toast.error(apiErrorMessage(err, 'Could not remove')))}
-            className="p-1 text-[#80908f] hover:text-rose-700"><Trash2 className="w-3.5 h-3.5" /></button>}
+            className="p-1 text-stone-400 hover:text-rose-700"><Trash2 className="w-3.5 h-3.5" /></button>}
         </li>)}</ul>}
   </div>;
 }

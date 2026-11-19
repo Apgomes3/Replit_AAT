@@ -57,7 +57,7 @@ export default function EntityCode({ code, className }: { code: string; classNam
         }
       }}
       className={clsx(
-        'inline-flex items-center gap-1 font-mono text-xs bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded border border-slate-200 cursor-pointer hover:bg-blue-50 hover:border-blue-200 hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1',
+        'inline-flex items-center gap-1 whitespace-nowrap shrink-0 font-mono text-xs bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded border border-slate-200 cursor-pointer hover:bg-blue-50 hover:border-blue-200 hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1',
         className,
       )}
     >

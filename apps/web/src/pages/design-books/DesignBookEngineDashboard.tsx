@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import PageHeader from '../../components/ui/PageHeader';
 import { Link, useNavigate } from 'react-router-dom';
 import api from '../../lib/api';
 import { BookMarked, ChevronLeft, ArrowUpRight, Plus, FolderOpen } from 'lucide-react';
@@ -45,38 +46,10 @@ export default function DesignBookEngineDashboard() {
   const activeBooks = books.filter(b => ['In Progress', 'For Review'].includes(b.status));
 
   return (
+    <div>
+      <PageHeader crumbs={[{ label: 'Engineering' }, { label: 'Design Books', href: '/design-books' }, { label: 'Overview' }]} title="Design Books overview" subtitle="Engineering design books: exhibits, LSS and piping calculations."
+        actions={<Link to="/design-books" className="inline-flex items-center gap-1.5 rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm font-medium text-stone-700 hover:bg-stone-50">All design books</Link>} />
     <div className="p-6 max-w-6xl">
-      {/* Breadcrumb */}
-      <div className="flex items-center gap-3 mb-6">
-        <button
-          onClick={() => navigate('/')}
-          className="flex items-center gap-1.5 text-sm text-stone-400 hover:text-blue-600 transition-colors duration-150 group"
-        >
-          <ChevronLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform duration-150" />
-          Home
-        </button>
-        <span className="text-stone-300">/</span>
-        <span className="text-sm text-stone-600 font-medium">Design Book Engine</span>
-      </div>
-
-      {/* Header */}
-      <div className="flex items-start justify-between mb-7">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-violet-700 flex items-center justify-center shadow-lg shadow-violet-600/25">
-            <BookMarked className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-stone-800">Design Book Engine</h1>
-            <p className="text-stone-400 text-sm">Engineering design books — exhibits, LSS, piping calculations</p>
-          </div>
-        </div>
-        <Link
-          to="/design-books"
-          className="flex items-center gap-1.5 text-sm font-medium text-violet-600 hover:text-violet-700 border border-violet-200 hover:border-violet-400 bg-white px-3 py-1.5 rounded-lg transition-all duration-150 shadow-sm hover:shadow active:scale-95"
-        >
-          <Plus className="w-3.5 h-3.5" /> All Design Books
-        </Link>
-      </div>
 
       {/* Status counts */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
@@ -190,6 +163,7 @@ export default function DesignBookEngineDashboard() {
           )}
         </div>
       </div>
+    </div>
     </div>
   );
 }

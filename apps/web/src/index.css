@@ -1,16 +1,22 @@
 @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap');
 @import "tailwindcss";
 
+/*
+ * Theme tokens. One action colour (blue) and one neutral scale (stone), matching the
+ * Tailwind classes the pages use: blue-600/700/50 and stone-800/500/200/50.
+ * Use Tailwind's blue-* / stone-* classes in components; these variables are for CSS
+ * that cannot use classes (focus ring, body, third-party widgets).
+ */
 :root {
-  --ink: #20333a;
-  --muted: #6f8082;
-  --paper: #f5f8f6;
+  --ink: #292524;          /* stone-800 */
+  --muted: #78716c;        /* stone-500 */
+  --paper: #fafaf9;        /* stone-50, same as the app shell */
   --surface: #ffffff;
-  --line: #dce7e2;
-  --accent: #087f73;
-  --accent-deep: #075c56;
-  --accent-wash: #e4f2ee;
-  --signal: #c36f3d;
+  --line: #e7e5e4;         /* stone-200 */
+  --accent: #2563eb;       /* blue-600: primary actions, links, focus */
+  --accent-deep: #1d4ed8;  /* blue-700: hover */
+  --accent-wash: #eff6ff;  /* blue-50: selected / soft highlight */
+  --signal: #c36f3d;       /* warm warning accent (thermal module) */
 }
 
 @layer base {

@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import PageHeader from '../../components/ui/PageHeader';
 import { Link, useNavigate } from 'react-router-dom';
 import api from '../../lib/api';
 import { ChevronLeft, FolderOpen, ArrowUpRight, Plus } from 'lucide-react';
@@ -53,33 +54,10 @@ export default function ProjectManagementDashboard() {
   const recent = projects.slice(0, 8);
 
   return (
+    <div>
+      <PageHeader crumbs={[{ label: 'Projects', href: '/projects' }, { label: 'Overview' }]} title="Projects overview" subtitle="Active projects and engineering deliverables."
+        actions={isPrivileged && <Link to="/projects" className="inline-flex items-center gap-1.5 rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm font-medium text-stone-700 hover:bg-stone-50">All projects</Link>} />
     <div className="p-6 max-w-6xl">
-      <div className="flex items-center gap-3 mb-6">
-        <button
-          onClick={() => navigate('/')}
-          className="flex items-center gap-1.5 text-sm text-stone-400 hover:text-blue-600 transition-colors duration-150 group"
-        >
-          <ChevronLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform duration-150" />
-          Home
-        </button>
-        <span className="text-stone-300">/</span>
-        <span className="text-sm text-stone-600 font-medium">Project Management</span>
-      </div>
-
-      <div className="flex items-start justify-between mb-7">
-        <div>
-          <h1 className="text-2xl font-bold text-stone-800 mb-1">Project Management</h1>
-          <p className="text-stone-400 text-sm">Active projects and engineering deliverables</p>
-        </div>
-        {isPrivileged && (
-          <Link
-            to="/projects"
-            className="flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-700 border border-blue-200 hover:border-blue-400 bg-white px-3 py-1.5 rounded-lg transition-all duration-150 shadow-sm hover:shadow active:scale-95"
-          >
-            <Plus className="w-3.5 h-3.5" /> All Projects
-          </Link>
-        )}
-      </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
         {isLoading ? (
@@ -168,6 +146,7 @@ export default function ProjectManagementDashboard() {
           )}
         </div>
       </div>
+    </div>
     </div>
   );
 }

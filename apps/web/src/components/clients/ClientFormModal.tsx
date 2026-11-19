@@ -20,8 +20,8 @@ interface Props {
   onPickExisting?: (company: Company) => void;
 }
 
-const input = 'mt-1.5 w-full border border-[#dce7e2] rounded-lg px-3 py-2 text-sm font-normal';
-const label = 'text-xs font-bold text-[#53686b]';
+const input = 'mt-1.5 w-full border border-stone-200 rounded-lg px-3 py-2 text-sm font-normal';
+const label = 'text-xs font-bold text-stone-600';
 
 /** Add or edit a company in the directory, warning when the name looks like one already there. */
 export default function ClientFormModal({ company, initialName = '', initialKinds, onClose, onSaved, onPickExisting }: Props) {
@@ -70,16 +70,16 @@ export default function ClientFormModal({ company, initialName = '', initialKind
     }
   };
 
-  return <div className="fixed inset-0 z-50 bg-[#20333a]/40 p-4 flex items-center justify-center">
+  return <div className="fixed inset-0 z-50 bg-stone-800/40 p-4 flex items-center justify-center">
     <div ref={modalRef} role="dialog" aria-modal="true" aria-labelledby="company-form-title" tabIndex={-1}
       className="bg-white w-full max-w-2xl max-h-[92vh] overflow-auto rounded-2xl shadow-2xl">
       <form onSubmit={e => { e.preventDefault(); submit(); }}>
-        <div className="p-5 border-b border-[#edf2ef] flex justify-between gap-4">
+        <div className="p-5 border-b border-stone-100 flex justify-between gap-4">
           <div>
             <h2 id="company-form-title" className="font-extrabold">{company ? `Edit ${company.name}` : 'Add a company'}</h2>
-            <p className="text-xs text-[#6f8082] mt-1">One directory for every client, consultant, contractor, partner and supplier.</p>
+            <p className="text-xs text-stone-500 mt-1">One directory for every client, consultant, contractor, partner and supplier.</p>
           </div>
-          <button ref={closeRef} type="button" onClick={onClose} aria-label="Close"><X className="w-5 h-5 text-[#80908f]" /></button>
+          <button ref={closeRef} type="button" onClick={onClose} aria-label="Close"><X className="w-5 h-5 text-stone-400" /></button>
         </div>
 
         {duplicates && <div className="m-5 mb-0 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm" role="alert">
@@ -87,10 +87,10 @@ export default function ClientFormModal({ company, initialName = '', initialKind
           <ul className="mt-2 space-y-1.5">
             {duplicates.map(d => <li key={d.id} className="flex flex-wrap items-center gap-2">
               <span className="font-semibold">{d.name}</span>
-              <span className="text-xs text-[#6f8082]">{d.client_code}{placeOf(d) ? ` · ${placeOf(d)}` : ''}</span>
+              <span className="text-xs text-stone-500">{d.client_code}{placeOf(d) ? ` · ${placeOf(d)}` : ''}</span>
               {onPickExisting
-                ? <button type="button" onClick={() => { onPickExisting(d); onClose(); }} className="text-xs font-bold text-[#087f73] underline">Use this one</button>
-                : <Link to={`/clients/${d.id}`} onClick={onClose} className="text-xs font-bold text-[#087f73] underline">Open it</Link>}
+                ? <button type="button" onClick={() => { onPickExisting(d); onClose(); }} className="text-xs font-bold text-blue-600 underline">Use this one</button>
+                : <Link to={`/clients/${d.id}`} onClick={onClose} className="text-xs font-bold text-blue-600 underline">Open it</Link>}
             </li>)}
           </ul>
           <button type="button" onClick={() => submit(true)} disabled={save.isPending} className="mt-3 text-xs font-bold text-amber-900 underline">
@@ -109,7 +109,7 @@ export default function ClientFormModal({ company, initialName = '', initialKind
             <legend className={label}>Kind</legend>
             <div className="mt-1.5 flex flex-wrap gap-2">
               {CLIENT_KINDS.map(k => <button key={k} type="button" aria-pressed={form.kinds.includes(k)} onClick={() => toggleKind(k)}
-                className={`px-3 py-1 rounded-full text-xs font-bold border ${form.kinds.includes(k) ? 'bg-[#087f73] text-white border-[#087f73]' : 'bg-white text-[#53686b] border-[#dce7e2]'}`}>
+                className={`px-3 py-1 rounded-full text-xs font-bold border ${form.kinds.includes(k) ? 'bg-blue-600 text-white hover:bg-blue-700 border-blue-600' : 'bg-white text-stone-600 border-stone-200'}`}>
                 {KIND_LABELS[k]}
               </button>)}
             </div>
@@ -131,9 +131,9 @@ export default function ClientFormModal({ company, initialName = '', initialKind
           </label>
           <label className={`sm:col-span-2 ${label}`}>Notes<textarea rows={3} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} className={input} /></label>
         </div>
-        <div className="p-5 bg-[#f5f8f6] flex justify-end gap-2">
+        <div className="p-5 bg-stone-50 flex justify-end gap-2">
           <button type="button" onClick={onClose} className="px-4 py-2 text-sm">Cancel</button>
-          <button disabled={save.isPending} className="px-4 py-2 rounded-lg bg-[#087f73] text-white text-sm font-bold disabled:opacity-60">
+          <button disabled={save.isPending} className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 text-sm font-bold disabled:opacity-60">
             {save.isPending ? 'Saving…' : company ? 'Save changes' : 'Add company'}
           </button>
         </div>
