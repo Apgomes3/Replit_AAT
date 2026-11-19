@@ -7,7 +7,8 @@ import Button from '../../components/ui/Button';
 import StatusBadge from '../../components/ui/StatusBadge';
 import EntityCode from '../../components/ui/EntityCode';
 import QueryError from '../../components/ui/QueryError';
-import { Plus, BookMarked, FolderOpen, X, ChevronRight, PackageCheck } from 'lucide-react';
+import DataTable from '../../components/ui/DataTable';
+import { Plus, BookMarked, FolderOpen, X, PackageCheck } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../../store/authStore';
 import { isEditorRole } from '../../lib/roles';
@@ -93,16 +94,18 @@ export default function DesignBooksList() {
   };
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <div>
       <PageHeader
+        crumbs={[{ label: 'Engineering' }, { label: 'Design Books' }]}
         title="Design Books"
         subtitle="Engineering design documentation for aquarium projects"
         actions={canCreate ? (
-          <Button onClick={() => setShowNew(true)}>
+          <Button variant="primary" onClick={() => setShowNew(true)}>
             <Plus className="w-4 h-4 mr-1.5" /> New Design Book
           </Button>
         ) : undefined}
       />
+      <div className="p-6 max-w-6xl mx-auto">
 
       {/* Search */}
       <div className="mt-6 mb-4">
@@ -151,62 +154,36 @@ export default function DesignBooksList() {
             </div>
           )
         ) : (
-          <table className="w-full text-sm">
-            <thead className="bg-stone-50 border-b border-stone-200">
-              <tr>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-stone-500 uppercase tracking-wide">Code</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-stone-500 uppercase tracking-wide">Title</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-stone-500 uppercase tracking-wide">Project</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-stone-500 uppercase tracking-wide">Rev</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-stone-500 uppercase tracking-wide">Status</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-stone-500 uppercase tracking-wide">Created By</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-stone-500 uppercase tracking-wide">Equipment</th>
-                <th className="w-8" />
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((book: any) => (
-                <tr
-                  key={book.id}
-                  onClick={() => navigate(`/design-books/${book.id}`)}
-                  className="border-b border-stone-100 hover:bg-blue-50/40 cursor-pointer transition-colors"
+          <DataTable<any>
+            tableId="design-books"
+            data={items}
+            onRowClick={book => navigate(`/design-books/${book.id}`)}
+            columns={[
+              { key: 'book_code', header: 'Code', render: book => <EntityCode code={book.book_code} /> },
+              { key: 'book_title', header: 'Title', className: 'min-w-[14rem]', render: book => <span className="font-medium text-stone-800">{book.book_title}</span> },
+              { key: 'project', header: 'Project', sortValue: book => book.project_code || '', filterValue: book => `${book.project_code || ''} ${book.project_name || 'Standalone'}`, render: book => book.project_code ? (
+                <span className="inline-flex items-center gap-1.5 text-stone-600">
+                  <FolderOpen className="w-3.5 h-3.5 text-stone-400 shrink-0" />
+                  <span className="font-mono text-xs text-stone-500 whitespace-nowrap">{book.project_code}</span>
+                  <span className="text-stone-700 text-xs">{book.project_name}</span>
+                </span>
+              ) : <span className="text-stone-400 text-xs italic">Standalone</span> },
+              { key: 'revision', header: 'Rev', render: book => <span className="font-mono text-xs bg-stone-100 text-stone-600 px-1.5 py-0.5 rounded whitespace-nowrap">Rev {book.revision}</span> },
+              { key: 'status', header: 'Status', render: book => <StatusBadge status={book.status} /> },
+              { key: 'created_by_name', header: 'Created by', render: book => <span className="text-stone-500 text-xs">{book.created_by_name || '—'}</span> },
+              { key: 'equipment', header: 'Equipment', sortable: false, filterable: false, render: book => (
+                <Link
+                  to={`/design-books/${book.id}?tab=equipment-breakdown`}
+                  onClick={event => event.stopPropagation()}
+                  className="inline-flex min-h-9 items-center gap-1.5 whitespace-nowrap rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-xs font-semibold text-stone-700 shadow-sm transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+                  aria-label={`Open Equipment Breakdown for ${book.book_title}`}
                 >
-                  <td className="px-4 py-3">
-                    <EntityCode code={book.book_code} />
-                  </td>
-                  <td className="px-4 py-3 font-medium text-stone-800">{book.book_title}</td>
-                  <td className="px-4 py-3">
-                    {book.project_code ? (
-                      <span className="inline-flex items-center gap-1.5 text-stone-600">
-                        <FolderOpen className="w-3.5 h-3.5 text-stone-400" />
-                        <span className="font-mono text-xs text-stone-500">{book.project_code}</span>
-                        <span className="text-stone-700 text-xs">{book.project_name}</span>
-                      </span>
-                    ) : (
-                      <span className="text-stone-400 text-xs italic">Standalone</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="font-mono text-xs bg-stone-100 text-stone-600 px-1.5 py-0.5 rounded">Rev {book.revision}</span>
-                  </td>
-                  <td className="px-4 py-3"><StatusBadge status={book.status} /></td>
-                  <td className="px-4 py-3 text-stone-500 text-xs">{book.created_by_name || '—'}</td>
-                  <td className="px-4 py-3">
-                    <Link
-                      to={`/design-books/${book.id}?tab=equipment-breakdown`}
-                      onClick={event => event.stopPropagation()}
-                      className="inline-flex min-h-9 items-center gap-1.5 whitespace-nowrap rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-xs font-semibold text-stone-700 shadow-sm transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
-                      aria-label={`Open Equipment Breakdown for ${book.book_title}`}
-                    >
-                      <PackageCheck className="h-3.5 w-3.5" />
-                      Equipment Breakdown
-                    </Link>
-                  </td>
-                  <td className="px-4 py-3"><ChevronRight className="w-4 h-4 text-stone-400" /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  <PackageCheck className="h-3.5 w-3.5" />
+                  Equipment Breakdown
+                </Link>
+              ) },
+            ]}
+          />
         )}
       </div>
 
@@ -307,6 +284,7 @@ export default function DesignBooksList() {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }

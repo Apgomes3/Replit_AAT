@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import PageHeader from '../../components/ui/PageHeader';
 import Button from '../../components/ui/Button';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import DataTable from '../../components/ui/DataTable';
 import { Building2, Plus, Search } from 'lucide-react';
 import ClientFormModal from '../../components/clients/ClientFormModal';
 import { CLIENT_KINDS, ClientKind, KIND_LABELS, placeOf, useCanManageClients, useCompanies } from './clientsApi';
@@ -17,6 +18,8 @@ export default function ClientsList() {
   const [adding, setAdding] = useState(false);
   const list = useCompanies({ search: search.trim(), kind, status, pageSize: 500 });
   const rows = list.data?.data ?? [];
+  type Row = (typeof rows)[number];
+  const navigate = useNavigate();
 
   const setParam = (key: string, value: string) => setParams(p => { if (value) p.set(key, value); else p.delete(key); return p; }, { replace: true });
 
@@ -53,23 +56,23 @@ export default function ClientsList() {
       {list.isError ? <div className="p-8 text-sm text-rose-700">Companies could not be loaded. <button className="underline font-bold" onClick={() => list.refetch()}>Try again</button></div>
         : list.isLoading ? <div className="p-5 space-y-3">{[1, 2, 3, 4].map(i => <div key={i} className="h-12 skeleton" />)}</div>
         : rows.length === 0 ? <div className="p-16 text-center"><Building2 className="mx-auto w-9 h-9 text-stone-300 mb-3" /><p className="font-bold">No companies found</p></div>
-        : <div className="overflow-x-auto"><table className="w-full text-sm">
-          <thead className="bg-stone-50 border-b border-stone-200"><tr>
-            {['Company', 'Kind', 'Main contact', 'Location', 'People', 'Projects', 'Enquiries'].map(h => <th key={h} className="text-left px-5 py-3 text-xs font-semibold text-stone-500 uppercase tracking-wide">{h}</th>)}
-          </tr></thead>
-          <tbody>{rows.map(c => <tr key={c.id} className="border-b border-stone-100 last:border-0 hover:bg-stone-50">
-            <td className="px-5 py-3.5">
-              <Link to={`/clients/${c.id}`} className="font-bold hover:text-blue-600">{c.name}</Link>
-              <div className="text-xs text-stone-500 mt-0.5"><span className="font-mono">{c.client_code}</span>{c.parent_name && <> · part of {c.parent_name}</>}{!c.active && <> · <span className="font-bold">inactive</span></>}</div>
-            </td>
-            <td className="px-5 py-3.5"><div className="flex flex-wrap gap-1">{c.kinds.map(k => <span key={k} className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-600 text-[10px] uppercase font-extrabold">{KIND_LABELS[k]}</span>)}</div></td>
-            <td className="px-5 py-3.5 text-stone-600">{c.primary_contact_name ?? '—'}<div className="text-xs text-stone-400">{c.primary_contact_email ?? c.primary_contact_phone ?? ''}</div></td>
-            <td className="px-5 py-3.5 text-stone-600">{placeOf(c) || '—'}</td>
-            <td className="px-5 py-3.5 text-stone-600">{c.contact_count ?? 0}</td>
-            <td className="px-5 py-3.5 text-stone-600">{c.project_count ?? 0}</td>
-            <td className="px-5 py-3.5 text-stone-600">{c.enquiry_count ?? 0}</td>
-          </tr>)}</tbody>
-        </table></div>}
+        : <DataTable<Row>
+            tableId="clients"
+            data={rows}
+            onRowClick={c => navigate(`/clients/${c.id}`)}
+            columns={[
+              { key: 'name', header: 'Company', render: c => <>
+                <Link to={`/clients/${c.id}`} onClick={e => e.stopPropagation()} className="font-semibold text-stone-800 hover:text-blue-600">{c.name}</Link>
+                <div className="text-xs text-stone-500 mt-0.5"><span className="font-mono whitespace-nowrap">{c.client_code}</span>{c.parent_name && <> · part of {c.parent_name}</>}{!c.active && <> · <span className="font-semibold">inactive</span></>}</div>
+              </> },
+              { key: 'kinds', header: 'Kind', sortValue: c => c.kinds.map(k => KIND_LABELS[k]).join(','), render: c => <div className="flex flex-wrap gap-1">{c.kinds.map(k => <span key={k} className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-600 text-[10px] uppercase font-bold">{KIND_LABELS[k]}</span>)}</div> },
+              { key: 'primary_contact_name', header: 'Main contact', render: c => <>{c.primary_contact_name ?? '—'}<div className="text-xs text-stone-400">{c.primary_contact_email ?? c.primary_contact_phone ?? ''}</div></> },
+              { key: 'location', header: 'Location', sortValue: c => placeOf(c) || '', filterValue: c => placeOf(c) || '', render: c => placeOf(c) || '—' },
+              { key: 'contact_count', header: 'People', className: 'text-right tabular-nums', sortValue: c => c.contact_count ?? 0, render: c => c.contact_count ?? 0 },
+              { key: 'project_count', header: 'Projects', className: 'text-right tabular-nums', sortValue: c => c.project_count ?? 0, render: c => c.project_count ?? 0 },
+              { key: 'enquiry_count', header: 'Enquiries', className: 'text-right tabular-nums', sortValue: c => c.enquiry_count ?? 0, render: c => c.enquiry_count ?? 0 },
+            ]}
+          />}
     </div>
     {list.data && <p className="mt-2 text-xs text-stone-400">{list.data.pagination.total} {list.data.pagination.total === 1 ? 'company' : 'companies'}</p>}
     {adding && <ClientFormModal onClose={() => setAdding(false)} />}
