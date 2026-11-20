@@ -281,7 +281,7 @@ function BoardSection({ planId, section, groupBy, today, canManage, showHeader, 
   const clickSort = (key: SortKey) => onSort(
     sort.key !== key ? { key, desc: false } : sort.desc ? { key: 'manual', desc: false } : { key, desc: true });
 
-  return <section className="bg-white rounded-xl border border-stone-200 overflow-hidden shadow-sm">
+  return <section className="overflow-hidden rounded-xl border border-stone-200 bg-white">
     {showHeader && <header className="px-4 py-2.5 bg-stone-50 border-b border-stone-200 flex items-center gap-2">
       {renaming !== null
         ? <><input autoFocus aria-label="Group name" value={renaming} onChange={e => setRenaming(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') rename(); if (e.key === 'Escape') setRenaming(null); }}

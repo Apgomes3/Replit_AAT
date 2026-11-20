@@ -121,7 +121,7 @@ export default function DesignBooksList() {
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+      <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
         {isLoading || searchIsDebouncing ? (
           <SkeletonTable rows={6} columns={6} />
         ) : isError ? (

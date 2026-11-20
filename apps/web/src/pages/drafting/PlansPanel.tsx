@@ -107,7 +107,7 @@ export default function PlansPanel({ onGoToTeams }: { onGoToTeams: () => void })
         <p className="font-bold">{plans.data?.length ? 'No plans match these filters' : 'No drafting plans yet'}</p>
         {!plans.data?.length && <p className="text-sm text-stone-500 mt-1">Create a plan for a project and assign it to a team.</p>}
       </div>
-      : <div className="space-y-4">{groups.map(group => <section key={group.project.id || 'none'} className="bg-white rounded-xl border border-stone-200 overflow-hidden shadow-sm">
+      : <div className="space-y-4">{groups.map(group => <section key={group.project.id || 'none'} className="overflow-hidden rounded-xl border border-stone-200 bg-white">
         <header className="px-5 py-3 bg-stone-50 border-b border-stone-200 flex items-center gap-2">
           <FolderOpen className="w-4 h-4 text-blue-600" />
           <span className="font-mono text-xs text-stone-500">{group.project.code}</span>

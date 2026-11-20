@@ -113,7 +113,7 @@ export default function AdminTankFamilies() {
       />
 
       <div className="flex-1 overflow-auto p-4">
-        <div className="bg-white border border-stone-200 rounded-lg overflow-hidden">
+        <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
           <DataTable<TankFamily>
             tableId="admin-tank-families"
             data={families}

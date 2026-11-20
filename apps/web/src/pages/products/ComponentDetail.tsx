@@ -512,7 +512,7 @@ export default function ComponentDetail() {
         )}
 
         {tab === 'variants' && (
-          <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+          <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
             <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100 bg-slate-50/50">
               <div>
                 <span className="text-sm font-semibold text-slate-700">Variant Components</span>

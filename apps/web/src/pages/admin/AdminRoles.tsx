@@ -133,7 +133,7 @@ export default function AdminRoles() {
       />
 
       <div className="flex-1 overflow-auto p-4">
-        <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+        <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200">

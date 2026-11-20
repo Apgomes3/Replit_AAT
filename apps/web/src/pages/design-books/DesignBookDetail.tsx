@@ -443,7 +443,7 @@ function ReviewWorkflowTab({ book, canRecordHandover, onRefresh }: {
         {book.approval_notes && <div className="mt-4 text-sm text-stone-600 border-l-2 border-violet-300 pl-3">{book.approval_notes}</div>}
       </div>
 
-      <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+      <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
         <div className="px-5 py-3.5 border-b border-stone-100 flex items-center gap-2">
           <ClipboardList className="w-4 h-4 text-violet-500" />
           <h3 className="text-sm font-semibold text-stone-700">Handover reports</h3>
@@ -1000,7 +1000,7 @@ function LSSTab({ book, onNewLSS, readOnly = false }: { book: any; onNewLSS: () 
       </div>
 
       {/* Systems table */}
-      <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+      <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
         <div className="flex items-center justify-between px-4 py-3 border-b border-stone-100 bg-stone-50/50">
           <div className="flex items-center gap-2">
             <Activity className="w-4 h-4 text-blue-600" />
@@ -1099,7 +1099,7 @@ function LSSTab({ book, onNewLSS, readOnly = false }: { book: any; onNewLSS: () 
 
       {/* Duty descriptions */}
       {displayedSystems.some(s => s.duty_description) && (
-        <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+        <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
           <div className="px-4 py-3 border-b border-stone-100 bg-stone-50/50">
             <span className="text-sm font-semibold text-stone-700">Duty Descriptions</span>
           </div>
@@ -1740,7 +1740,7 @@ function ExhibitsTab({
       </div>
 
       {/* Exhibit list table */}
-      <div className="bg-white rounded-xl border border-stone-200 overflow-hidden shadow-sm">
+      <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
         <table className="w-full text-sm">
           <thead className="bg-stone-50 border-b border-stone-200">
             <tr>

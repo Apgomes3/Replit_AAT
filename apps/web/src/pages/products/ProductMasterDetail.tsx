@@ -2167,7 +2167,7 @@ export default function ProductMasterDetail() {
             </div>
           </div>
           <div className="space-y-3">
-            <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+            <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
               <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100">
                 <span className="text-xs text-slate-400 uppercase tracking-wide">Image</span>
                 <button
@@ -2219,7 +2219,7 @@ export default function ProductMasterDetail() {
           {activeTab === 'attributes' && <ItemAttributesPanel productId={product.id} />}
 
           {activeTab === 'variants' && (
-            <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+            <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
               <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100 bg-slate-50/50">
                 <div>
                   <span className="text-sm font-semibold text-slate-700">Variant Products</span>

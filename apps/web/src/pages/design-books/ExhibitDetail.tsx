@@ -260,7 +260,7 @@ function LegacySpeciesSection({ bookId, exhibitId, species, onRefresh }: {
   })();
 
   return (
-    <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+    <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
       <div className="flex items-center justify-between px-5 py-3.5 border-b border-stone-100 bg-emerald-50/30">
         <div className="flex items-center gap-2 flex-wrap">
           <Fish className="w-4 h-4 text-emerald-600" />
@@ -1618,7 +1618,7 @@ function AssignTankPanel({ exhibit, projectId, designBookId, unassigned, assigne
 
   return (
     <>
-    <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+    <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
       <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-stone-100 bg-stone-50/50">
         <div className="flex items-center gap-1">
           <button
@@ -2141,7 +2141,7 @@ function SubstrateSection({ bookId, exhibitId, tank, calculation, substrateData,
   const inputCls = 'w-full border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40';
 
   return (
-    <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+    <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
       <div className="flex items-center justify-between px-5 py-3.5 border-b border-stone-100 bg-blue-50/30">
         <div className="flex items-center gap-2">
           <Mountain className="w-4 h-4 text-blue-600" />
@@ -2506,7 +2506,7 @@ export function PipeSizingSection({ bookId, exhibitId, hydraulics, calculation, 
       </>}
     </div>;
   };
-  return <div className="bg-white rounded-xl border border-stone-200 overflow-hidden"><div className="px-5 py-3.5 border-b border-stone-100 bg-blue-50/40">
+  return <div className="overflow-hidden rounded-xl border border-stone-200 bg-white"><div className="px-5 py-3.5 border-b border-stone-100 bg-blue-50/40">
     <span className="text-sm font-semibold text-blue-800">Exhibit Pipe Sizing</span>
   </div><div className="p-5 grid gap-4 md:grid-cols-3">
     {renderPipe('inlet', 'Inlet pipe', calculation?.results?.total_return_flow_m3h)}
@@ -2652,7 +2652,7 @@ function WeirAllocationSection({ bookId, exhibitId, tank, hydraulics, substrateD
   };
 
   return (
-    <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+    <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
       {/* Header */}
       <div className="flex items-center gap-2 px-5 py-3.5 border-b border-stone-100 bg-indigo-50/40">
         <Calculator className="w-4 h-4 text-indigo-600" />
@@ -3191,7 +3191,7 @@ function WaterFlowTab({ bookId, exhibitId, tank, species, hydraulics, substrateD
         {/* Right — calculated results */}
         <div className="lg:col-span-3 space-y-5">
           {/* Flow breakdown */}
-          <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+          <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
             <div className="px-5 py-3.5 border-b border-stone-100 bg-stone-50/50 flex items-center gap-2 flex-wrap">
               <Wind className="w-4 h-4 text-stone-500 shrink-0" />
               <span className="text-sm font-semibold text-stone-700 shrink-0">Flow Rate Breakdown</span>
@@ -3305,7 +3305,7 @@ function WaterFlowTab({ bookId, exhibitId, tank, species, hydraulics, substrateD
           </div>
 
           {/* AAT category reference */}
-          <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+          <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
             <div className="px-5 py-3.5 border-b border-stone-100 bg-stone-50/50 flex items-center gap-2">
               <BookOpen className="w-4 h-4 text-stone-400" />
               <span className="text-sm font-semibold text-stone-600">AAT Turnover Rate Reference</span>

@@ -96,7 +96,7 @@ export function NeedsAttentionPanel() {
 }
 
 export function RecentRecordsPanel() {
-  const recent = loadRecentRecords().slice(0, 6);
+  const recent = loadRecentRecords().slice(0, 3);
   return (
     <Panel title="Recently opened" icon={<History className="h-4 w-4 text-stone-400" />}>
       {recent.length === 0 ? (

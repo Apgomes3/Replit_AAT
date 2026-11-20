@@ -1036,7 +1036,7 @@ export default function LSSCompactUnitsCatalog() {
         className="w-full max-w-sm border border-stone-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400/40" />
 
       {/* Table */}
-      <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+      <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
         {isLoading ? (
           <SkeletonTable rows={6} columns={6} />
         ) : filtered.length === 0 ? (

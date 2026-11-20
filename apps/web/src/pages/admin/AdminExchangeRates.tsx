@@ -38,7 +38,7 @@ export default function AdminExchangeRates() {
       <Info className="mt-0.5 h-4 w-4 shrink-0" />
       <span>Enter how many units of each currency equal <strong>1 USD</strong>. USD is fixed at 1. Changing a line currency converts its Unit Cost and recalculates Selling Price and Total Price.</span>
     </div>
-    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+    <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
       <table className="w-full text-sm"><thead className="border-b border-slate-200 bg-slate-50"><tr>
         <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500">Currency</th>
         <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500">Units per 1 USD</th>

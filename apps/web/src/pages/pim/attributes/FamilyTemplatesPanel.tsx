@@ -55,7 +55,7 @@ export default function FamilyTemplatesPanel() {
 
   return (
     <div className="grid gap-5 lg:grid-cols-[280px_1fr]">
-      <nav aria-label="Product families" className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+      <nav aria-label="Product families" className="overflow-hidden rounded-xl border border-stone-200 bg-white">
         {families.map(f => (
           <button key={f.id} onClick={() => selectFamily(f.id)} aria-current={f.id === familyId}
             className={`flex w-full items-center justify-between gap-2 border-b border-slate-100 px-4 py-2.5 text-left text-sm ${f.id === familyId ? 'bg-blue-50 text-blue-700' : 'hover:bg-slate-50'}`}>

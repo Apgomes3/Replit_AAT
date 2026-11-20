@@ -353,7 +353,7 @@ function BiologicalMediaPanel({
         </div>
       </div>
 
-      <section className="rounded-xl border border-stone-200 bg-white overflow-hidden">
+      <section className="overflow-hidden rounded-xl border border-stone-200 bg-white">
         <div className="flex items-center justify-between gap-3 border-b border-stone-100 bg-stone-50/60 px-5 py-3.5">
           <div>
             <h2 className="text-sm font-semibold text-stone-700">Current linked-exhibit water context</h2>
@@ -391,7 +391,7 @@ function BiologicalMediaPanel({
         </div>
       </section>
 
-      <section className="rounded-xl border border-stone-200 bg-white overflow-hidden">
+      <section className="overflow-hidden rounded-xl border border-stone-200 bg-white">
         <div className="border-b border-stone-100 bg-stone-50/60 px-5 py-3.5">
           <h2 className="text-sm font-semibold text-stone-700">Biological media draft inputs</h2>
           <p className="mt-0.5 text-xs text-stone-400">Selections are readiness references only and do not alter system hydraulics, Flow Route, or exhibit calculations.</p>
@@ -2906,7 +2906,7 @@ export default function DesignBookLSSDetail() {
         const selectedUnit = (availableCompactUnits as any[]).find(u => u.id === localUnitId);
 
         return (
-          <div id="system-configuration" className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+          <div id="system-configuration" className="overflow-hidden rounded-xl border border-stone-200 bg-white">
             <div className="px-5 py-3.5 border-b border-stone-100 bg-stone-50/50 flex items-center gap-2">
               <Layers className="w-4 h-4 text-stone-500" />
               <span className="text-sm font-semibold text-stone-700">System Configuration</span>
@@ -3242,7 +3242,7 @@ export default function DesignBookLSSDetail() {
       </div>
 
       {/* Exhibit Links panel */}
-      <div id="linked-exhibits" className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+      <div id="linked-exhibits" className="overflow-hidden rounded-xl border border-stone-200 bg-white">
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-stone-100 bg-blue-50/30">
           <div className="flex items-center gap-2">
             <GitBranch className="w-4 h-4 text-blue-600" />
@@ -4590,7 +4590,7 @@ export default function DesignBookLSSDetail() {
             hidden={activeTab !== 'flow'}
             className="space-y-5"
           >
-          <div id="flow-route" className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+          <div id="flow-route" className="overflow-hidden rounded-xl border border-stone-200 bg-white">
 
             {/* ── Header ──────────────────────────────────────────────────── */}
             <div className="flex items-center justify-between px-5 py-3.5 border-b border-stone-100 bg-violet-50/30">
@@ -5427,7 +5427,7 @@ export default function DesignBookLSSDetail() {
               )}
 
               {/* Header card */}
-              <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+              <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
                 <div className="flex items-center justify-between px-5 py-3.5 border-b border-stone-100 bg-cyan-50/30">
                   <div className="flex items-center gap-2">
                     <Zap className="w-4 h-4 text-cyan-600" />

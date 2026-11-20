@@ -501,7 +501,7 @@ export default function LSSControlPanel({ bookId, systemId, readOnly, canOverrid
             const displayDefinition = effectiveValve(definition, draft?.actuation_type);
             const instrumentName = displayDefinition.name || 'Historical field instrument';
             const savedTags = instances.map(item => item.tag || item.instrument_tag).filter(Boolean);
-            return <article key={id} className="overflow-hidden rounded-xl border border-stone-200 bg-white shadow-sm" aria-labelledby={`instrument-card-${id}`}>
+            return <article key={id} className="overflow-hidden rounded-xl border border-stone-200 bg-white" aria-labelledby={`instrument-card-${id}`}>
               <div className="border-b border-stone-100 bg-stone-50/50 p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0">

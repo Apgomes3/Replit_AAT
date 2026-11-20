@@ -54,7 +54,7 @@ export default function ClientsList() {
       </select>
     </div>
 
-    <div className="bg-white rounded-xl border border-stone-200 overflow-hidden shadow-sm">
+    <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
       {list.isError ? <div className="p-8 text-sm text-rose-700">Companies could not be loaded. <button className="underline font-bold" onClick={() => list.refetch()}>Try again</button></div>
         : list.isLoading ? <SkeletonTable rows={6} columns={6} />
         : rows.length === 0 ? <EmptyState icon={Building2} title="No companies found" description={search ? 'Try a different name, code, place or person.' : 'Add the companies you work with to use them in projects, enquiries and quotes.'} />

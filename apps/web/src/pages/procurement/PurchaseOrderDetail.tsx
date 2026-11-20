@@ -1114,7 +1114,7 @@ export default function PurchaseOrderDetail() {
           {/* Right: tabbed panel */}
           <div className="md:col-span-2 space-y-4">
             {/* Tab bar */}
-            <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+            <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
               <div className="flex border-b border-slate-200">
                 {([
                   { key: 'items',       label: 'Line Items',  icon: Package,       badge: po.items?.length || 0,   shortcut: '1' },
