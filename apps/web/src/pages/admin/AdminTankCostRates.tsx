@@ -167,7 +167,7 @@ export default function AdminTankCostRates() {
   };
 
   return (
-    <div className="p-6 max-w-4xl mx-auto space-y-6">
+    <div className="p-6 space-y-6">
       <PageHeader
         title="Tank Cost Rates"
         subtitle="Define material cost rates (per m² of shell surface area) used to estimate tank fabrication costs."

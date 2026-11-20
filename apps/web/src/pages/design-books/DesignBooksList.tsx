@@ -107,7 +107,7 @@ export default function DesignBooksList() {
           </Button>
         ) : undefined}
       />
-      <div className="p-6 max-w-6xl mx-auto">
+      <div className="p-6">
 
       {/* Search */}
       <div className="mt-6 mb-4">

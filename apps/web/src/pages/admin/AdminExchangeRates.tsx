@@ -32,7 +32,7 @@ export default function AdminExchangeRates() {
       toast.error(error?.response?.data?.error?.message || 'Could not save exchange rate');
     } finally { setSaving(null); }
   };
-  return <div className="mx-auto max-w-3xl space-y-6 p-6">
+  return <div className="space-y-6 p-6">
     <PageHeader title="Exchange Rates" subtitle="The one set of currency rates used across Shark OS: product and component pricing, purchase orders, equipment breakdowns and price-list imports." />
     <div className="flex gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
       <Info className="mt-0.5 h-4 w-4 shrink-0" />

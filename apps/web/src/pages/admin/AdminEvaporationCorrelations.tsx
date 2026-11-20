@@ -262,7 +262,7 @@ export default function AdminEvaporationCorrelations() {
   const activeClass = pendingSupersede && classes.find(item => item.id === versionForm.class_id);
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 p-6">
+    <div className="space-y-6 p-6">
       <PageHeader
         title="Evaporation Correlations"
         subtitle="Governed agitation classes and versioned evaporation evidence used by Design Book Thermal calculations."

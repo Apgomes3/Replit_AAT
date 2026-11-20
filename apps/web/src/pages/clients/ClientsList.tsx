@@ -32,7 +32,7 @@ export default function ClientsList() {
       subtitle="One list of the companies we work with and their people, used by projects, enquiries and quotes."
       actions={canManage && <Button variant="primary" onClick={() => setAdding(true)}><Plus className="w-4 h-4" /> Add company</Button>}
     />
-    <div className="p-6 max-w-7xl mx-auto">
+    <div className="p-6">
     
 
     <div className="flex flex-wrap items-center gap-3 mb-4">

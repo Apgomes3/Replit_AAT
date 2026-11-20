@@ -636,7 +636,7 @@ export default function AdminBiologicalMediaProfiles() {
   };
   const goBack = () => navigate(returnToRef.current || PROFILE_ADMIN_FALLBACK, { replace: true });
   return (
-    <div className="mx-auto max-w-6xl space-y-6 p-6">
+    <div className="space-y-6 p-6">
       <PageHeader title="Biological Media Profiles" subtitle="Controlled profiles plus a separate review-only VTR evidence library. Approval freezes engineering evidence and operating metadata."
         onBack={goBack}
         actions={<div className="flex flex-wrap gap-2"><Button onClick={() => startNew('max-tan')}><Plus className="h-3.5 w-3.5" />Maximum TAN profile</Button><Button onClick={() => startNew('tan')}><Plus className="h-3.5 w-3.5" />TAN-generation profile</Button><Button variant="primary" onClick={() => startNew('media')}><Plus className="h-3.5 w-3.5" />Media profile</Button></div>} />

@@ -113,7 +113,7 @@ export default function PlanBoard() {
   const outOfOrder = tasks.filter(t => (linkInfo.get(t.id)?.earlyBy ?? 0) > 0).length;
 
   if (board.isError) return <div className="p-8 text-sm text-rose-700">This plan could not be loaded. <button className="underline font-bold" onClick={() => board.refetch()}>Try again</button></div>;
-  if (board.isLoading || !plan) return <div className="p-6 max-w-7xl mx-auto space-y-3">{[1, 2, 3, 4].map(i => <div key={i} className="h-12 skeleton rounded-xl" />)}</div>;
+  if (board.isLoading || !plan) return <div className="p-6 space-y-3">{[1, 2, 3, 4].map(i => <div key={i} className="h-12 skeleton rounded-xl" />)}</div>;
 
   const visible = tasks.filter(t =>
     (!personFilter || t.assignees.some(a => a.id === personFilter)) && (!hideDone || t.status !== 'done'));
@@ -136,7 +136,7 @@ export default function PlanBoard() {
     } catch (err) { toast.error(apiErrorMessage(err, 'Could not reschedule')); }
   };
 
-  return <div className={`p-6 mx-auto ${view === 'gantt' ? 'max-w-[1600px]' : 'max-w-7xl'}`}>
+  return <div className={`p-6`}>
     {plan.team?.department.toLowerCase() === 'drafting' && location.pathname.startsWith('/drafting')
       ? <Link to="/drafting" className="inline-flex items-center gap-1 text-xs font-bold text-blue-600"><ArrowLeft className="w-3.5 h-3.5" /> Drafting plans</Link>
       : <Link to="/plans" className="inline-flex items-center gap-1 text-xs font-bold text-blue-600"><ArrowLeft className="w-3.5 h-3.5" /> My plans</Link>}

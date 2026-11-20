@@ -93,7 +93,7 @@ export default function AdminPumpDutyTypes() {
     <div className="flex min-h-0 flex-1 flex-col bg-stone-50/50">
       <PageHeader title="Pump Duty Types" subtitle="Manage the relationship between pump duty tags and names used by Design Book Pump Selection." />
       <div className="flex-1 overflow-auto p-6">
-        <div className="mx-auto max-w-4xl space-y-4">
+        <div className="space-y-4">
             <div className="flex justify-end"><Button size="sm" variant="primary" onClick={() => { setCreating(true); setEditing(null); setForm(emptyForm); }}><Plus className="mr-1 h-3.5 w-3.5" />New Pump Duty</Button></div>
           {creating && editor}
           <div className="overflow-hidden rounded-xl border border-stone-200 bg-white shadow-sm">

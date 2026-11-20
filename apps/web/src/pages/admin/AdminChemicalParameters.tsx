@@ -93,7 +93,7 @@ export default function AdminChemicalParameters() {
   const inputClass = 'w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm text-stone-800 focus:border-[#456b7d] focus:outline-none';
   const labelClass = 'mb-1 block text-xs font-medium text-stone-600';
   return (
-    <div className="mx-auto max-w-7xl space-y-6 p-6">
+    <div className="space-y-6 p-6">
       <PageHeader title="Chemical Parameters" subtitle="Governed nominal water-density values for engineering calculations." />
       <div className="flex items-start gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
         <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-[#456b7d]" />

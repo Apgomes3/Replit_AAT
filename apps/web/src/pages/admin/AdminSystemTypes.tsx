@@ -96,7 +96,7 @@ export default function AdminSystemTypes() {
       <PageHeader title="System Types" subtitle="Manage system classification types used across projects" />
 
       <div className="flex-1 overflow-auto p-6">
-        <div className="max-w-2xl space-y-4">
+        <div className="space-y-4">
 
           <div className="flex justify-end">
             <Button variant="primary" size="sm" onClick={() => setShowNew(v => !v)}>

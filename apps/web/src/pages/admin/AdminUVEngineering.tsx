@@ -244,7 +244,7 @@ export default function AdminUVEngineering() {
   };
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 p-6">
+    <div className="space-y-6 p-6">
       <PageHeader title="UV Engineering Products" subtitle="Controlled, versioned UV performance records linked one-to-one with PIM products in PFM-UV."
         actions={<Button variant="primary" onClick={reconcile} disabled={reconciling}><RefreshCw className={`h-3.5 w-3.5 ${reconciling ? 'animate-spin' : ''}`} />{reconciling ? 'Reconciling…' : 'Reconcile PIM UV products'}</Button>} />
       <div className="flex gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">

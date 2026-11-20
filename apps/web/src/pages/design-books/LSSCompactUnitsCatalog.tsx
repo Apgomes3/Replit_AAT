@@ -1007,7 +1007,7 @@ export default function LSSCompactUnitsCatalog() {
     <div>
       <PageHeader crumbs={[{ label: 'Engineering' }, { label: 'LSS Unit Catalog' }]} title="LSS Unit Catalog" subtitle="Packaged life support units: flows, volumes, footprints and PIM links."
         actions={<Button variant="primary" onClick={() => setModal('new')}><Plus className="w-4 h-4" /> Add Unit</Button>} />
-    <div className="p-6 max-w-7xl mx-auto space-y-5">
+    <div className="p-6 space-y-5">
       {modal && (
         <UnitModal
           unit={modal === 'new' ? null : modal}
