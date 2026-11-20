@@ -30,6 +30,7 @@ import GraphExplorer from './pages/graph/GraphExplorer';
 import SearchPage from './pages/search/SearchPage';
 import AdminUsers from './pages/admin/AdminUsers';
 import AdminHome from './pages/admin/AdminHome';
+import AdminLayout from './components/layout/AdminLayout';
 import AdminImport from './pages/admin/AdminImport';
 import AdminCategories from './pages/admin/AdminCategories';
 import AdminRoles from './pages/admin/AdminRoles';
@@ -152,25 +153,28 @@ const router = createBrowserRouter(createRoutesFromElements(
              <Route path="my-work" element={<SearchPage work />} />
             <Route path="plans" element={<MyPlansPage />} />
             <Route path="plans/:id" element={<PlanBoard />} />
-            <Route path="admin/users" element={<AdminUsers />} />
-             <Route path="admin" element={<AdminHome />} />
-            <Route path="admin/import" element={<ImportGuard><AdminImport /></ImportGuard>} />
-            <Route path="admin/categories" element={<AdminCategories />} />
-            <Route path="admin/roles" element={<AdminRoles />} />
-            <Route path="admin/tank-families" element={<AdminTankFamilies />} />
-            <Route path="admin/system-types" element={<AdminSystemTypes />} />
-            <Route path="admin/audit-log" element={<AdminAuditLog />} />
-            <Route path="admin/po-stage-roles" element={<AdminPOStageRoles />} />
-            <Route path="admin/tank-cost-rates" element={<AdminTankCostRates />} />
-            <Route path="admin/exchange-rates" element={<AdminGuard><AdminExchangeRates /></AdminGuard>} />
-            <Route path="admin/biological-media-profiles" element={<AdminGuard><AdminBiologicalMediaProfiles /></AdminGuard>} />
-            <Route path="admin/uv-engineering" element={<AdminGuard><AdminUVEngineering /></AdminGuard>} />
-             <Route path="admin/thermal-wall-constructions" element={<EngineeringAdminGuard><AdminThermalWallConstructions /></EngineeringAdminGuard>} />
-            <Route path="admin/evaporation-correlations" element={<AdminGuard><AdminEvaporationCorrelations /></AdminGuard>} />
-            <Route path="admin/pump-duty-types" element={<AdminGuard><AdminPumpDutyTypes /></AdminGuard>} />
-             <Route path="admin/field-instruments" element={<AdminGuard><AdminFieldInstruments /></AdminGuard>} />
-             <Route path="admin/pipe-sizing-standards" element={<AdminGuard><AdminPipeSizingStandards /></AdminGuard>} />
-             <Route path="admin/chemical-parameters" element={<AdminGuard><AdminChemicalParameters /></AdminGuard>} />
+            <Route element={<AdminLayout />}>
+              <Route path="admin/users" element={<AdminUsers />} />
+              <Route path="admin" element={<AdminHome />} />
+              <Route path="admin/:domain" element={<AdminHome />} />
+              <Route path="admin/import" element={<ImportGuard><AdminImport /></ImportGuard>} />
+              <Route path="admin/categories" element={<AdminCategories />} />
+              <Route path="admin/roles" element={<AdminRoles />} />
+              <Route path="admin/tank-families" element={<AdminTankFamilies />} />
+              <Route path="admin/system-types" element={<AdminSystemTypes />} />
+              <Route path="admin/audit-log" element={<AdminAuditLog />} />
+              <Route path="admin/po-stage-roles" element={<AdminPOStageRoles />} />
+              <Route path="admin/tank-cost-rates" element={<AdminTankCostRates />} />
+              <Route path="admin/exchange-rates" element={<AdminGuard><AdminExchangeRates /></AdminGuard>} />
+              <Route path="admin/biological-media-profiles" element={<AdminGuard><AdminBiologicalMediaProfiles /></AdminGuard>} />
+              <Route path="admin/uv-engineering" element={<AdminGuard><AdminUVEngineering /></AdminGuard>} />
+              <Route path="admin/thermal-wall-constructions" element={<EngineeringAdminGuard><AdminThermalWallConstructions /></EngineeringAdminGuard>} />
+              <Route path="admin/evaporation-correlations" element={<AdminGuard><AdminEvaporationCorrelations /></AdminGuard>} />
+              <Route path="admin/pump-duty-types" element={<AdminGuard><AdminPumpDutyTypes /></AdminGuard>} />
+              <Route path="admin/field-instruments" element={<AdminGuard><AdminFieldInstruments /></AdminGuard>} />
+              <Route path="admin/pipe-sizing-standards" element={<AdminGuard><AdminPipeSizingStandards /></AdminGuard>} />
+              <Route path="admin/chemical-parameters" element={<AdminGuard><AdminChemicalParameters /></AdminGuard>} />
+            </Route>
             <Route path="purchase-orders" element={<ModuleGuard moduleKey="orders"><PurchaseOrdersList /></ModuleGuard>} />
             <Route path="purchase-orders/:id" element={<ModuleGuard moduleKey="orders"><PurchaseOrderDetail /></ModuleGuard>} />
             <Route path="design-book-engine" element={<ModuleGuard moduleKey="design_books"><DesignBookEngineDashboard /></ModuleGuard>} />

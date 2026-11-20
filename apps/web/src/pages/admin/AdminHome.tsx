@@ -1,21 +1,24 @@
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, Navigate, useParams } from 'react-router-dom';
 import { Search, Star } from 'lucide-react';
 import clsx from 'clsx';
 import PageHeader from '../../components/ui/PageHeader';
 import EmptyState from '../../components/ui/EmptyState';
 import { useAuthStore } from '../../store/authStore';
 import {
-  ADMIN_DOMAIN_LABELS, AdminDomain, AdminEntry, loadPinnedAdmin, loadRecentAdmin, matchesAdminSearch,
+  ADMIN_DOMAIN_LABELS, AdminDomain, AdminEntry, adminDomainFromSlug, adminDomainSlug, loadPinnedAdmin, loadRecentAdmin, matchesAdminSearch,
   rememberAdminPage, togglePinnedAdmin, visibleAdminEntries,
 } from '../../lib/adminRegistry';
 
 const DOMAIN_ORDER = Object.keys(ADMIN_DOMAIN_LABELS) as AdminDomain[];
 
-/** Settings & Data: every admin page, grouped by department, with search, pins and recents. */
+/** Settings & Data: every admin page, grouped by department, with search, pins and recents.
+ *  At /admin/<department> it shows only that department. */
 export default function AdminHome() {
+  const { domain: slug } = useParams();
+  const onlyDomain = adminDomainFromSlug(slug);
   const user = useAuthStore(state => state.user);
-  const entries = useMemo(() => visibleAdminEntries(user), [user]);
+  const entries = useMemo(() => visibleAdminEntries(user).filter(e => !onlyDomain || e.domain === onlyDomain), [user, onlyDomain]);
   const [query, setQuery] = useState('');
   const [pinned, setPinned] = useState(loadPinnedAdmin);
   const recent = useMemo(loadRecentAdmin, []);
@@ -45,11 +48,11 @@ export default function AdminHome() {
     );
   };
 
-  const Card = ({ title, items }: { title: string; items: AdminEntry[] }) => {
+  const Card = ({ title, items, href }: { title: string; items: AdminEntry[]; href?: string }) => {
     const groups = [...new Set(items.map(e => e.group))];
     return (
       <section aria-label={title} className="rounded-xl border border-stone-200 bg-white p-3 shadow-sm">
-        <h2 className="px-3 pt-1 pb-2 text-sm font-semibold text-stone-800">{title}</h2>
+        <h2 className="px-3 pt-1 pb-2 text-sm font-semibold text-stone-800">{href ? <Link to={href} className="hover:text-blue-600">{title}</Link> : title}</h2>
         {items.length === 0 ? <p className="px-3 pb-2 text-xs text-stone-400">Nothing to configure yet</p>
           : groups.map(group => (
             <div key={group} className="mb-1">
@@ -64,10 +67,13 @@ export default function AdminHome() {
   const pinnedEntries = shortcuts(pinned);
   const recentEntries = shortcuts(recent);
   const isAdmin = user?.role === 'admin';
+  if (slug && !onlyDomain) return <Navigate to="/admin" replace />;
+  const domains = onlyDomain ? [onlyDomain] : DOMAIN_ORDER;
+  const pageTitle = onlyDomain ? ADMIN_DOMAIN_LABELS[onlyDomain] : 'Settings & Data';
 
   return <div>
-    <PageHeader crumbs={[{ label: 'Settings & Data' }]} title="Settings & Data"
-      subtitle="Reference data, rules and access for every department." />
+    <PageHeader crumbs={onlyDomain ? [{ label: 'Settings & Data', href: '/admin' }, { label: pageTitle }] : [{ label: 'Settings & Data' }]} title={pageTitle}
+      subtitle={onlyDomain ? `Reference data and rules for ${pageTitle}.` : 'Reference data, rules and access for every department.'} />
     <div className="mx-auto max-w-7xl space-y-6 p-6">
       <div className="relative max-w-md">
         <Search className="absolute left-3 top-2.5 h-4 w-4 text-stone-400" />
@@ -82,17 +88,17 @@ export default function AdminHome() {
           ? <EmptyState icon={Search} title={`No settings match “${query.trim()}”`} actionLabel="Clear search" onAction={() => setQuery('')} />
           : <Card title={`${matches.length} result${matches.length === 1 ? '' : 's'}`} items={matches} />
       ) : <>
-        {(pinnedEntries.length > 0 || recentEntries.length > 0) && (
+        {!onlyDomain && (pinnedEntries.length > 0 || recentEntries.length > 0) && (
           <div className="grid gap-4 md:grid-cols-2">
             {pinnedEntries.length > 0 && <Card title="Pinned" items={pinnedEntries} />}
             {recentEntries.length > 0 && <Card title="Recently opened" items={recentEntries} />}
           </div>
         )}
-        <div className="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {DOMAIN_ORDER.map(domain => {
+        <div className={clsx('grid items-start gap-4', onlyDomain ? 'max-w-3xl' : 'md:grid-cols-2 xl:grid-cols-3')}>
+          {domains.map(domain => {
             const items = entries.filter(e => e.domain === domain);
             if (items.length === 0 && !isAdmin) return null;
-            return <Card key={domain} title={ADMIN_DOMAIN_LABELS[domain]} items={items} />;
+            return <Card key={domain} title={ADMIN_DOMAIN_LABELS[domain]} items={items} href={onlyDomain ? undefined : `/admin/${adminDomainSlug(domain)}`} />;
           })}
         </div>
       </>}

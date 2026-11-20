@@ -116,3 +116,12 @@ export function matchesAdminSearch(entry: AdminEntry, query: string): boolean {
   const hay = [entry.label, entry.description, entry.group, ADMIN_DOMAIN_LABELS[entry.domain], ...(entry.keywords ?? [])].join(' ').toLowerCase();
   return q.split(/\s+/).every(word => hay.includes(word));
 }
+
+/** URL slug for a department page: /admin/<slug>. */
+export const adminDomainSlug = (domain: AdminDomain) => domain.replace(/_/g, '-');
+export function adminDomainFromSlug(slug: string | undefined): AdminDomain | null {
+  const domain = (slug ?? '').replace(/-/g, '_') as AdminDomain;
+  return domain in ADMIN_DOMAIN_LABELS ? domain : null;
+}
+/** The registry entry whose page is at this path, if any. */
+export const adminEntryForPath = (path: string) => ADMIN_ENTRIES.find(e => e.to === path) ?? null;
