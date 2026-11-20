@@ -37,6 +37,7 @@ const ROUTE_TITLES: { path: string; title: string }[] = [
   { path: '/enquiries/:id', title: 'Enquiry' },
   { path: '/enquiries', title: 'Enquiries' },
   { path: '/knowledge/materials/:id', title: 'Material' },
+  { path: '/admin', title: 'Settings & Data' },
   { path: '/admin/users', title: 'Users' },
   { path: '/admin/import', title: 'Import' },
   { path: '/admin/categories', title: 'Categories' },

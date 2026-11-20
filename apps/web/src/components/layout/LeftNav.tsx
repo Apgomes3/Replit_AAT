@@ -5,7 +5,7 @@ import clsx from 'clsx';
 import { useCommandPalette } from '../../store/commandPaletteStore';
 import { useAuthStore } from '../../store/authStore';
 import { ModuleKey, ROUTES } from '../../lib/navigation';
-import { adminPopupGroups, visibleAdminEntries } from '../../lib/adminRegistry';
+import { adminPopupGroups, rememberAdminPage, visibleAdminEntries } from '../../lib/adminRegistry';
 import { Department, DEPARTMENT_AREAS } from '../../lib/departments';
 
 type NavItemDef = { id: string; to: string; icon: any; label: string; moduleKey?: ModuleKey; end?: boolean };
@@ -181,6 +181,8 @@ function AdminPopup({ onClose, onNavigate }: { onClose: () => void; onNavigate?:
     >
       <div className="px-3 py-2.5 border-b border-stone-100 bg-stone-50/60">
         <span className="text-[10px] font-bold text-stone-400 uppercase tracking-[0.12em]">Platform Admin</span>
+        {user?.role === 'admin' && <button type="button" tabIndex={-1} onClick={() => { navigate('/admin'); onClose(); onNavigate?.(); }}
+          className="float-right text-xs font-medium text-blue-600 hover:text-blue-700">All settings →</button>}
       </div>
       <div className="py-1 max-h-[70vh] overflow-y-auto">
          {visibleGroups.map((group, gi) => (
@@ -197,7 +199,7 @@ function AdminPopup({ onClose, onNavigate }: { onClose: () => void; onNavigate?:
                   role="menuitem"
                   tabIndex={itemIndex === activeItemIndex ? 0 : -1}
                   onFocus={() => setActiveItemIndex(itemIndex)}
-                  onClick={() => { navigate(item.to); onClose(); onNavigate?.(); }}
+                  onClick={() => { rememberAdminPage(item.id); navigate(item.to); onClose(); onNavigate?.(); }}
                   className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-stone-600 hover:bg-stone-50 hover:text-blue-600 transition-all duration-150 text-left group"
                 >
                   <Icon className="w-4 h-4 shrink-0 text-stone-400 group-hover:text-blue-500 transition-colors duration-150" />

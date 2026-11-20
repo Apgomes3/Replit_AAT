@@ -29,6 +29,7 @@ import DocumentDetail from './pages/documents/DocumentDetail';
 import GraphExplorer from './pages/graph/GraphExplorer';
 import SearchPage from './pages/search/SearchPage';
 import AdminUsers from './pages/admin/AdminUsers';
+import AdminHome from './pages/admin/AdminHome';
 import AdminImport from './pages/admin/AdminImport';
 import AdminCategories from './pages/admin/AdminCategories';
 import AdminRoles from './pages/admin/AdminRoles';
@@ -152,7 +153,7 @@ const router = createBrowserRouter(createRoutesFromElements(
             <Route path="plans" element={<MyPlansPage />} />
             <Route path="plans/:id" element={<PlanBoard />} />
             <Route path="admin/users" element={<AdminUsers />} />
-             <Route path="admin" element={<Navigate to="/admin/users" replace />} />
+             <Route path="admin" element={<AdminHome />} />
             <Route path="admin/import" element={<ImportGuard><AdminImport /></ImportGuard>} />
             <Route path="admin/categories" element={<AdminCategories />} />
             <Route path="admin/roles" element={<AdminRoles />} />

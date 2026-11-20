@@ -84,3 +84,35 @@ export function adminPopupGroups(entries: AdminEntry[]) {
     .map(label => ({ label, items: entries.filter(e => e.popupGroup === label) }))
     .filter(group => group.items.length > 0);
 }
+
+// Per-person shortcuts, kept in this browser only.
+const PINNED_KEY = 'admin-pinned';
+const RECENT_KEY = 'admin-recent';
+const RECENT_LIMIT = 6;
+
+function readIds(key: string): string[] {
+  try { const v = JSON.parse(localStorage.getItem(key) ?? '[]'); return Array.isArray(v) ? v.filter(x => typeof x === 'string') : []; } catch { return []; }
+}
+function writeIds(key: string, ids: string[]) {
+  try { localStorage.setItem(key, JSON.stringify(ids)); } catch { /* storage unavailable */ }
+}
+
+export const loadPinnedAdmin = () => readIds(PINNED_KEY);
+export function togglePinnedAdmin(id: string): string[] {
+  const ids = loadPinnedAdmin();
+  const next = ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id];
+  writeIds(PINNED_KEY, next);
+  return next;
+}
+export const loadRecentAdmin = () => readIds(RECENT_KEY);
+export function rememberAdminPage(id: string) {
+  writeIds(RECENT_KEY, [id, ...loadRecentAdmin().filter(x => x !== id)].slice(0, RECENT_LIMIT));
+}
+
+/** Case-insensitive match on label, description, group, department and keywords. */
+export function matchesAdminSearch(entry: AdminEntry, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  const hay = [entry.label, entry.description, entry.group, ADMIN_DOMAIN_LABELS[entry.domain], ...(entry.keywords ?? [])].join(' ').toLowerCase();
+  return q.split(/\s+/).every(word => hay.includes(word));
+}
