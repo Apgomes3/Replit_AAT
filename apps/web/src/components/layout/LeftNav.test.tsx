@@ -171,4 +171,20 @@ describe('LeftNav accessibility behavior', () => {
     expect(screen.getByRole('menuitem', { name: 'Thermal Wall Constructions' })).toBeVisible();
     expect(screen.queryByRole('menuitem', { name: 'Users' })).not.toBeInTheDocument();
   });
+  it('links each department area to its settings when the person can manage some', () => {
+    renderNav();
+    expect(screen.getByRole('link', { name: 'Engineering settings' })).toHaveAttribute('href', '/admin/engineering');
+    expect(screen.getByRole('link', { name: 'Procurement settings' })).toHaveAttribute('href', '/admin/procurement');
+    // Business Development has nothing to configure yet.
+    expect(screen.queryByRole('link', { name: 'Business Development settings' })).not.toBeInTheDocument();
+  });
+
+  it('shows engineers only the Engineering settings link they can use', () => {
+    useAuthStore.setState({
+      user: { id: 'eng-3', email: 'e@example.com', firstName: 'E', lastName: 'Ng', role: 'engineer', moduleAccess: { design_books: 'manage' } },
+    });
+    renderNav();
+    expect(screen.getByRole('link', { name: 'Engineering settings' })).toBeVisible();
+    expect(screen.queryByRole('link', { name: 'Procurement settings' })).not.toBeInTheDocument();
+  });
 });

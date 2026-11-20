@@ -5,7 +5,7 @@ import clsx from 'clsx';
 import { useCommandPalette } from '../../store/commandPaletteStore';
 import { useAuthStore } from '../../store/authStore';
 import { ModuleKey, ROUTES } from '../../lib/navigation';
-import { adminPopupGroups, rememberAdminPage, visibleAdminEntries } from '../../lib/adminRegistry';
+import { adminDomainFromSlug, adminPopupGroups, rememberAdminPage, visibleAdminEntries } from '../../lib/adminRegistry';
 import { Department, DEPARTMENT_AREAS } from '../../lib/departments';
 
 type NavItemDef = { id: string; to: string; icon: any; label: string; moduleKey?: ModuleKey; end?: boolean };
@@ -96,8 +96,8 @@ function GroupHeading({ children }: { children: ReactNode }) {
   return <div className="px-4 pt-5 pb-1 text-[10px] font-bold uppercase tracking-[0.16em] text-stone-500">{children}</div>;
 }
 
-function NavAreaSection({ area, items, expanded, onToggle, collapsed }: {
-  area: NavArea; items: NavItemDef[]; expanded: boolean; onToggle: () => void; collapsed: boolean;
+function NavAreaSection({ area, items, expanded, onToggle, collapsed, settingsHref }: {
+  area: NavArea; items: NavItemDef[]; expanded: boolean; onToggle: () => void; collapsed: boolean; settingsHref?: string;
 }) {
   const location = useLocation();
   const containsActive = items.some(item => location.pathname === item.to || location.pathname.startsWith(`${item.to}/`));
@@ -120,6 +120,10 @@ function NavAreaSection({ area, items, expanded, onToggle, collapsed }: {
       {open && <div className="space-y-0.5 pb-1">
         {items.map(item => <NavItemLink key={item.id} item={item} collapsed={false} indent />)}
         {items.length === 0 && <p className="pl-6 pr-3 py-1.5 text-xs text-stone-400">Nothing here yet</p>}
+        {settingsHref && <NavLink to={settingsHref} end
+          className={({ isActive }) => clsx('flex items-center gap-2 pl-6 pr-3 py-1 text-xs', isActive ? 'text-blue-600' : 'text-stone-400 hover:text-blue-600')}>
+          <Settings className="w-3 h-3" /> {area.label} settings
+        </NavLink>}
       </div>}
     </div>
   );
@@ -237,7 +241,10 @@ export default function LeftNav({ collapsed, onToggleCollapsed, onNavigate }: Le
   // The user record can arrive after the first render (page reload): apply their default then.
   useEffect(() => { setCollapsedAreas(loadCollapsedAreas(user?.id, user?.department)); }, [user?.id, user?.department]);
   const itemVisible = (item: NavItemDef) => !item.moduleKey || user?.moduleAccess?.[item.moduleKey] !== 'hidden';
-  const canAccessPlatformAdmin = visibleAdminEntries(user).length > 0;
+  const adminEntries = visibleAdminEntries(user);
+  const canAccessPlatformAdmin = adminEntries.length > 0;
+  // Department areas whose ids double as /admin/<slug> get a settings link when the person can manage something there.
+  const settingsDomains = new Set(AREAS.map(a => a.id).filter(id => { const d = adminDomainFromSlug(id); return !!d && adminEntries.some(e => e.domain === d); }));
   const sharedItems = SHARED_ITEMS.filter(itemVisible);
   const showsEmptyArea = (area: NavArea) => user?.role === 'admin' || (!!user?.department && !!area.emptyFor?.includes(user.department));
   const visibleAreas = AREAS
@@ -343,6 +350,7 @@ export default function LeftNav({ collapsed, onToggleCollapsed, onNavigate }: Le
                 expanded={!collapsedAreas.includes(area.id)}
                 onToggle={() => toggleArea(area.id)}
                 collapsed={collapsed}
+                settingsHref={settingsDomains.has(area.id) ? `/admin/${area.id}` : undefined}
               />
             ))}
           </div>
