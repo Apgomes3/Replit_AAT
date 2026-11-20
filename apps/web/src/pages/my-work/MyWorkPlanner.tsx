@@ -12,6 +12,7 @@ import {
 } from './myWorkApi';
 import GoogleCalendarCard from './GoogleCalendarCard';
 import { MonthCalendar, WeekCalendar } from './MyWorkCalendar';
+import WorkForPicker from './WorkForPicker';
 
 type View = 'list' | 'week' | 'month';
 const VIEW_KEY = 'my-work:view';
@@ -128,23 +129,6 @@ function ProjectSelect({ value, onChange, label = 'Project' }: { value: string; 
   </select>;
 }
 
-/**
- * What a task is for, as "<kind>:<id>" — p: project, i: initiative, e: enquiry, d: design book — or ""
- * for nothing. Only the modules the person can see are offered.
- */
-const FOR_GROUPS = [
-  ['projects', 'p', 'Projects'], ['enquiries', 'e', 'Enquiries (business development)'],
-  ['design_books', 'd', 'Design books'], ['initiatives', 'i', 'Initiatives (internal work)'],
-] as const;
-function WorkForSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const options = useLinkOptions();
-  return <select aria-label="For" value={value} onChange={e => onChange(e.target.value)} className={`${input} max-w-[240px]`}>
-    <option value="">Not for anything in particular</option>
-    {FOR_GROUPS.map(([key, prefix, label]) => (options.data?.[key] ?? []).length > 0 && <optgroup key={key} label={label}>
-      {options.data![key].map(o => <option key={o.id} value={`${prefix}:${o.id}`}>{o.code} · {o.name}</option>)}
-    </optgroup>)}
-  </select>;
-}
 const workForValue = (item: Pick<WorkItem, 'project' | 'initiative' | 'enquiry' | 'design_book'>) =>
   item.initiative ? `i:${item.initiative.id}` : item.enquiry ? `e:${item.enquiry.id}` : item.design_book ? `d:${item.design_book.id}`
     : item.project ? `p:${item.project.id}` : '';
@@ -176,11 +160,11 @@ function QuickAdd() {
     <Plus className="w-4 h-4 text-blue-600" />
     <input aria-label="New task" value={f.title} onChange={e => setF({ ...f, title: e.target.value })} placeholder="Add a task… (Enter to save)"
       className="flex-1 min-w-[200px] text-sm px-2 py-1.5 rounded-lg focus:outline-none focus:bg-stone-50" />
+    <WorkForPicker value={f.work_for} onChange={v => setF({ ...f, work_for: v })} />
     <input aria-label="Due date" type="date" value={f.due_date} onChange={e => setF({ ...f, due_date: e.target.value })} className={input} />
     <button type="button" onClick={() => setMore(v => !v)} className="text-xs font-semibold text-stone-500 hover:text-blue-600">{more ? 'Less' : 'More'}</button>
     <button disabled={save.isPending || !f.title.trim()} className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm font-bold disabled:opacity-50">Add</button>
     {more && <div className="basis-full flex flex-wrap items-center gap-2 pl-6">
-      <WorkForSelect value={f.work_for} onChange={v => setF({ ...f, work_for: v })} />
       <label className="text-xs text-stone-500 flex items-center gap-1">Start<input aria-label="Start date" type="date" value={f.start_date} max={f.due_date || undefined} onChange={e => setF({ ...f, start_date: e.target.value })} className={input} /></label>
       <label className="text-xs text-stone-500 flex items-center gap-1">Effort<input aria-label="Planned hours" type="number" min={0.5} step={0.5} value={f.planned_hours} onChange={e => setF({ ...f, planned_hours: e.target.value })} placeholder="h" className={`${input} w-20`} /> h</label>
       <span className="text-[11px] text-stone-400">Effort is spread over the working days from start to due and shows in your week.</span>
@@ -216,7 +200,7 @@ function WorkRow({ item, today }: { item: WorkItem; today: string }) {
       </div>
       <div className="text-[11px] text-stone-500 truncate">
         {item.plan ? <Link to={`/drafting/plans/${item.plan.id}`} className="hover:text-blue-600">{item.plan.code}</Link> : <span>Own task</span>}
-        {item.project && <> · <span className="font-mono">{item.project.code}</span> {item.project.name}</>}
+        {item.project && <> · <Link to={`/projects/${item.project.id}`} className="hover:text-blue-600"><span className="font-mono">{item.project.code}</span> {item.project.name}</Link></>}
         {item.initiative && <> · <Link to={`/initiatives/${item.initiative.id}`} className="hover:text-blue-600"><span className="font-mono">{item.initiative.code}</span> {item.initiative.name}</Link></>}
         {item.enquiry && <> · <Link to={`/enquiries/${item.enquiry.id}`} className="hover:text-blue-600"><span className="font-mono">{item.enquiry.code}</span> {item.enquiry.name}</Link></>}
         {item.design_book && <> · <Link to={`/design-books/${item.design_book.id}`} className="hover:text-blue-600"><span className="font-mono">{item.design_book.code}</span> {item.design_book.name}</Link></>}
@@ -261,7 +245,7 @@ function EditOwnTask({ item, onClose }: { item: WorkItem; onClose: () => void })
   };
   return <form onSubmit={submit} className="flex flex-wrap items-center gap-2 py-1">
     <input aria-label="Title" value={f.title} onChange={e => setF({ ...f, title: e.target.value })} className={`${input} flex-1 min-w-[200px]`} />
-    <WorkForSelect value={f.work_for} onChange={v => setF({ ...f, work_for: v })} />
+    <WorkForPicker value={f.work_for} onChange={v => setF({ ...f, work_for: v })} />
     <input aria-label="Start date" type="date" value={f.start_date} onChange={e => setF({ ...f, start_date: e.target.value })} className={input} />
     <input aria-label="Due date" type="date" value={f.due_date} onChange={e => setF({ ...f, due_date: e.target.value })} className={input} />
     <input aria-label="Planned hours" type="number" min={0.5} step={0.5} placeholder="h" value={f.planned_hours} onChange={e => setF({ ...f, planned_hours: e.target.value })} className={`${input} w-20`} />
