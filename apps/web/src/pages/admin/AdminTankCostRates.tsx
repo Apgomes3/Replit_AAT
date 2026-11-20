@@ -1,4 +1,5 @@
 import { SUPPORTED_CURRENCIES } from '../../lib/currencies';
+import SkeletonTable from '../../components/ui/SkeletonTable';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import api from '../../lib/api';
@@ -196,7 +197,7 @@ export default function AdminTankCostRates() {
       )}
 
       {isLoading ? (
-        <div className="text-slate-400 text-sm p-4">Loading…</div>
+        <SkeletonTable rows={5} columns={5} />
       ) : rates.length === 0 ? (
         <div className="bg-white border border-slate-200 rounded-xl p-8 text-center text-slate-400 text-sm">
           No cost rates defined yet. Add one to enable cost estimates on tank products.

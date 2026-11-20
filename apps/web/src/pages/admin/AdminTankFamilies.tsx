@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import DataTable from '../../components/ui/DataTable';
 import { useState } from 'react';
 import api from '../../lib/api';
 import PageHeader from '../../components/ui/PageHeader';
@@ -112,39 +113,22 @@ export default function AdminTankFamilies() {
       />
 
       <div className="flex-1 overflow-auto p-4">
-        <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-200">
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide">Name</th>
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-36">Code</th>
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide">Description</th>
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-20">Order</th>
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-20">Tanks</th>
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading && (
-                <tr><td colSpan={5} className="text-center py-12 text-slate-400">Loading...</td></tr>
-              )}
-              {!isLoading && families.length === 0 && (
-                <tr><td colSpan={5} className="text-center py-12 text-slate-400">No tank families yet — create one to start classifying tanks</td></tr>
-              )}
-              {families.map(fam => (
-                <tr
-                  key={fam.id}
-                  onContextMenu={e => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY, fam }); }}
-                  className="border-b border-slate-100 last:border-0 hover:bg-slate-50 cursor-context-menu select-none"
-                >
-                  <td className="px-4 py-3 font-medium text-slate-800">{fam.name}</td>
-                  <td className="px-4 py-3"><span className="font-mono text-xs bg-slate-100 px-2 py-0.5 rounded text-slate-600">{fam.code}</span></td>
-                  <td className="px-4 py-3 text-slate-500 text-xs">{fam.description || <span className="text-slate-300">—</span>}</td>
-                  <td className="px-4 py-3 text-slate-500">{fam.sort_order}</td>
-                  <td className="px-4 py-3 text-slate-600">{fam.product_count}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="bg-white border border-stone-200 rounded-lg overflow-hidden">
+          <DataTable<TankFamily>
+            tableId="admin-tank-families"
+            data={families}
+            loading={isLoading}
+            emptyMessage="No tank families yet. Create one to start classifying tanks."
+            defaultSortable
+            contextMenuItems={getMenuItems}
+            columns={[
+              { key: 'name', header: 'Name', render: fam => <span className="font-medium text-stone-800">{fam.name}</span> },
+              { key: 'code', header: 'Code', className: 'w-36', render: fam => <span className="font-mono text-xs bg-stone-100 px-2 py-0.5 rounded text-stone-600 whitespace-nowrap">{fam.code}</span> },
+              { key: 'description', header: 'Description', render: fam => <span className="text-stone-500 text-xs">{fam.description || <span className="text-stone-300">—</span>}</span> },
+              { key: 'sort_order', header: 'Order', className: 'w-20 tabular-nums' },
+              { key: 'product_count', header: 'Tanks', className: 'w-20 tabular-nums', sortValue: fam => Number(fam.product_count) || 0 },
+            ]}
+          />
         </div>
       </div>
 

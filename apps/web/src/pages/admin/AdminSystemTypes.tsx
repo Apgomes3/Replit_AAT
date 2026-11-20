@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import SkeletonTable from '../../components/ui/SkeletonTable';
 import { useState } from 'react';
 import api from '../../lib/api';
 import PageHeader from '../../components/ui/PageHeader';
@@ -147,7 +148,7 @@ export default function AdminSystemTypes() {
 
           <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
             {isLoading ? (
-              <div className="p-8 text-center text-slate-400 text-sm">Loading…</div>
+              <SkeletonTable rows={5} columns={4} />
             ) : types.length === 0 ? (
               <div className="p-8 text-center text-slate-400 text-sm">No system types yet. Add one above.</div>
             ) : (

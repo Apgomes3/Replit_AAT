@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import SkeletonTable from '../../components/ui/SkeletonTable';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Pencil, Plus, Trash2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -96,7 +97,7 @@ export default function AdminPumpDutyTypes() {
             <div className="flex justify-end"><Button size="sm" variant="primary" onClick={() => { setCreating(true); setEditing(null); setForm(emptyForm); }}><Plus className="mr-1 h-3.5 w-3.5" />New Pump Duty</Button></div>
           {creating && editor}
           <div className="overflow-hidden rounded-xl border border-stone-200 bg-white shadow-sm">
-            {isLoading ? <div className="p-8 text-center text-sm text-stone-400">Loading…</div> : (
+            {isLoading ? <SkeletonTable rows={5} columns={4} /> : (
               <table className="w-full text-sm">
                 <thead className="border-b border-stone-100 bg-stone-50"><tr><th className="px-4 py-3 text-left text-xs font-semibold uppercase text-stone-500">Tag</th><th className="px-4 py-3 text-left text-xs font-semibold uppercase text-stone-500">Pump name</th><th className="px-4 py-3 text-left text-xs font-semibold uppercase text-stone-500">Flow Route relationship</th><th className="px-4 py-3 text-left text-xs font-semibold uppercase text-stone-500">Order</th><th className="px-4 py-3 text-left text-xs font-semibold uppercase text-stone-500">Status</th><th className="w-24 px-4 py-3" /></tr></thead>
                 <tbody className="divide-y divide-stone-100">

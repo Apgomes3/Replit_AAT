@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import DataTable from '../../components/ui/DataTable';
 import { useState } from 'react';
 import api from '../../lib/api';
 import PageHeader from '../../components/ui/PageHeader';
@@ -111,67 +112,33 @@ export default function AdminCategories() {
       />
 
       <div className="flex-1 overflow-auto p-4">
-        <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-200">
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide">Name</th>
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide">Code</th>
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide">Description</th>
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-20">Order</th>
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-24">Type</th>
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide w-24">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading && (
-                <tr><td colSpan={6} className="text-center py-12 text-slate-400">Loading...</td></tr>
-              )}
-              {!isLoading && categories.length === 0 && (
-                <tr><td colSpan={6} className="text-center py-12 text-slate-400">No categories yet</td></tr>
-              )}
-              {categories.map(cat => (
-                <tr
-                  key={cat.id}
-                  onContextMenu={e => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY, cat }); }}
-                  className="border-b border-slate-100 last:border-0 hover:bg-slate-50 cursor-context-menu select-none"
-                >
-                  <td className="px-4 py-3 font-medium text-slate-800">{cat.name}</td>
-                  <td className="px-4 py-3"><span className="font-mono text-xs bg-slate-100 px-2 py-0.5 rounded text-slate-600">{cat.code}</span></td>
-                  <td className="px-4 py-3 text-slate-500 text-xs">{cat.description || <span className="text-slate-300">—</span>}</td>
-                  <td className="px-4 py-3 text-slate-500">{cat.sort_order}</td>
-                  <td className="px-4 py-3">
-                    {cat.is_system
-                      ? <span className="inline-flex items-center gap-1 text-xs text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full"><ShieldCheck className="w-3 h-3" />Built-in</span>
-                      : <span className="text-xs text-slate-400">Custom</span>}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        aria-label={`Edit ${cat.name}`}
-                        title={`Edit ${cat.name}`}
-                        onClick={() => openEdit(cat)}
-                        className="rounded-md p-1.5 text-slate-400 hover:bg-blue-50 hover:text-blue-600"
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={`Delete ${cat.name}`}
-                        title={cat.is_system ? 'Built-in categories cannot be deleted' : `Delete ${cat.name}`}
-                        onClick={() => void handleDelete(cat)}
-                        disabled={cat.is_system}
-                        className="rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-35"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="bg-white border border-stone-200 rounded-lg overflow-hidden">
+          <DataTable<Category>
+            tableId="admin-categories"
+            data={categories}
+            loading={isLoading}
+            emptyMessage="No categories yet"
+            defaultSortable
+            contextMenuItems={getMenuItems}
+            columns={[
+              { key: 'name', header: 'Name', render: cat => <span className="font-medium text-stone-800">{cat.name}</span> },
+              { key: 'code', header: 'Code', render: cat => <span className="font-mono text-xs bg-stone-100 px-2 py-0.5 rounded text-stone-600 whitespace-nowrap">{cat.code}</span> },
+              { key: 'description', header: 'Description', render: cat => <span className="text-stone-500 text-xs">{cat.description || <span className="text-stone-300">—</span>}</span> },
+              { key: 'sort_order', header: 'Order', className: 'w-20 tabular-nums' },
+              { key: 'is_system', header: 'Type', className: 'w-24', sortValue: cat => (cat.is_system ? 0 : 1), render: cat => cat.is_system
+                ? <span className="inline-flex items-center gap-1 text-xs text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full"><ShieldCheck className="w-3 h-3" />Built-in</span>
+                : <span className="text-xs text-stone-400">Custom</span> },
+              { key: 'actions', header: 'Actions', sortable: false, className: 'w-24', render: cat => (
+                <div className="flex items-center gap-1">
+                  <button type="button" aria-label={`Edit ${cat.name}`} title={`Edit ${cat.name}`} onClick={e => { e.stopPropagation(); openEdit(cat); }}
+                    className="rounded-md p-1.5 text-stone-400 hover:bg-blue-50 hover:text-blue-600"><Pencil className="h-4 w-4" /></button>
+                  <button type="button" aria-label={`Delete ${cat.name}`} title={cat.is_system ? 'Built-in categories cannot be deleted' : `Delete ${cat.name}`}
+                    onClick={e => { e.stopPropagation(); void handleDelete(cat); }} disabled={cat.is_system}
+                    className="rounded-md p-1.5 text-stone-400 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-35"><Trash2 className="h-4 w-4" /></button>
+                </div>
+              ) },
+            ]}
+          />
         </div>
       </div>
 
