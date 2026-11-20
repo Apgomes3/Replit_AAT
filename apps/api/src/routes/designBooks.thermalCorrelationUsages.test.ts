@@ -221,18 +221,25 @@ describe('thermal correlation captured usage', () => {
     expect(usageQuery?.sql).toContain("db.release_snapshot->'thermal_calculations'");
   });
 
-  it('forbids correlation usage review and supersession for non-admin users', async () => {
+  it('forbids correlation usage review and supersession without Design Books manage access', async () => {
+    state.moduleAccess = 'view';
+    try {
     const usageResponse = await request(app, 'GET', undefined, 'engineer');
     const supersedeResponse = await request(app, 'POST', {}, 'engineer');
 
     expect(usageResponse.status).toBe(403);
-    expect(usageResponse.body.error).toMatchObject({ code: 'FORBIDDEN' });
+    expect(usageResponse.body.error).toMatchObject({ code: 'MODULE_READ_ONLY' });
     expect(supersedeResponse.status).toBe(403);
-    expect(supersedeResponse.body.error).toMatchObject({ code: 'FORBIDDEN' });
+    expect(supersedeResponse.body.error).toMatchObject({ code: 'MODULE_READ_ONLY' });
     expect(state.calls.some(call => call.sql.includes("SET status='superseded'"))).toBe(false);
+    } finally {
+      state.moduleAccess = 'manage';
+    }
   });
 
-  it('forbids every correlation governance mutation for non-admin users', async () => {
+  it('forbids every correlation governance mutation without Design Books manage access', async () => {
+    state.moduleAccess = 'view';
+    try {
     const createClass = await request(
       app,
       'POST',
@@ -256,11 +263,14 @@ describe('thermal correlation captured usage', () => {
     );
 
     expect(createClass.status).toBe(403);
-    expect(createClass.body.error).toMatchObject({ code: 'FORBIDDEN' });
+    expect(createClass.body.error).toMatchObject({ code: 'MODULE_READ_ONLY' });
     expect(createVersion.status).toBe(403);
-    expect(createVersion.body.error).toMatchObject({ code: 'FORBIDDEN' });
+    expect(createVersion.body.error).toMatchObject({ code: 'MODULE_READ_ONLY' });
     expect(updateClass.status).toBe(403);
-    expect(updateClass.body.error).toMatchObject({ code: 'FORBIDDEN' });
+    expect(updateClass.body.error).toMatchObject({ code: 'MODULE_READ_ONLY' });
+    } finally {
+      state.moduleAccess = 'manage';
+    }
   });
 
   it('allows an admin to approve a replacement after confirming captured usage', async () => {
@@ -322,6 +332,11 @@ describe('thermal correlation captured usage', () => {
       call.sql.includes("SET status='superseded'"))).toBe(true);
     expect(state.calls.slice(callStart).some(call =>
       call.sql.includes('INSERT INTO audit_log'))).toBe(true);
+  });
+
+  it('lets engineers with Design Books manage access review correlation usage', async () => {
+    const response = await request(app, 'GET', undefined, 'engineer');
+    expect(response.status).toBe(200);
   });
 
   it('allows platform admins to review correlations when Design Books are hidden', async () => {

@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { canManageAdminPage } from '../../lib/adminRegistry';
 import { Navigate } from 'react-router-dom';
 import { useState } from 'react';
 import { AlertTriangle, CheckCircle2, LibraryBig, ShieldCheck, UserCheck, X } from 'lucide-react';
@@ -57,7 +58,7 @@ const emptyVersionForm = (): CorrelationVersionForm => ({
 export function canManageEvaporationCorrelations(
   user: ReturnType<typeof useAuthStore.getState>['user'],
 ) {
-  return user?.role === 'admin';
+  return canManageAdminPage(user, 'evaporation-correlations');
 }
 
 function correlationDate(value: unknown) {
@@ -269,7 +270,7 @@ export default function AdminEvaporationCorrelations() {
 
       <div className="flex items-start gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
         <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0" />
-        <p>Only platform administrators can change this library. Existing calculations retain frozen correlation snapshots when an approved version is superseded.</p>
+        <p>Only admins and engineers with Design Books manage access can change this library. Existing calculations retain frozen correlation snapshots when an approved version is superseded.</p>
       </div>
 
       {isError && (

@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import { query } from '../db';
 import pool from '../db';
-import { authenticate, requireRole, AuthRequest } from '../middleware/auth';
+import { authenticate, requireRole, requireDepartmentSettings, AuthRequest } from '../middleware/auth';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { logAudit } from '../db/audit';
@@ -936,7 +936,7 @@ router.get('/po-stage-roles', authenticate, async (_req: AuthRequest, res: Respo
   res.json(map);
 });
 
-router.post('/po-stage-roles', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+router.post('/po-stage-roles', authenticate, requireDepartmentSettings('orders'), async (req: AuthRequest, res: Response) => {
   const { stage, user_id } = req.body;
   const VALID_STAGES = ['purchase_order', 'po_review', 'engineering_review'];
   if (!stage || !VALID_STAGES.includes(stage)) {
@@ -956,7 +956,7 @@ router.post('/po-stage-roles', authenticate, requireRole('admin'), async (req: A
   }
 });
 
-router.delete('/po-stage-roles/:id', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+router.delete('/po-stage-roles/:id', authenticate, requireDepartmentSettings('orders'), async (req: AuthRequest, res: Response) => {
   const existing = await query('SELECT id FROM po_stage_assignees WHERE id=$1', [req.params.id]);
   if (!existing.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Assignee not found' } });
   await query('DELETE FROM po_stage_assignees WHERE id=$1', [req.params.id]);
@@ -965,7 +965,7 @@ router.delete('/po-stage-roles/:id', authenticate, requireRole('admin'), async (
 
 // ── SYSTEM TYPES ─────────────────────────────────────────────────────────────
 
-router.post('/system-types', authenticate, requireRole(...EDITOR_ROLES), async (req: AuthRequest, res: Response) => {
+router.post('/system-types', authenticate, requireDepartmentSettings('design_books'), async (req: AuthRequest, res: Response) => {
   const { name, description, sort_order } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: { code: 'INVALID', message: 'name is required' } });
   try {
@@ -980,7 +980,7 @@ router.post('/system-types', authenticate, requireRole(...EDITOR_ROLES), async (
   }
 });
 
-router.put('/system-types/:id', authenticate, requireRole(...EDITOR_ROLES), async (req: AuthRequest, res: Response) => {
+router.put('/system-types/:id', authenticate, requireDepartmentSettings('design_books'), async (req: AuthRequest, res: Response) => {
   const { name, description, sort_order, is_active } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: { code: 'INVALID', message: 'name is required' } });
   try {
@@ -996,7 +996,7 @@ router.put('/system-types/:id', authenticate, requireRole(...EDITOR_ROLES), asyn
   }
 });
 
-router.delete('/system-types/:id', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+router.delete('/system-types/:id', authenticate, requireDepartmentSettings('design_books'), async (req: AuthRequest, res: Response) => {
   const existing = await query('SELECT id FROM system_types WHERE id::text=$1', [req.params.id]);
   if (!existing.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'System type not found' } });
   await query('DELETE FROM system_types WHERE id::text=$1', [req.params.id]);
@@ -1017,7 +1017,7 @@ const pumpDutyInput = (body: any) => ({
   is_active: body?.is_active !== false,
 });
 
-router.post('/pump-duty-types', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+router.post('/pump-duty-types', authenticate, requireDepartmentSettings('design_books'), async (req: AuthRequest, res: Response) => {
   const input = pumpDutyInput(req.body);
   if (!/^[A-Z0-9]+$/.test(input.tag) || !input.pump_name) {
     return res.status(400).json({ error: { code: 'INVALID', message: 'Tag and pump name are required; tags may only contain letters and numbers.' } });
@@ -1035,7 +1035,7 @@ router.post('/pump-duty-types', authenticate, requireRole('admin'), async (req: 
   }
 });
 
-router.put('/pump-duty-types/:id', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+router.put('/pump-duty-types/:id', authenticate, requireDepartmentSettings('design_books'), async (req: AuthRequest, res: Response) => {
   const input = pumpDutyInput(req.body);
   if (!/^[A-Z0-9]+$/.test(input.tag) || !input.pump_name) {
     return res.status(400).json({ error: { code: 'INVALID', message: 'Tag and pump name are required; tags may only contain letters and numbers.' } });
@@ -1054,7 +1054,7 @@ router.put('/pump-duty-types/:id', authenticate, requireRole('admin'), async (re
   }
 });
 
-router.delete('/pump-duty-types/:id', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+router.delete('/pump-duty-types/:id', authenticate, requireDepartmentSettings('design_books'), async (req: AuthRequest, res: Response) => {
   const used = await query('SELECT 1 FROM system_pump_selections WHERE pump_duty_type_id::text=$1 LIMIT 1', [req.params.id]);
   if (used.rows[0]) {
     return res.status(409).json({ error: { code: 'IN_USE', message: 'This pump duty is referenced by a pump selection. Deactivate it instead.' } });
@@ -1170,7 +1170,7 @@ router.get('/field-instruments', authenticate, async (req: AuthRequest, res: Res
     throw error;
   }
 });
-router.post('/field-instruments', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+router.post('/field-instruments', authenticate, requireDepartmentSettings('design_books'), async (req: AuthRequest, res: Response) => {
   const input = fieldInstrumentInput(req.body);
   const error = await validateFieldInstrument(input);
   if (error) return res.status(400).json({ error: { code: 'INVALID', message: error } });
@@ -1195,7 +1195,7 @@ router.post('/field-instruments', authenticate, requireRole('admin'), async (req
     throw error;
   }
 });
-router.put('/field-instruments/:id', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+router.put('/field-instruments/:id', authenticate, requireDepartmentSettings('design_books'), async (req: AuthRequest, res: Response) => {
   const input = fieldInstrumentInput(req.body);
   const error = await validateFieldInstrument(input);
   if (error) return res.status(400).json({ error: { code: 'INVALID', message: error } });
@@ -1230,7 +1230,7 @@ router.get('/pipe-sizing-standards', authenticate, async (_req, res: Response) =
   const result = await query('SELECT * FROM pipe_sizing_standards ORDER BY dn');
   res.json({ items: result.rows });
 });
-router.post('/pipe-sizing-standards', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+router.post('/pipe-sizing-standards', authenticate, requireDepartmentSettings('design_books'), async (req: AuthRequest, res: Response) => {
   const body = req.body || {};
   const fields = ['dn', 'internal_diameter_mm', 'pressure_velocity_min_m_s', 'pressure_velocity_max_m_s', 'gravity_velocity_min_m_s', 'gravity_velocity_max_m_s'];
   if (fields.some(field => !Number.isFinite(Number(body[field]))) ||
@@ -1253,7 +1253,7 @@ router.post('/pipe-sizing-standards', authenticate, requireRole('admin'), async 
     throw error;
   }
 });
-router.put('/pipe-sizing-standards/:id', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+router.put('/pipe-sizing-standards/:id', authenticate, requireDepartmentSettings('design_books'), async (req: AuthRequest, res: Response) => {
   const body = req.body || {};
   const fields = ['dn', 'internal_diameter_mm', 'pressure_velocity_min_m_s', 'pressure_velocity_max_m_s', 'gravity_velocity_min_m_s', 'gravity_velocity_max_m_s'];
   if (fields.some(field => !Number.isFinite(Number(body[field]))) || Number(body.dn) <= 0 || !Number.isInteger(Number(body.dn)) ||
@@ -1288,7 +1288,7 @@ router.put('/pipe-sizing-standards/:id', authenticate, requireRole('admin'), asy
     throw error;
   }
 });
-router.delete('/pipe-sizing-standards/:id', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+router.delete('/pipe-sizing-standards/:id', authenticate, requireDepartmentSettings('design_books'), async (req: AuthRequest, res: Response) => {
   const inUse = await query('SELECT 1 FROM design_book_exhibit_hydraulics WHERE inlet_pipe_dn=(SELECT dn FROM pipe_sizing_standards WHERE id=$1) OR discharge_pipe_dn=(SELECT dn FROM pipe_sizing_standards WHERE id=$1) OR bottom_drain_pipe_dn=(SELECT dn FROM pipe_sizing_standards WHERE id=$1) LIMIT 1', [req.params.id]);
   if (inUse.rows[0]) return res.status(409).json({ error: { code: 'IN_USE', message: 'A saved exhibit choice uses this DN; deactivate it instead.' } });
   try {
@@ -1324,7 +1324,7 @@ function validateWaterDensityParameter(body: any) {
   return { value: { waterType, density, conditions, unit, source, isActive: body.is_active !== false } };
 }
 
-router.get('/chemical-parameters/water-density', authenticate, requireRole('admin'), async (_req: AuthRequest, res: Response) => {
+router.get('/chemical-parameters/water-density', authenticate, requireDepartmentSettings('design_books'), async (_req: AuthRequest, res: Response) => {
   const result = await query(
     `SELECT wdp.*, creator.email AS created_by_email, updater.email AS updated_by_email
      FROM water_density_parameters wdp
@@ -1335,7 +1335,7 @@ router.get('/chemical-parameters/water-density', authenticate, requireRole('admi
   res.json({ items: result.rows });
 });
 
-router.post('/chemical-parameters/water-density', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+router.post('/chemical-parameters/water-density', authenticate, requireDepartmentSettings('design_books'), async (req: AuthRequest, res: Response) => {
   const parsed = validateWaterDensityParameter(req.body);
   if (parsed.error) return res.status(400).json({ error: { code: 'VALIDATION', message: parsed.error } });
   const value = parsed.value!;
@@ -1354,7 +1354,7 @@ router.post('/chemical-parameters/water-density', authenticate, requireRole('adm
   }
 });
 
-router.put('/chemical-parameters/water-density/:id', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+router.put('/chemical-parameters/water-density/:id', authenticate, requireDepartmentSettings('design_books'), async (req: AuthRequest, res: Response) => {
   const parsed = validateWaterDensityParameter(req.body);
   if (parsed.error) return res.status(400).json({ error: { code: 'VALIDATION', message: parsed.error } });
   const value = parsed.value!;
@@ -1374,7 +1374,7 @@ router.put('/chemical-parameters/water-density/:id', authenticate, requireRole('
   }
 });
 
-router.delete('/chemical-parameters/water-density/:id', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+router.delete('/chemical-parameters/water-density/:id', authenticate, requireDepartmentSettings('design_books'), async (req: AuthRequest, res: Response) => {
   const result = await query('DELETE FROM water_density_parameters WHERE id=$1 RETURNING *', [req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Water density parameter not found.' } });
   await logAudit(req.user!.id, 'water_density_parameter', result.rows[0].id, 'DELETE', { summary: `Water density parameter deleted for ${result.rows[0].water_type}`, before: result.rows[0] });

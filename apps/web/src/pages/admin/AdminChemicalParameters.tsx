@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { canManageAdminPage } from '../../lib/adminRegistry';
 import { Navigate } from 'react-router-dom';
 import { useState } from 'react';
 import { Beaker, Pencil, Plus, ShieldCheck, Trash2, X } from 'lucide-react';
@@ -23,7 +24,7 @@ const emptyForm = (): DensityForm => ({
 });
 
 export function canManageChemicalParameters(user: ReturnType<typeof useAuthStore.getState>['user']) {
-  return user?.role === 'admin';
+  return canManageAdminPage(user, 'chemical-parameters');
 }
 
 export default function AdminChemicalParameters() {
@@ -96,7 +97,7 @@ export default function AdminChemicalParameters() {
       <PageHeader title="Chemical Parameters" subtitle="Governed nominal water-density values for engineering calculations." />
       <div className="flex items-start gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
         <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-[#456b7d]" />
-        <p>Only platform administrators can maintain these controlled values. Each change is captured in the audit log with its source and operating conditions.</p>
+        <p>Only admins and engineers with Design Books manage access can maintain these controlled values. Each change is captured in the audit log with its source and operating conditions.</p>
       </div>
       <section className="rounded-xl border border-stone-200 bg-white">
         <div className="flex items-center gap-2 border-b border-stone-100 px-4 py-3">

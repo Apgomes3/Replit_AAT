@@ -169,11 +169,11 @@ const router = createBrowserRouter(createRoutesFromElements(
               <Route path="admin/biological-media-profiles" element={<AdminGuard><AdminBiologicalMediaProfiles /></AdminGuard>} />
               <Route path="admin/uv-engineering" element={<AdminGuard><AdminUVEngineering /></AdminGuard>} />
               <Route path="admin/thermal-wall-constructions" element={<EngineeringAdminGuard><AdminThermalWallConstructions /></EngineeringAdminGuard>} />
-              <Route path="admin/evaporation-correlations" element={<AdminGuard><AdminEvaporationCorrelations /></AdminGuard>} />
-              <Route path="admin/pump-duty-types" element={<AdminGuard><AdminPumpDutyTypes /></AdminGuard>} />
-              <Route path="admin/field-instruments" element={<AdminGuard><AdminFieldInstruments /></AdminGuard>} />
-              <Route path="admin/pipe-sizing-standards" element={<AdminGuard><AdminPipeSizingStandards /></AdminGuard>} />
-              <Route path="admin/chemical-parameters" element={<AdminGuard><AdminChemicalParameters /></AdminGuard>} />
+              <Route path="admin/evaporation-correlations" element={<EngineeringAdminGuard><AdminEvaporationCorrelations /></EngineeringAdminGuard>} />
+              <Route path="admin/pump-duty-types" element={<EngineeringAdminGuard><AdminPumpDutyTypes /></EngineeringAdminGuard>} />
+              <Route path="admin/field-instruments" element={<EngineeringAdminGuard><AdminFieldInstruments /></EngineeringAdminGuard>} />
+              <Route path="admin/pipe-sizing-standards" element={<EngineeringAdminGuard><AdminPipeSizingStandards /></EngineeringAdminGuard>} />
+              <Route path="admin/chemical-parameters" element={<EngineeringAdminGuard><AdminChemicalParameters /></EngineeringAdminGuard>} />
             </Route>
             <Route path="purchase-orders" element={<ModuleGuard moduleKey="orders"><PurchaseOrdersList /></ModuleGuard>} />
             <Route path="purchase-orders/:id" element={<ModuleGuard moduleKey="orders"><PurchaseOrderDetail /></ModuleGuard>} />

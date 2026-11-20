@@ -110,7 +110,7 @@ describe('LeftNav accessibility behavior', () => {
         firstName: 'Design',
         lastName: 'Engineer',
         role: 'engineer',
-        moduleAccess: { pim: 'hidden', orders: 'manage' },
+        moduleAccess: { pim: 'hidden', orders: 'view' },
       },
     });
 

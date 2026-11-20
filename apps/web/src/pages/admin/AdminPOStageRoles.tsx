@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { canManageAdminPage } from '../../lib/adminRegistry';
 import { useState } from 'react';
 import api from '../../lib/api';
 import { useAuthStore } from '../../store/authStore';
@@ -55,7 +56,7 @@ const COLOR: Record<string, { badge: string; dot: string; ring: string; header: 
 
 export default function AdminPOStageRoles() {
   const currentUser = useAuthStore(s => s.user);
-  const isAdmin = currentUser?.role === 'admin';
+  const isAdmin = canManageAdminPage(currentUser, 'po-stage-roles');
   const qc = useQueryClient();
   const [addingStage, setAddingStage] = useState<string | null>(null);
   const [selectedUserId, setSelectedUserId] = useState('');

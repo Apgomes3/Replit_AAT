@@ -153,11 +153,10 @@ describe('evaporation correlation administration', () => {
     ));
   });
 
-  it('allows only platform administrators to manage the library', () => {
+  it('allows admins and engineers with Design Books manage access to manage the library', () => {
     expect(canManageEvaporationCorrelations(useAuthStore.getState().user)).toBe(true);
-    expect(canManageEvaporationCorrelations({
-      ...useAuthStore.getState().user!,
-      role: 'engineer',
-    })).toBe(false);
+    const engineer = { ...useAuthStore.getState().user!, role: 'engineer' as const };
+    expect(canManageEvaporationCorrelations({ ...engineer, moduleAccess: { design_books: 'manage' } })).toBe(true);
+    expect(canManageEvaporationCorrelations({ ...engineer, moduleAccess: { design_books: 'view' } })).toBe(false);
   });
 });

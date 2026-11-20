@@ -24,7 +24,8 @@ export type AdminPopupGroup = 'Library' | 'Documents' | 'Order Management' | 'Sy
 export const ADMIN_POPUP_GROUPS: AdminPopupGroup[] = ['Library', 'Documents', 'Order Management', 'System'];
 
 /** Who may open an entry besides admins: editors with this module access level. */
-export type AdminAccess = { module: 'design_books'; level: 'manage' };
+export type AdminAccess = { module: 'design_books' | 'orders'; level: 'manage' };
+const ENGINEERING_SETTINGS: AdminAccess = { module: 'design_books', level: 'manage' };
 
 export type AdminEntry = {
   id: string;
@@ -50,17 +51,17 @@ export const ADMIN_ENTRIES: AdminEntry[] = [
   { id: 'tank-families', to: '/admin/tank-families', icon: Container, label: 'Tank Families', description: 'Tank classification families.', domain: 'engineering', group: 'Catalogues', popupGroup: 'Library', keywords: ['tanks'] },
   { id: 'tank-cost-rates', to: '/admin/tank-cost-rates', icon: DollarSign, label: 'Tank Cost Rates', description: 'Rates used for tank cost estimates.', domain: 'engineering', group: 'Costing', popupGroup: 'Library', keywords: ['price', 'tanks'] },
   { id: 'exchange-rates', to: '/admin/exchange-rates', icon: DollarSign, label: 'Exchange Rates', description: 'Currency rates for quotes and orders.', domain: 'management', group: 'Finance', popupGroup: 'Library', keywords: ['currency', 'fx'] },
-  { id: 'system-types', to: '/admin/system-types', icon: Layers, label: 'System Types', description: 'Life-support system types for design books.', domain: 'engineering', group: 'Engineering data', popupGroup: 'Library' },
-  { id: 'pump-duty-types', to: '/admin/pump-duty-types', icon: Pipette, label: 'Pump Duty Types', description: 'Pump duties used in loops and sizing.', domain: 'engineering', group: 'Engineering data', popupGroup: 'Library' },
-  { id: 'field-instruments', to: '/admin/field-instruments', icon: SlidersHorizontal, label: 'Field Instruments', description: 'Tag rules, signals and instrument requirements.', domain: 'engineering', group: 'Engineering data', popupGroup: 'Library', keywords: ['tags', 'p&id'] },
-  { id: 'pipe-sizing-standards', to: '/admin/pipe-sizing-standards', icon: Pipette, label: 'Pipe Sizing Standards', description: 'Velocity and sizing standards for piping.', domain: 'engineering', group: 'Engineering data', popupGroup: 'Library' },
+  { id: 'system-types', to: '/admin/system-types', icon: Layers, label: 'System Types', description: 'Life-support system types for design books.', domain: 'engineering', group: 'Engineering data', popupGroup: 'Library', access: ENGINEERING_SETTINGS },
+  { id: 'pump-duty-types', to: '/admin/pump-duty-types', icon: Pipette, label: 'Pump Duty Types', description: 'Pump duties used in loops and sizing.', domain: 'engineering', group: 'Engineering data', popupGroup: 'Library', access: ENGINEERING_SETTINGS },
+  { id: 'field-instruments', to: '/admin/field-instruments', icon: SlidersHorizontal, label: 'Field Instruments', description: 'Tag rules, signals and instrument requirements.', domain: 'engineering', group: 'Engineering data', popupGroup: 'Library', keywords: ['tags', 'p&id'], access: ENGINEERING_SETTINGS },
+  { id: 'pipe-sizing-standards', to: '/admin/pipe-sizing-standards', icon: Pipette, label: 'Pipe Sizing Standards', description: 'Velocity and sizing standards for piping.', domain: 'engineering', group: 'Engineering data', popupGroup: 'Library', access: ENGINEERING_SETTINGS },
   { id: 'biological-media-profiles', to: '/admin/biological-media-profiles', icon: Activity, label: 'Biological Media Profiles', description: 'Biofilter media performance profiles.', domain: 'engineering', group: 'Engineering data', popupGroup: 'Library' },
   { id: 'uv-engineering', to: '/admin/uv-engineering', icon: Sun, label: 'UV Engineering Products', description: 'UV product dose data and reviews.', domain: 'engineering', group: 'Engineering data', popupGroup: 'Library' },
-  { id: 'thermal-wall-constructions', to: '/admin/thermal-wall-constructions', icon: Layers, label: 'Thermal Wall Constructions', description: 'Wall build-ups for heat-loss calculations.', domain: 'engineering', group: 'Engineering data', popupGroup: 'Library', access: { module: 'design_books', level: 'manage' } },
-  { id: 'evaporation-correlations', to: '/admin/evaporation-correlations', icon: Wind, label: 'Evaporation Correlations', description: 'Evaporation models for water balance.', domain: 'engineering', group: 'Engineering data', popupGroup: 'Library' },
-  { id: 'chemical-parameters', to: '/admin/chemical-parameters', icon: Pipette, label: 'Chemical Parameters', description: 'Water density and chemistry constants.', domain: 'engineering', group: 'Engineering data', popupGroup: 'Library' },
+  { id: 'thermal-wall-constructions', to: '/admin/thermal-wall-constructions', icon: Layers, label: 'Thermal Wall Constructions', description: 'Wall build-ups for heat-loss calculations.', domain: 'engineering', group: 'Engineering data', popupGroup: 'Library', access: ENGINEERING_SETTINGS },
+  { id: 'evaporation-correlations', to: '/admin/evaporation-correlations', icon: Wind, label: 'Evaporation Correlations', description: 'Evaporation models for water balance.', domain: 'engineering', group: 'Engineering data', popupGroup: 'Library', access: ENGINEERING_SETTINGS },
+  { id: 'chemical-parameters', to: '/admin/chemical-parameters', icon: Pipette, label: 'Chemical Parameters', description: 'Water density and chemistry constants.', domain: 'engineering', group: 'Engineering data', popupGroup: 'Library', access: ENGINEERING_SETTINGS },
   { id: 'categories', to: '/admin/categories', icon: Boxes, label: 'Categories', description: 'Product categories.', domain: 'platform', group: 'Data', popupGroup: 'System' },
-  { id: 'po-stage-roles', to: '/admin/po-stage-roles', icon: GitBranch, label: 'PO Stage Roles', description: 'Who acts at each purchase order stage.', domain: 'procurement', group: 'Workflow', popupGroup: 'Order Management' },
+  { id: 'po-stage-roles', to: '/admin/po-stage-roles', icon: GitBranch, label: 'PO Stage Roles', description: 'Who acts at each purchase order stage.', domain: 'procurement', group: 'Workflow', popupGroup: 'Order Management', access: { module: 'orders', level: 'manage' } },
   { id: 'roles', to: '/admin/roles', icon: Users, label: 'Roles', description: 'Access roles and module visibility.', domain: 'platform', group: 'Access', popupGroup: 'System' },
   { id: 'users', to: '/admin/users', icon: Users, label: 'Users', description: 'People, roles and departments.', domain: 'platform', group: 'Access', popupGroup: 'System' },
   { id: 'csv-import', to: '/admin/import', icon: Upload, label: 'CSV Import', description: 'Bulk-load records from spreadsheets.', domain: 'platform', group: 'Data', popupGroup: 'System' },
@@ -72,6 +73,12 @@ export function canOpenAdminEntry(user: Pick<User, 'role' | 'moduleAccess'> | nu
   if (user.role === 'admin') return true;
   const access = entry.access;
   return !!access && isEditorRole(user.role) && user.moduleAccess?.[access.module] === access.level;
+}
+
+/** Whether this person may manage the admin page with this id. */
+export function canManageAdminPage(user: Pick<User, 'role' | 'moduleAccess'> | null | undefined, id: string): boolean {
+  const entry = ADMIN_ENTRIES.find(e => e.id === id);
+  return !!entry && canOpenAdminEntry(user, entry);
 }
 
 export function visibleAdminEntries(user: Pick<User, 'role' | 'moduleAccess'> | null | undefined): AdminEntry[] {

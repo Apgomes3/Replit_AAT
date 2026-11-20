@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import {
-  authenticate, AuthRequest, requireRole, requireModuleAccess, requireModuleManage,
+  authenticate, AuthRequest, requireRole, requireModuleAccess, requireModuleManage, requireDepartmentSettings,
 } from '../middleware/auth';
 import pool, { query } from '../db/index';
 import crypto from 'crypto';
@@ -2063,7 +2063,7 @@ router.get('/thermal-correlations', async (_req: AuthRequest, res: Response) => 
 
 router.get(
   '/thermal-correlations/versions/:versionId/usages',
-  requireRole('admin'),
+  requireDepartmentSettings('design_books'),
   async (req: AuthRequest, res: Response) => {
     const client = await pool.connect();
     try {
@@ -2096,7 +2096,7 @@ router.get(
 
 router.post(
   '/thermal-correlations/classes',
-  requireRole('admin'),
+  requireDepartmentSettings('design_books'),
   async (req: AuthRequest, res: Response) => {
     const classCode = String(req.body.class_code || '').trim();
     const className = String(req.body.class_name || '').trim();
@@ -2137,7 +2137,7 @@ router.post(
 
 router.put(
   '/thermal-correlations/classes/:classId',
-  requireRole('admin'),
+  requireDepartmentSettings('design_books'),
   async (req: AuthRequest, res: Response) => {
     const classCode = String(req.body.class_code || '').trim();
     const className = String(req.body.class_name || '').trim();
@@ -2174,7 +2174,7 @@ router.put(
 
 router.post(
   '/thermal-correlations/classes/:classId/versions',
-  requireRole('admin'),
+  requireDepartmentSettings('design_books'),
   async (req: AuthRequest, res: Response) => {
     const version = String(req.body.version || '').trim();
     const coefficient = positiveCorrelationCoefficient(req.body.coefficient_kg_m2_s_kpa);
@@ -2308,7 +2308,7 @@ router.post(
 
 router.post(
   '/thermal-correlations/versions/:versionId/supersede',
-  requireRole('admin'),
+  requireDepartmentSettings('design_books'),
   async (req: AuthRequest, res: Response) => {
     const client = await pool.connect();
     try {

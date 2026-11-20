@@ -14,7 +14,9 @@ describe('admin registry', () => {
   it('shows everything to admins and only granted entries to others', () => {
     expect(visibleAdminEntries({ role: 'admin', moduleAccess: {} })).toHaveLength(ADMIN_ENTRIES.length);
     expect(visibleAdminEntries({ role: 'engineer', moduleAccess: { design_books: 'manage' } }).map(e => e.id))
-      .toEqual(['thermal-wall-constructions']);
+      .toEqual(['system-types', 'pump-duty-types', 'field-instruments', 'pipe-sizing-standards', 'thermal-wall-constructions', 'evaporation-correlations', 'chemical-parameters']);
+    expect(visibleAdminEntries({ role: 'manager', moduleAccess: { orders: 'manage' } }).map(e => e.id)).toEqual(['po-stage-roles']);
+    expect(visibleAdminEntries({ role: 'engineer', moduleAccess: { design_books: 'view' } })).toEqual([]);
     expect(visibleAdminEntries({ role: 'viewer', moduleAccess: { design_books: 'manage' } })).toEqual([]);
     expect(visibleAdminEntries(null)).toEqual([]);
   });

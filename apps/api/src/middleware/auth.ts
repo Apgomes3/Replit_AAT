@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { query } from '../db';
 import { ModuleAccessKey } from '../lib/moduleAccess';
+import { EDITOR_ROLES } from '../lib/roles';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'edp-secret-change-in-production';
 
@@ -70,6 +71,34 @@ export const requireModuleManage = (moduleKey: ModuleAccessKey) => async (req: A
       return res.status(403).json({
         error: { code: 'MODULE_READ_ONLY', message: 'Manage access is required for this module.' },
       });
+    }
+    next();
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Department settings: admins, or editors whose role has an explicit 'manage' row for the module.
+ * Stricter than requireModuleManage, which lets legacy accounts without a row through.
+ */
+export const requireDepartmentSettings = (moduleKey: ModuleAccessKey) => async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const role = req.user?.role;
+    if (role === 'admin') return next();
+    if (!role || !(EDITOR_ROLES as readonly string[]).includes(role)) {
+      return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } });
+    }
+    const result = await query(
+      `SELECT rma.access_level
+       FROM users u
+       JOIN roles r ON r.name=u.role
+       JOIN role_module_access rma ON rma.role_id=r.id AND rma.module_key=$2
+       WHERE u.id=$1`,
+      [req.user!.id, moduleKey],
+    );
+    if (result.rows[0]?.access_level !== 'manage') {
+      return res.status(403).json({ error: { code: 'MODULE_READ_ONLY', message: 'Manage access is required for these settings.' } });
     }
     next();
   } catch (error) {
