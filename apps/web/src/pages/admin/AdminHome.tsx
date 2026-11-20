@@ -42,37 +42,38 @@ export default function AdminHome() {
   const renderTile = (entry: AdminEntry) => {
     const Icon = entry.icon;
     const isPinned = pinned.includes(entry.id);
+    const alert = alertFor(entry.id);
     return (
-      <div key={entry.id} className="group relative flex items-start gap-3 rounded-lg px-3 py-2.5 hover:bg-stone-50">
-        <Icon className="mt-0.5 h-4 w-4 shrink-0 text-stone-400 group-hover:text-blue-500" />
-        <div className="min-w-0 flex-1">
-          <Link to={entry.to} onClick={() => rememberAdminPage(entry.id)}
-            className="text-sm font-medium text-stone-800 hover:text-blue-600 after:absolute after:inset-0">{entry.label}</Link>
-          <p className="text-xs text-stone-500">{entry.description}</p>
-          {alertFor(entry.id) && <p className="mt-0.5 flex items-center gap-1 text-xs font-medium text-amber-700">
-            <AlertTriangle className="h-3 w-3" aria-hidden />{alertFor(entry.id)!.message}</p>}
-        </div>
-        {counts[entry.id] !== undefined && <span className="mt-0.5 rounded-full bg-stone-100 px-2 py-0.5 text-[11px] tabular-nums text-stone-500"
+      <div key={entry.id} title={entry.description}
+        className="group relative flex items-center gap-2.5 rounded-lg border border-stone-200 bg-white px-3 py-2 hover:border-blue-200 hover:bg-blue-50/40">
+        <Icon className="h-4 w-4 shrink-0 text-stone-400 group-hover:text-blue-500" />
+        <Link to={entry.to} onClick={() => rememberAdminPage(entry.id)}
+          className="min-w-0 flex-1 truncate text-sm font-medium text-stone-800 hover:text-blue-600 after:absolute after:inset-0">{entry.label}</Link>
+        {alert && <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-500" aria-label={alert.message} />}
+        {counts[entry.id] !== undefined && <span className="shrink-0 rounded-full bg-stone-100 px-1.5 text-[11px] tabular-nums text-stone-500"
           title={`${counts[entry.id]} records`}>{counts[entry.id]}</span>}
         <button type="button" onClick={() => setPinned(togglePinnedAdmin(entry.id))}
           aria-label={`${isPinned ? 'Unpin' : 'Pin'} ${entry.label}`} aria-pressed={isPinned}
-          className={clsx('relative z-10 rounded p-1 hover:bg-stone-100', isPinned ? 'text-amber-500' : 'text-stone-300 opacity-0 group-hover:opacity-100 focus-visible:opacity-100')}>
+          className={clsx('relative z-10 shrink-0 rounded p-0.5 hover:bg-stone-100', isPinned ? 'text-amber-500' : 'text-stone-300 opacity-0 group-hover:opacity-100 focus-visible:opacity-100')}>
           <Star className={clsx('h-3.5 w-3.5', isPinned && 'fill-current')} />
         </button>
       </div>
     );
   };
 
-  const renderCard = (title: string, items: AdminEntry[], href?: string) => {
-    const groups = [...new Set(items.map(e => e.group))];
+  const TILE_GRID = 'grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4';
+
+  /** One department (or result set): group headings, each with a compact tile grid. */
+  const renderSection = (title: string, items: AdminEntry[], href?: string, grouped = true) => {
+    const groups = grouped ? [...new Set(items.map(e => e.group))] : [null];
     return (
-      <section key={title} aria-label={title} className="rounded-xl border border-stone-200 bg-white p-3 shadow-sm">
-        <h2 className="px-3 pt-1 pb-2 text-sm font-semibold text-stone-800">{href ? <Link to={href} className="hover:text-blue-600">{title}</Link> : title}</h2>
-        {items.length === 0 ? <p className="px-3 pb-2 text-xs text-stone-400">Nothing to configure yet</p>
+      <section key={title} aria-label={title}>
+        <h2 className="mb-2 text-sm font-semibold text-stone-800">{href ? <Link to={href} className="hover:text-blue-600">{title}</Link> : title}</h2>
+        {items.length === 0 ? <p className="text-xs text-stone-400">Nothing to configure yet</p>
           : groups.map(group => (
-            <div key={group} className="mb-1">
-              <div className="px-3 pt-1 text-[10px] font-bold uppercase tracking-[0.12em] text-stone-400">{group}</div>
-              {items.filter(e => e.group === group).map(renderTile)}
+            <div key={group ?? 'all'} className="mb-3">
+              {group && <div className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-stone-400">{group}</div>}
+              <div className={TILE_GRID}>{items.filter(e => !group || e.group === group).map(renderTile)}</div>
             </div>
           ))}
       </section>
@@ -82,8 +83,14 @@ export default function AdminHome() {
   const pinnedEntries = shortcuts(pinned);
   const recentEntries = shortcuts(recent);
   const isAdmin = user?.role === 'admin';
+  const attention = (summary.data?.alerts ?? []).map(a => ({ alert: a, entry: byId.get(a.id) })).filter(x => x.entry);
+  const shownDomains = DOMAIN_ORDER.filter(d => isAdmin || entries.some(e => e.domain === d));
+  const [chip, setChip] = useState<AdminDomain | 'all' | null>(null);
+  // Open on the person's own department; management, admins without one, and everyone else see all.
+  const ownDomain = user?.department && user.department !== 'management' ? adminDomainFromSlug(user.department) : null;
+  const activeChip = chip ?? (ownDomain && entries.some(e => e.domain === ownDomain) ? ownDomain : 'all');
   if (slug && !onlyDomain) return <Navigate to="/admin" replace />;
-  const domains = onlyDomain ? [onlyDomain] : DOMAIN_ORDER;
+  const domains = onlyDomain ? [onlyDomain] : activeChip === 'all' ? shownDomains : [activeChip];
   const pageTitle = onlyDomain ? ADMIN_DOMAIN_LABELS[onlyDomain] : 'Settings & Data';
 
   return <div>
@@ -101,20 +108,40 @@ export default function AdminHome() {
       {searching ? (
         matches.length === 0
           ? <EmptyState icon={Search} title={`No settings match “${query.trim()}”`} actionLabel="Clear search" onAction={() => setQuery('')} />
-          : renderCard(`${matches.length} result${matches.length === 1 ? '' : 's'}`, matches)
+          : renderSection(`${matches.length} result${matches.length === 1 ? '' : 's'}`, matches, undefined, false)
       ) : <>
-        {!onlyDomain && (pinnedEntries.length > 0 || recentEntries.length > 0) && (
-          <div className="grid gap-4 md:grid-cols-2">
-            {pinnedEntries.length > 0 && renderCard('Pinned', pinnedEntries)}
-            {recentEntries.length > 0 && renderCard('Recently opened', recentEntries)}
+        {attention.length > 0 && (
+          <section aria-label="Needs attention" className="rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+            <h2 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-amber-800"><AlertTriangle className="h-4 w-4" aria-hidden /> Needs attention</h2>
+            <ul className="flex flex-wrap gap-2">
+              {attention.map(({ alert, entry }) => (
+                <li key={alert.id}>
+                  <Link to={entry!.to} onClick={() => rememberAdminPage(entry!.id)}
+                    className="inline-flex items-center gap-2 rounded-lg border border-amber-200 bg-white px-3 py-1.5 text-sm hover:border-amber-300">
+                    <span className="font-medium text-stone-800">{entry!.label}</span>
+                    <span className="text-xs text-amber-700">{alert.message}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+        {!onlyDomain && pinnedEntries.length > 0 && renderSection('Pinned', pinnedEntries, undefined, false)}
+        {!onlyDomain && recentEntries.length > 0 && renderSection('Recently opened', recentEntries, undefined, false)}
+        {!onlyDomain && shownDomains.length > 1 && (
+          <div role="group" aria-label="Department" className="flex flex-wrap gap-1.5 border-t border-stone-200 pt-4">
+            {(['all', ...shownDomains] as const).map(d => (
+              <button key={d} type="button" onClick={() => setChip(d)} aria-pressed={activeChip === d}
+                className={clsx('rounded-full border px-3 py-1.5 text-xs font-bold',
+                  activeChip === d ? 'border-blue-600 bg-blue-600 text-white hover:bg-blue-700' : 'border-stone-200 bg-white text-stone-600 hover:bg-stone-50')}>
+                {d === 'all' ? 'All' : ADMIN_DOMAIN_LABELS[d]}
+              </button>
+            ))}
           </div>
         )}
-        <div className={clsx('grid items-start gap-4', onlyDomain ? 'max-w-3xl' : 'md:grid-cols-2 xl:grid-cols-3')}>
-          {domains.map(domain => {
-            const items = entries.filter(e => e.domain === domain);
-            if (items.length === 0 && !isAdmin) return null;
-            return renderCard(ADMIN_DOMAIN_LABELS[domain], items, onlyDomain ? undefined : `/admin/${adminDomainSlug(domain)}`);
-          })}
+        <div className="space-y-6">
+          {domains.map(domain => renderSection(ADMIN_DOMAIN_LABELS[domain], entries.filter(e => e.domain === domain),
+            onlyDomain ? undefined : `/admin/${adminDomainSlug(domain)}`))}
         </div>
       </>}
     </div>

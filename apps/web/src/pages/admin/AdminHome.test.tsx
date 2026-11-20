@@ -49,4 +49,22 @@ describe('AdminHome', () => {
     expect(await screen.findByTitle('7 records')).toHaveTextContent('7');
     expect(screen.getByText('Last updated 45 days ago')).toBeVisible();
   });
+
+  it('opens on their own department and switches with the chips', async () => {
+    const user = userEvent.setup();
+    useAuthStore.setState({
+      user: { id: 'p', email: 'p@example.com', firstName: 'P', lastName: 'R', role: 'admin', department: 'procurement', moduleAccess: {} },
+    });
+    renderHome();
+    expect(screen.getByRole('button', { name: 'Procurement' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('region', { name: 'Procurement' })).toHaveTextContent('PO Stage Roles');
+    expect(screen.queryByRole('region', { name: 'Engineering' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Engineering' }));
+    expect(screen.getByRole('region', { name: 'Engineering' })).toHaveTextContent('Pump Duty Types');
+  });
+
+  it('lists warnings in a Needs attention strip', async () => {
+    renderHome();
+    expect(await screen.findByRole('region', { name: 'Needs attention' })).toHaveTextContent('Exchange Rates');
+  });
 });
