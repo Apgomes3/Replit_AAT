@@ -5,7 +5,7 @@ import clsx from 'clsx';
 import { useCommandPalette } from '../../store/commandPaletteStore';
 import { useAuthStore } from '../../store/authStore';
 import { ModuleKey, ROUTES } from '../../lib/navigation';
-import { isEditorRole } from '../../lib/roles';
+import { adminPopupGroups, visibleAdminEntries } from '../../lib/adminRegistry';
 import { Department, DEPARTMENT_AREAS } from '../../lib/departments';
 
 type NavItemDef = { id: string; to: string; icon: any; label: string; moduleKey?: ModuleKey; end?: boolean };
@@ -50,32 +50,6 @@ const AREAS: NavArea[] = [
   ] },
   { id: 'logistics', label: 'Logistics', items: [], emptyFor: ['logistics', 'management'] },
   { id: 'factory', label: 'Factory', items: [], emptyFor: ['factory', 'management'] },
-];
-
-const ADMIN_ITEMS: NavItemDef[] = [
-  { id: 'families', to: '/products', icon: Package, label: 'Families', end: true },
-  { id: 'materials', to: '/knowledge/materials', icon: BookOpen, label: 'Materials' },
-  { id: 'specifications', to: '/knowledge/specifications', icon: BookOpen, label: 'Specifications' },
-  { id: 'design-rules', to: '/knowledge/design-rules', icon: Ruler, label: 'Design Rules' },
-  { id: 'document-register', to: '/documents', icon: FileText, label: 'Document Register' },
-  { id: 'tank-families', to: '/admin/tank-families', icon: Container, label: 'Tank Families' },
-  { id: 'tank-cost-rates', to: '/admin/tank-cost-rates', icon: DollarSign, label: 'Tank Cost Rates' },
-  { id: 'exchange-rates', to: '/admin/exchange-rates', icon: DollarSign, label: 'Exchange Rates' },
-  { id: 'system-types', to: '/admin/system-types', icon: Layers, label: 'System Types' },
-  { id: 'pump-duty-types', to: '/admin/pump-duty-types', icon: Pipette, label: 'Pump Duty Types' },
-  { id: 'field-instruments', to: '/admin/field-instruments', icon: SlidersHorizontal, label: 'Field Instruments' },
-  { id: 'pipe-sizing-standards', to: '/admin/pipe-sizing-standards', icon: Pipette, label: 'Pipe Sizing Standards' },
-  { id: 'biological-media-profiles', to: '/admin/biological-media-profiles', icon: Activity, label: 'Biological Media Profiles' },
-  { id: 'uv-engineering', to: '/admin/uv-engineering', icon: Sun, label: 'UV Engineering Products' },
-  { id: 'thermal-wall-constructions', to: '/admin/thermal-wall-constructions', icon: Layers, label: 'Thermal Wall Constructions' },
-  { id: 'evaporation-correlations', to: '/admin/evaporation-correlations', icon: Wind, label: 'Evaporation Correlations' },
-  { id: 'chemical-parameters', to: '/admin/chemical-parameters', icon: Pipette, label: 'Chemical Parameters' },
-  { id: 'categories', to: '/admin/categories', icon: Boxes, label: 'Categories' },
-  { id: 'po-stage-roles', to: '/admin/po-stage-roles', icon: GitBranch, label: 'PO Stage Roles' },
-  { id: 'roles', to: '/admin/roles', icon: Users, label: 'Roles' },
-  { id: 'users', to: '/admin/users', icon: Users, label: 'Users' },
-  { id: 'csv-import', to: '/admin/import', icon: Upload, label: 'CSV Import' },
-  { id: 'audit-log', to: '/admin/audit-log', icon: ClipboardList, label: 'Audit Log' },
 ];
 
 const STORAGE_KEY = 'nav-collapsed-areas';
@@ -151,25 +125,13 @@ function NavAreaSection({ area, items, expanded, onToggle, collapsed }: {
   );
 }
 
-const ADMIN_GROUPS = [
-  { label: 'Library', items: ADMIN_ITEMS.filter(i => ['families', 'materials', 'specifications', 'design-rules', 'tank-families', 'tank-cost-rates', 'exchange-rates', 'system-types', 'pump-duty-types', 'field-instruments', 'pipe-sizing-standards', 'biological-media-profiles', 'uv-engineering', 'thermal-wall-constructions', 'evaporation-correlations', 'chemical-parameters'].includes(i.id)) },
-  { label: 'Documents', items: ADMIN_ITEMS.filter(i => ['document-register'].includes(i.id)) },
-  { label: 'Order Management', items: ADMIN_ITEMS.filter(i => ['po-stage-roles'].includes(i.id)) },
-  { label: 'System', items: ADMIN_ITEMS.filter(i => ['categories', 'roles', 'users', 'csv-import', 'audit-log'].includes(i.id)) },
-];
-
 function AdminPopup({ onClose, onNavigate }: { onClose: () => void; onNavigate?: () => void }) {
   const navigate = useNavigate();
   const user = useAuthStore(state => state.user);
   const ref = useRef<HTMLDivElement>(null);
   const menuItemRefs = useRef<HTMLButtonElement[]>([]);
   const [activeItemIndex, setActiveItemIndex] = useState(0);
-  const visibleGroups = user?.role !== 'admin'
-    ? ADMIN_GROUPS.map(group => ({
-      ...group,
-      items: group.items.filter(item => item.id === 'thermal-wall-constructions'),
-    })).filter(group => group.items.length > 0)
-    : ADMIN_GROUPS;
+  const visibleGroups = adminPopupGroups(visibleAdminEntries(user));
 
   useEffect(() => {
     const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) onClose(); };
@@ -273,8 +235,7 @@ export default function LeftNav({ collapsed, onToggleCollapsed, onNavigate }: Le
   // The user record can arrive after the first render (page reload): apply their default then.
   useEffect(() => { setCollapsedAreas(loadCollapsedAreas(user?.id, user?.department)); }, [user?.id, user?.department]);
   const itemVisible = (item: NavItemDef) => !item.moduleKey || user?.moduleAccess?.[item.moduleKey] !== 'hidden';
-  const canAccessPlatformAdmin = user?.role === 'admin' ||
-    (isEditorRole(user?.role) && user?.moduleAccess?.design_books === 'manage');
+  const canAccessPlatformAdmin = visibleAdminEntries(user).length > 0;
   const sharedItems = SHARED_ITEMS.filter(itemVisible);
   const showsEmptyArea = (area: NavArea) => user?.role === 'admin' || (!!user?.department && !!area.emptyFor?.includes(user.department));
   const visibleAreas = AREAS
