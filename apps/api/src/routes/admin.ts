@@ -84,6 +84,57 @@ router.get('/email-status', authenticate, requireRole('admin'), (_req: AuthReque
   res.json({ smtp_configured: isSmtpConfigured() });
 });
 
+/** Settings page id → table counted for the Settings & Data cards. */
+const SETTINGS_COUNT_TABLES: Record<string, string> = {
+  families: 'product_families',
+  materials: 'materials',
+  specifications: 'specifications',
+  'design-rules': 'design_rules',
+  'tank-families': 'tank_families',
+  'tank-cost-rates': 'tank_cost_rates',
+  'exchange-rates': 'platform_exchange_rates',
+  'system-types': 'system_types',
+  'pump-duty-types': 'pump_duty_types',
+  'field-instruments': 'field_instrument_definitions',
+  'pipe-sizing-standards': 'pipe_sizing_standards',
+  'biological-media-profiles': 'lss_biological_media_profiles',
+  'uv-engineering': 'uv_engineering_catalogs',
+  'thermal-wall-constructions': 'thermal_wall_construction_defaults',
+  'evaporation-correlations': 'thermal_mass_transfer_correlations',
+  'chemical-parameters': 'water_density_parameters',
+  categories: 'product_categories',
+  'po-stage-roles': 'po_stage_assignees',
+  roles: 'roles',
+  users: 'users',
+};
+export const EXCHANGE_RATE_STALE_DAYS = 30;
+
+/** Record counts and simple warnings for the Settings & Data landing page. */
+router.get('/settings-summary', authenticate, requireRole(...EDITOR_ROLES), async (_req: AuthRequest, res: Response) => {
+  const counts: Record<string, number> = {};
+  // Table names come from the fixed map above, never from the request.
+  await Promise.all(Object.entries(SETTINGS_COUNT_TABLES).map(async ([id, table]) => {
+    try {
+      const r = await query(`SELECT count(*)::int AS n FROM ${table}`);
+      counts[id] = r.rows[0].n;
+    } catch { /* table missing in this database: leave the count out */ }
+  }));
+
+  const alerts: Array<{ id: string; message: string }> = [];
+  try {
+    const fx = await query(`SELECT floor(EXTRACT(EPOCH FROM now() - max(updated_at)) / 86400)::int AS days FROM platform_exchange_rates`);
+    const days = fx.rows[0]?.days;
+    if (typeof days === 'number' && days >= EXCHANGE_RATE_STALE_DAYS) alerts.push({ id: 'exchange-rates', message: `Last updated ${days} days ago` });
+  } catch { /* ignore */ }
+  try {
+    const uv = await query(`SELECT count(*)::int AS n FROM uv_engineering_revisions WHERE status = 'Draft'`);
+    const n = uv.rows[0]?.n ?? 0;
+    if (n > 0) alerts.push({ id: 'uv-engineering', message: `${n} draft revision${n === 1 ? '' : 's'} awaiting approval` });
+  } catch { /* ignore */ }
+
+  res.json({ counts, alerts });
+});
+
 router.get('/users', authenticate, requireRole(...EDITOR_ROLES), async (req: AuthRequest, res: Response) => {
   const page = Math.max(1, parseInt(req.query.page as string) || 1);
   const page_size = Math.min(1000, Math.max(1, parseInt(req.query.page_size as string) || 25));

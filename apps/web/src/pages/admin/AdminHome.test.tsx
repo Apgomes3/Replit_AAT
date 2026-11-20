@@ -1,11 +1,16 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('../../lib/api', () => ({
+  default: { get: vi.fn(() => Promise.resolve({ data: { counts: { roles: 7 }, alerts: [{ id: 'exchange-rates', message: 'Last updated 45 days ago' }] } })) },
+}));
 import AdminHome from './AdminHome';
 import { useAuthStore } from '../../store/authStore';
 
-const renderHome = () => render(<MemoryRouter><AdminHome /></MemoryRouter>);
+const renderHome = () => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MemoryRouter><AdminHome /></MemoryRouter></QueryClientProvider>);
 
 describe('AdminHome', () => {
   beforeEach(() => {
@@ -38,5 +43,10 @@ describe('AdminHome', () => {
     unmount();
     renderHome();
     expect(screen.getByRole('region', { name: 'Pinned' })).toHaveTextContent('Roles');
+  });
+  it('shows record counts and warnings from the settings summary', async () => {
+    renderHome();
+    expect(await screen.findByTitle('7 records')).toHaveTextContent('7');
+    expect(screen.getByText('Last updated 45 days ago')).toBeVisible();
   });
 });

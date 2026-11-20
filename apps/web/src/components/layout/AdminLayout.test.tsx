@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it } from 'vitest';
 import AdminLayout from './AdminLayout';
@@ -6,6 +7,7 @@ import AdminHome from '../../pages/admin/AdminHome';
 import { useAuthStore } from '../../store/authStore';
 
 const renderAt = (path: string) => render(
+  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
   <MemoryRouter initialEntries={[path]}>
     <Routes>
       <Route element={<AdminLayout />}>
@@ -14,7 +16,8 @@ const renderAt = (path: string) => render(
         <Route path="admin/pump-duty-types" element={<p>pump page</p>} />
       </Route>
     </Routes>
-  </MemoryRouter>,
+  </MemoryRouter>
+  </QueryClientProvider>,
 );
 
 describe('AdminLayout and department pages', () => {

@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import { Link, Navigate, useParams } from 'react-router-dom';
-import { Search, Star } from 'lucide-react';
+import { AlertTriangle, Search, Star } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import api from '../../lib/api';
 import clsx from 'clsx';
 import PageHeader from '../../components/ui/PageHeader';
 import EmptyState from '../../components/ui/EmptyState';
@@ -27,18 +29,31 @@ export default function AdminHome() {
 
   const matches = entries.filter(e => matchesAdminSearch(e, query));
   const searching = query.trim().length > 0;
+  const summary = useQuery<{ counts: Record<string, number>; alerts: Array<{ id: string; message: string }> }>({
+    queryKey: ['admin-settings-summary'],
+    queryFn: () => api.get('/admin/settings-summary').then(r => r.data),
+    staleTime: 60_000,
+    retry: false,
+  });
+  const counts = summary.data?.counts ?? {};
+  const alertFor = (id: string) => summary.data?.alerts.find(a => a.id === id);
 
-  const Tile = ({ entry }: { entry: AdminEntry }) => {
+  // Plain render functions (not inner components) so tiles keep their DOM nodes when data arrives.
+  const renderTile = (entry: AdminEntry) => {
     const Icon = entry.icon;
     const isPinned = pinned.includes(entry.id);
     return (
-      <div className="group relative flex items-start gap-3 rounded-lg px-3 py-2.5 hover:bg-stone-50">
+      <div key={entry.id} className="group relative flex items-start gap-3 rounded-lg px-3 py-2.5 hover:bg-stone-50">
         <Icon className="mt-0.5 h-4 w-4 shrink-0 text-stone-400 group-hover:text-blue-500" />
         <div className="min-w-0 flex-1">
           <Link to={entry.to} onClick={() => rememberAdminPage(entry.id)}
             className="text-sm font-medium text-stone-800 hover:text-blue-600 after:absolute after:inset-0">{entry.label}</Link>
           <p className="text-xs text-stone-500">{entry.description}</p>
+          {alertFor(entry.id) && <p className="mt-0.5 flex items-center gap-1 text-xs font-medium text-amber-700">
+            <AlertTriangle className="h-3 w-3" aria-hidden />{alertFor(entry.id)!.message}</p>}
         </div>
+        {counts[entry.id] !== undefined && <span className="mt-0.5 rounded-full bg-stone-100 px-2 py-0.5 text-[11px] tabular-nums text-stone-500"
+          title={`${counts[entry.id]} records`}>{counts[entry.id]}</span>}
         <button type="button" onClick={() => setPinned(togglePinnedAdmin(entry.id))}
           aria-label={`${isPinned ? 'Unpin' : 'Pin'} ${entry.label}`} aria-pressed={isPinned}
           className={clsx('relative z-10 rounded p-1 hover:bg-stone-100', isPinned ? 'text-amber-500' : 'text-stone-300 opacity-0 group-hover:opacity-100 focus-visible:opacity-100')}>
@@ -48,16 +63,16 @@ export default function AdminHome() {
     );
   };
 
-  const Card = ({ title, items, href }: { title: string; items: AdminEntry[]; href?: string }) => {
+  const renderCard = (title: string, items: AdminEntry[], href?: string) => {
     const groups = [...new Set(items.map(e => e.group))];
     return (
-      <section aria-label={title} className="rounded-xl border border-stone-200 bg-white p-3 shadow-sm">
+      <section key={title} aria-label={title} className="rounded-xl border border-stone-200 bg-white p-3 shadow-sm">
         <h2 className="px-3 pt-1 pb-2 text-sm font-semibold text-stone-800">{href ? <Link to={href} className="hover:text-blue-600">{title}</Link> : title}</h2>
         {items.length === 0 ? <p className="px-3 pb-2 text-xs text-stone-400">Nothing to configure yet</p>
           : groups.map(group => (
             <div key={group} className="mb-1">
               <div className="px-3 pt-1 text-[10px] font-bold uppercase tracking-[0.12em] text-stone-400">{group}</div>
-              {items.filter(e => e.group === group).map(e => <Tile key={e.id} entry={e} />)}
+              {items.filter(e => e.group === group).map(renderTile)}
             </div>
           ))}
       </section>
@@ -86,19 +101,19 @@ export default function AdminHome() {
       {searching ? (
         matches.length === 0
           ? <EmptyState icon={Search} title={`No settings match “${query.trim()}”`} actionLabel="Clear search" onAction={() => setQuery('')} />
-          : <Card title={`${matches.length} result${matches.length === 1 ? '' : 's'}`} items={matches} />
+          : renderCard(`${matches.length} result${matches.length === 1 ? '' : 's'}`, matches)
       ) : <>
         {!onlyDomain && (pinnedEntries.length > 0 || recentEntries.length > 0) && (
           <div className="grid gap-4 md:grid-cols-2">
-            {pinnedEntries.length > 0 && <Card title="Pinned" items={pinnedEntries} />}
-            {recentEntries.length > 0 && <Card title="Recently opened" items={recentEntries} />}
+            {pinnedEntries.length > 0 && renderCard('Pinned', pinnedEntries)}
+            {recentEntries.length > 0 && renderCard('Recently opened', recentEntries)}
           </div>
         )}
         <div className={clsx('grid items-start gap-4', onlyDomain ? 'max-w-3xl' : 'md:grid-cols-2 xl:grid-cols-3')}>
           {domains.map(domain => {
             const items = entries.filter(e => e.domain === domain);
             if (items.length === 0 && !isAdmin) return null;
-            return <Card key={domain} title={ADMIN_DOMAIN_LABELS[domain]} items={items} href={onlyDomain ? undefined : `/admin/${adminDomainSlug(domain)}`} />;
+            return renderCard(ADMIN_DOMAIN_LABELS[domain], items, onlyDomain ? undefined : `/admin/${adminDomainSlug(domain)}`);
           })}
         </div>
       </>}
