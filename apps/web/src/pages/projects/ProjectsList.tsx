@@ -48,6 +48,7 @@ export default function ProjectsList() {
   }, [suggestedCode, codeTouched]);
   const [saving, setSaving] = useState(false);
   const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [clientLogo, setClientLogo] = useState<string | null>(null);
   const logoInputRef = useRef<HTMLInputElement>(null);
 
   const [selectedScopes, setSelectedScopes] = useState<string[]>(['LSS', 'Tanks', 'Waterproofing', 'Theming', 'Acrylic']);
@@ -111,8 +112,8 @@ export default function ProjectsList() {
 
   const columns: Column<Project>[] = [
     {
-      key: 'logo_url', header: '', className: 'py-1.5 w-[72px]', render: r => r.logo_url
-        ? <img src={r.logo_url} alt="" className="w-16 h-12 rounded-md object-contain bg-slate-50 border border-slate-100" />
+      key: 'logo_url', header: '', className: 'py-1.5 w-[72px]', render: r => (r.logo_url || r.client_logo_url)
+        ? <img src={r.logo_url || r.client_logo_url!} alt="" className="w-16 h-12 rounded-md object-contain bg-slate-50 border border-slate-100" />
         : <div className="w-16 h-12 rounded-md bg-slate-100 border border-slate-200 flex items-center justify-center text-lg font-bold text-slate-400 uppercase">{(r.project_name?.[0] ?? r.project_code?.[0] ?? '?')}</div>
     },
     { key: 'project_code', header: 'Code', sortable: true, render: r => <EntityCode code={r.project_code} /> },
@@ -124,7 +125,7 @@ export default function ProjectsList() {
     { key: 'target_completion_date', header: 'Target', sortable: true, sortValue: r => r.target_completion_date ?? '', render: r => r.target_completion_date ? r.target_completion_date.split('T')[0] : '—' },
   ];
 
-  const openNew = () => { setForm(EMPTY_FORM); setCodeTouched(false); setPmMode('pick'); setPmSearch(''); setLogoFile(null); setSelectedScopes(['LSS', 'Tanks', 'Waterproofing', 'Theming', 'Acrylic']); setShowNew(true); };
+  const openNew = () => { setForm(EMPTY_FORM); setClientLogo(null); setCodeTouched(false); setPmMode('pick'); setPmSearch(''); setLogoFile(null); setSelectedScopes(['LSS', 'Tanks', 'Waterproofing', 'Theming', 'Acrylic']); setShowNew(true); };
   const closeNew = () => { setShowNew(false); setLogoFile(null); };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -241,7 +242,7 @@ export default function ProjectsList() {
               <div>
                 <label htmlFor="new-project-client" className="block text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">Client</label>
                 <ClientPicker id="new-project-client" value={form.client_id || null} valueLabel={form.client_name || null} placeholder="Search or add a company…"
-                  onChange={c => setForm(f => ({ ...f, client_id: c?.id ?? '', client_name: c?.name ?? '', country: f.country || c?.country || '', city: f.city || c?.city || '' }))} />
+                  onChange={c => { setClientLogo(c?.logo_url ?? null); setForm(f => ({ ...f, client_id: c?.id ?? '', client_name: c?.name ?? '', country: f.country || c?.country || '', city: f.city || c?.city || '' })); }} />
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">Country or Region</label>
@@ -398,6 +399,13 @@ export default function ProjectsList() {
                     </div>
                     <button type="button" aria-label="Remove client logo" title="Remove client logo" onClick={() => setLogoFile(null)}
                       className="text-slate-300 hover:text-red-400 transition-colors"><X className="w-4 h-4" /></button>
+                  </div>
+                ) : clientLogo ? (
+                  // The chosen client's logo is used unless another one is uploaded for this project.
+                  <div className="flex items-center gap-3 border border-slate-200 rounded-lg p-3 bg-slate-50">
+                    <img src={clientLogo} alt="" className="h-12 w-20 object-contain rounded bg-white border border-slate-100 p-1" />
+                    <div className="flex-1 min-w-0 text-xs text-slate-600">Uses {form.client_name}'s logo</div>
+                    <button type="button" onClick={() => logoInputRef.current?.click()} className="text-xs font-semibold text-blue-600 hover:underline shrink-0">Use another</button>
                   </div>
                 ) : (
                   <button type="button" onClick={() => logoInputRef.current?.click()}

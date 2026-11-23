@@ -405,6 +405,24 @@ async function normalizeFractionatorAllocations(
 }
 
 // PROJECTS
+/** The project's client company logo; a project shows its own logo_url first, else this one. */
+const CLIENT_LOGO = `(SELECT c.logo_url FROM clients c WHERE c.id = projects.client_id) AS client_logo_url`;
+
+/**
+ * A client company without a logo takes its project's logo, and the project then follows the
+ * client's logo instead of keeping its own copy. Run after a project's logo or client changes.
+ */
+export async function shareLogoWithClient(projectId: string) {
+  await withTransaction(async db => {
+    await db.query(
+      `UPDATE clients c SET logo_url = p.logo_url, updated_at = NOW() FROM projects p
+       WHERE p.id = $1 AND c.id = p.client_id AND c.logo_url IS NULL AND p.logo_url IS NOT NULL`, [projectId]);
+    await db.query(
+      `UPDATE projects p SET logo_url = NULL FROM clients c WHERE p.id = $1 AND c.id = p.client_id AND p.logo_url = c.logo_url`, [projectId]);
+  });
+  return (await query(`SELECT *, ${CLIENT_LOGO} FROM projects WHERE id = $1`, [projectId])).rows[0];
+}
+
 router.get('/projects', authenticate, async (req: AuthRequest, res: Response) => {
   const { page, page_size, offset } = paginate(req);
   const filters: string[] = [];
@@ -421,7 +439,7 @@ router.get('/projects', authenticate, async (req: AuthRequest, res: Response) =>
   const total = parseInt(countRes.rows[0].count);
 
   params.push(page_size, offset);
-  const result = await query(`SELECT * FROM projects ${where} ORDER BY ${sort} LIMIT $${params.length - 1} OFFSET $${params.length}`, params);
+  const result = await query(`SELECT *, ${CLIENT_LOGO} FROM projects ${where} ORDER BY ${sort} LIMIT $${params.length - 1} OFFSET $${params.length}`, params);
 
   res.json({ items: result.rows, pagination: { page, page_size, total } });
 });
@@ -437,7 +455,7 @@ router.get('/projects/next-code', authenticate, async (req: AuthRequest, res: Re
 });
 
 router.get('/projects/:id', authenticate, async (req: AuthRequest, res: Response) => {
-  const result = await query('SELECT * FROM projects WHERE id::text = $1 OR project_code = $1', [req.params.id]);
+  const result = await query(`SELECT *, ${CLIENT_LOGO} FROM projects WHERE id::text = $1 OR project_code = $1`, [req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Project not found' } });
   res.json(result.rows[0]);
 });
@@ -546,7 +564,8 @@ router.put('/projects/:id', authenticate, async (req: AuthRequest, res: Response
     project_status: result.rows[0].project_status,
     ...(codeChanged ? { previous_project_code: oldCode, project_code: result.rows[0].project_code } : {}),
   });
-  res.json(result.rows[0]);
+  // Linking the project to a client without a logo gives the client this project's logo.
+  res.json(client.present && client.client_id ? await shareLogoWithClient(result.rows[0].id) : result.rows[0]);
 });
 
 router.patch('/projects/:id/scopes', authenticate, async (req: AuthRequest, res: Response) => {
@@ -577,6 +596,16 @@ router.post('/projects/:id/logo', authenticate, uploadLogo.single('logo'), async
   const result = await query(
     'UPDATE projects SET logo_url=$1, updated_at=NOW() WHERE id=$2 RETURNING *',
     [logoUrl, req.params.id]
+  );
+  if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Project not found' } });
+  // The first logo for a client becomes the client's; later ones stay this project's own.
+  res.json(await shareLogoWithClient(result.rows[0].id));
+});
+
+/** Drops the project's own logo, so it shows its client's logo again. */
+router.delete('/projects/:id/logo', authenticate, async (req: AuthRequest, res: Response) => {
+  const result = await query(
+    `UPDATE projects SET logo_url=NULL, updated_at=NOW() WHERE id::text=$1 RETURNING *, ${CLIENT_LOGO}`, [req.params.id],
   );
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Project not found' } });
   res.json(result.rows[0]);

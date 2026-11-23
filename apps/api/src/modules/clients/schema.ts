@@ -5,6 +5,8 @@ export const CLIENTS_SCHEMA = `
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS kinds TEXT[] NOT NULL DEFAULT ARRAY['client']::text[];
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS parent_client_id UUID REFERENCES clients(id) ON DELETE SET NULL;
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS city VARCHAR(100);
+-- The company's logo (/uploads/...). Projects for the company show it unless they have their own.
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS logo_url VARCHAR(500);
 CREATE INDEX IF NOT EXISTS idx_clients_parent ON clients(parent_client_id);
 CREATE INDEX IF NOT EXISTS idx_clients_kinds ON clients USING GIN (kinds);
 DO $$ BEGIN

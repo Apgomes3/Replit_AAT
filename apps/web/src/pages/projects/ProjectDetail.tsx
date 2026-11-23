@@ -1146,6 +1146,19 @@ export default function ProjectDetail() {
       setLogoUploading(false);
     }
   };
+  /** Drops the project's own logo so it shows its client company's logo again. */
+  const showClientLogo = async () => {
+    setLogoUploading(true);
+    try {
+      await api.delete(`/projects/${project.id}/logo`);
+      toast.success("Showing the client's logo");
+      qc.invalidateQueries({ queryKey: ['project', id] });
+    } catch {
+      toast.error('Could not change the logo');
+    } finally {
+      setLogoUploading(false);
+    }
+  };
 
   const toggleSection = (section: string) =>
     setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
@@ -1397,9 +1410,11 @@ export default function ProjectDetail() {
               <div className="text-xs text-slate-400 uppercase tracking-wide mb-3">Client Logo</div>
               <input ref={logoInputRef} type="file" accept="image/*" className="hidden"
                 onChange={e => { const f = e.target.files?.[0]; if (f) handleLogoUpload(f); if (logoInputRef.current) logoInputRef.current.value = ''; }} />
-              {project.logo_url ? (
+              {/* The project's own logo, else its client company's (set on the client's page). */}
+              {(project.logo_url || project.client_logo_url) ? (
+                <>
                 <div className="relative w-full max-w-[200px] aspect-[3/2] rounded-lg overflow-hidden group mx-auto bg-slate-50 border border-slate-100">
-                  <img src={project.logo_url} alt="Client logo"
+                  <img src={project.logo_url || project.client_logo_url!} alt="Client logo"
                     className="w-full h-full object-contain p-2" />
                   {isPrivileged && (
                     <button
@@ -1407,10 +1422,16 @@ export default function ProjectDetail() {
                       disabled={logoUploading}
                       className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50 cursor-pointer">
                       <ImagePlus className="w-5 h-5 text-white" />
-                      <span className="text-xs text-white font-medium">{logoUploading ? 'Uploading…' : 'Change logo'}</span>
+                      <span className="text-xs text-white font-medium">{logoUploading ? 'Uploading…' : project.logo_url ? 'Change logo' : 'Use another logo for this project'}</span>
                     </button>
                   )}
                 </div>
+                {!project.logo_url && project.client_id && <p className="mt-2 text-[11px] text-slate-400 text-center">
+                  From <Link to={`/clients/${project.client_id}`} className="text-blue-600 hover:underline">{project.client_name ?? 'the client'}</Link>
+                </p>}
+                {project.logo_url && project.client_logo_url && isPrivileged && <button onClick={showClientLogo} disabled={logoUploading}
+                  className="mt-2 block mx-auto text-[11px] font-semibold text-blue-600 hover:underline">Use the client's logo instead</button>}
+                </>
               ) : (
                 <button
                   onClick={() => isPrivileged && logoInputRef.current?.click()}

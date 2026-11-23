@@ -27,6 +27,8 @@ export interface Project {
   project_manager?: string;
   engineering_manager?: string;
   logo_url?: string;
+  /** The client company's logo, shown when the project has no logo of its own. */
+  client_logo_url?: string | null;
   project_scopes?: string[];
   created_at: string;
 }

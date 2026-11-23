@@ -24,6 +24,8 @@ export interface Company {
   parent_client_id: string | null;
   parent_name?: string | null;
   active: boolean;
+  /** Company logo (/uploads/...); its projects show it unless they have their own. */
+  logo_url?: string | null;
   contact_count?: number;
   enquiry_count?: number;
   project_count?: number;
@@ -105,7 +107,24 @@ export function useSaveCompany() {
   });
 }
 
-export type ContactInput = Partial<Pick<Contact, 'name' | 'email' | 'phone' | 'mobile' | 'job_title' | 'notes' | 'is_primary'>> & { left?: boolean };
+/** Sets (a file) or removes (null) a company's logo. Projects of the company show it too, so they refresh. */
+export function useCompanyLogo(clientId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (file: File | null) => {
+      if (!file) return api.delete(`/clients/${clientId}/logo`).then(r => r.data as Company);
+      const fd = new FormData();
+      fd.append('logo', file);
+      return api.post(`/clients/${clientId}/logo`, fd, { headers: { 'Content-Type': undefined } }).then(r => r.data as Company);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['clients'] });
+      qc.invalidateQueries({ predicate: q => q.queryKey.some(k => typeof k === 'string' && k.startsWith('project')) });
+    },
+  });
+}
+
+export type ContactInput =Partial<Pick<Contact, 'name' | 'email' | 'phone' | 'mobile' | 'job_title' | 'notes' | 'is_primary'>> & { left?: boolean };
 
 export function useContactActions(clientId: string) {
   const qc = useQueryClient();

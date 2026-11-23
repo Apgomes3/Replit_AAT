@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import { useRecordTitle } from '../../hooks/usePageTitle';
 import PageHeader from '../../components/ui/PageHeader';
 import ClientFormModal from '../../components/clients/ClientFormModal';
+import CompanyLogo from '../../components/clients/CompanyLogo';
 import { useModalFocus } from '../../hooks/useModalFocus';
 import {
   apiError, Contact, ContactInput, KIND_LABELS, placeOf, useCanManageClients, useCompany, useContactActions,
@@ -48,6 +49,7 @@ export default function ClientDetail() {
     <div className="p-6 max-w-6xl grid lg:grid-cols-3 gap-5">
       <div className="space-y-5">
         <section className={`${card} p-5`} aria-labelledby="company-details">
+          <CompanyLogo clientId={c.id} name={c.name} logoUrl={c.logo_url} canManage={canManage} />
           <h2 id="company-details" className={h2}>Company</h2>
           <div className="mt-2 flex flex-wrap gap-1">{c.kinds.map(k => <span key={k} className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-600 text-[10px] uppercase font-extrabold">{KIND_LABELS[k]}</span>)}</div>
           <dl className="mt-4 space-y-2.5 text-sm">

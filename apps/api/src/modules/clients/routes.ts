@@ -1,6 +1,10 @@
 // Client directory API (/api/v1/clients): companies and their people, shared by every module.
 // Everyone with the Clients & contacts module can look; managing needs "manage" on that module.
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import { NextFunction, Response, Router } from 'express';
+import multer from 'multer';
 import { authenticate, AuthRequest, requireModuleAccess, requireModuleManage } from '../../middleware/auth';
 import { query, withTransaction } from '../../db';
 import { logAudit } from '../../db/audit';
@@ -227,6 +231,48 @@ router.patch('/:id', manage, async (req: AuthRequest, res, next) => {
     });
     await logAudit(req.user!.id, 'client', id, 'UPDATE', { summary: `Company ${updated.name} updated`, fields: Object.keys(c) });
     res.json(companyOut(updated));
+  } catch (e) { handle(res, next, e); }
+});
+
+// ── Logo ─────────────────────────────────────────────────────────────────────
+
+// Public uploads folder (served at /uploads), the same one project logos use.
+const uploadsDir = path.join(__dirname, '../../../uploads');
+const uploadLogo = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => { fs.mkdirSync(uploadsDir, { recursive: true }); cb(null, uploadsDir); },
+    filename: (_req, file, cb) => cb(null, `logo-client-${Date.now()}-${crypto.randomBytes(6).toString('hex')}${path.extname(file.originalname).slice(0, 10)}`),
+  }),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => cb(null, /^image\/(png|jpe?g|gif|webp|svg\+xml)$/.test(file.mimetype)),
+});
+
+/** Sets the company's logo; its projects show it unless they have their own. */
+router.post('/:id/logo', manage, uploadLogo.single('logo'), async (req: AuthRequest, res, next) => {
+  const file = (req as any).file as Express.Multer.File | undefined;
+  try {
+    const id = String(req.params.id);
+    if (!isUuid(id)) throw new HttpError(400, 'VALIDATION', 'id must be a company id');
+    if (!file) throw new HttpError(400, 'VALIDATION', 'Choose a PNG, JPG, GIF, WebP or SVG image (up to 5 MB)');
+    const row = (await query(`UPDATE clients SET logo_url=$2, updated_by=$3, updated_at=NOW() WHERE id=$1 RETURNING *`,
+      [id, `/uploads/${file.filename}`, req.user!.id])).rows[0];
+    if (!row) throw new HttpError(404, 'NOT_FOUND', 'Company not found');
+    await logAudit(req.user!.id, 'client', id, 'UPDATE', { summary: `Logo of ${row.name} changed`, fields: ['logo_url'] });
+    res.json(companyOut(row));
+  } catch (e) {
+    if (file) fs.rm(file.path, { force: true }, () => undefined);
+    handle(res, next, e);
+  }
+});
+
+router.delete('/:id/logo', manage, async (req: AuthRequest, res, next) => {
+  try {
+    const id = String(req.params.id);
+    if (!isUuid(id)) return fail(res, 400, 'VALIDATION', 'id must be a company id');
+    const row = (await query(`UPDATE clients SET logo_url=NULL, updated_by=$2, updated_at=NOW() WHERE id=$1 RETURNING *`, [id, req.user!.id])).rows[0];
+    if (!row) return fail(res, 404, 'NOT_FOUND', 'Company not found');
+    await logAudit(req.user!.id, 'client', id, 'UPDATE', { summary: `Logo of ${row.name} removed`, fields: ['logo_url'] });
+    res.json(companyOut(row));
   } catch (e) { handle(res, next, e); }
 });
 
