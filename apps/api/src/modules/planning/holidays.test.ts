@@ -55,4 +55,18 @@ describe('public holiday sets', () => {
     expect(cn.days.filter(d => d[1] === 0)).toHaveLength(29);
     expect(cn.days.filter(d => d[1] > 0).map(d => d[0])).toEqual(['2027-01-31', '2027-02-14', '2027-05-08', '2027-09-26', '2027-10-09']);
   });
+
+  it('gives both China office calendars the same China days, with their own hours on make-up working days', () => {
+    const set = (key: string) => HOLIDAY_SETS.find(s => s.key === key)!;
+    expect(set('CN-2027').calendar.week_hours).toEqual([9, 9, 9, 9, 9, 8, 0]);
+    expect(set('CN-OFFICE17-2027').calendar.week_hours).toEqual([8, 8, 8, 8, 8, 0, 0]);
+    expect(set('CN-OFFICE18-2027').calendar.week_hours).toEqual([9, 9, 9, 9, 9, 0, 0]);
+    for (const year of ['2026', '2027']) {
+      const at17 = set(`CN-OFFICE17-${year}`).days, at18 = set(`CN-OFFICE18-${year}`).days;
+      expect(at17.map(d => d[0])).toEqual(at18.map(d => d[0]));
+      expect(new Set(at17.filter(d => d[1] > 0).map(d => d[1]))).toEqual(new Set([8]));
+      expect(new Set(at18.filter(d => d[1] > 0).map(d => d[1]))).toEqual(new Set([9]));
+    }
+    expect(set('CN-OFFICE17-2027').days).toHaveLength(set('CN-2027').days.length);
+  });
 });

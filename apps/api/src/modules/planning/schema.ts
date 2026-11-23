@@ -156,12 +156,19 @@ CREATE SEQUENCE IF NOT EXISTS planning_plan_code_seq START 1;
 -- Finished tasks are 100% complete.
 UPDATE drafting_tasks SET progress_pct = 100 WHERE status = 'done' AND progress_pct <> 100;
 
--- First run only: the default calendar (China office, Mon-Fri 9 h, Sat 8 h) with the 2026
+-- The Mon-Sat calendar was "China office" until the office and production split (Nov 2026): it is
+-- China Production now. The two China office calendars (Mon-Fri, to 17:00 or 18:00) come from
+-- holidays.ts. Renames only the original calendar, once.
+UPDATE planning_calendars SET name = 'China Production', updated_at = NOW()
+WHERE LOWER(name) = 'china office' AND week_hours = '{9,9,9,9,9,8,0}'
+  AND NOT EXISTS (SELECT 1 FROM planning_calendars WHERE LOWER(name) = 'china production');
+
+-- First run only: the default calendar (China Production, Mon-Fri 9 h, Sat 8 h) with the 2026
 -- mainland China public holidays and the Sunday make-up working days (State Council notice).
 -- Nothing is re-added later, so holidays a manager removes stay removed.
 WITH cal AS (
   INSERT INTO planning_calendars (name, description, week_hours, is_default)
-  SELECT 'China office', 'Mon-Fri 9 h, Sat 8 h, Sun off; mainland China public holidays.', '{9,9,9,9,9,8,0}', true
+  SELECT 'China Production', 'Mon-Fri 9 h, Sat 8 h, Sun off; mainland China public holidays.', '{9,9,9,9,9,8,0}', true
   WHERE NOT EXISTS (SELECT 1 FROM planning_calendars)
   RETURNING id
 )

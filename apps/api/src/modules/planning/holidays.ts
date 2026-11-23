@@ -5,8 +5,9 @@
 // To add a year, add a new set here (e.g. 'US-2028'); existing sets are never re-run.
 //
 // Sources:
-// - China 2027: State Council General Office notice on 2027 holidays (5 Nov 2026).
-//   (China 2026 is in PLANNING_SCHEMA, seeded with the default calendar.)
+// - China 2026 and 2027: State Council General Office notices (2027 published 5 Nov 2026). They
+//   apply to China Production (2026 seeded in PLANNING_SCHEMA with the default calendar) and to
+//   both China office calendars.
 // - Philippines: Proclamation No. 1006 (2026), with Eid'l Fitr No. 1189 and Eid'l Adha No. 1264;
 //   Proclamation No. 1427 (2027). Special non-working days are days off; special working days
 //   are ordinary working days and are not listed. Eid 2027 is proclaimed later - add it then.
@@ -26,9 +27,60 @@ export type HolidaySet = { key: string; calendar: CalendarSpec; days: HolidayDay
 
 const MON_FRI_8 = [8, 8, 8, 8, 8, 0, 0];
 
-export const CHINA: CalendarSpec = {
-  name: 'China office', description: 'Mon-Fri 9 h, Sat 8 h, Sun off; mainland China public holidays.', week_hours: [9, 9, 9, 9, 9, 8, 0],
+/** The default calendar (was "China office" until the office/production split; PLANNING_SCHEMA renames it). */
+export const CHINA_PRODUCTION: CalendarSpec = {
+  name: 'China Production', description: 'Mon-Fri 9 h, Sat 8 h, Sun off; mainland China public holidays.', week_hours: [9, 9, 9, 9, 9, 8, 0],
 };
+/** China office staff choose one of the two office days; both Mon-Fri, starting 08:00 with a 1 h lunch. */
+export const CHINA_OFFICE_17: CalendarSpec = {
+  name: 'China office 08:00–17:00', description: 'Mon-Fri 8 h (08:00-17:00, 1 h lunch), weekends off; mainland China public holidays.', week_hours: [8, 8, 8, 8, 8, 0, 0],
+};
+export const CHINA_OFFICE_18: CalendarSpec = {
+  name: 'China office 08:00–18:00', description: 'Mon-Fri 9 h (08:00-18:00, 1 h lunch), weekends off; mainland China public holidays.', week_hours: [9, 9, 9, 9, 9, 0, 0],
+};
+
+// Mainland China public holidays (State Council notices). Make-up working days are marked with
+// hours > 0 and get each calendar's own working-day hours.
+const CN_2026: HolidayDay[] = [
+  ['2026-01-01', 0, 'New Year'], ['2026-01-02', 0, 'New Year'], ['2026-01-03', 0, 'New Year'],
+  ['2026-01-04', 9, 'Make-up working day (New Year)'],
+  ['2026-02-15', 0, 'Spring Festival'], ['2026-02-16', 0, 'Spring Festival'], ['2026-02-17', 0, 'Spring Festival'],
+  ['2026-02-18', 0, 'Spring Festival'], ['2026-02-19', 0, 'Spring Festival'], ['2026-02-20', 0, 'Spring Festival'],
+  ['2026-02-21', 0, 'Spring Festival'], ['2026-02-22', 0, 'Spring Festival'], ['2026-02-23', 0, 'Spring Festival'],
+  ['2026-04-04', 0, 'Qingming Festival'], ['2026-04-05', 0, 'Qingming Festival'], ['2026-04-06', 0, 'Qingming Festival'],
+  ['2026-05-01', 0, 'Labour Day'], ['2026-05-02', 0, 'Labour Day'], ['2026-05-03', 0, 'Labour Day'],
+  ['2026-05-04', 0, 'Labour Day'], ['2026-05-05', 0, 'Labour Day'],
+  ['2026-06-19', 0, 'Dragon Boat Festival'], ['2026-06-20', 0, 'Dragon Boat Festival'], ['2026-06-21', 0, 'Dragon Boat Festival'],
+  ['2026-09-20', 9, 'Make-up working day (National Day)'],
+  ['2026-09-25', 0, 'Mid-Autumn Festival'], ['2026-09-26', 0, 'Mid-Autumn Festival'], ['2026-09-27', 0, 'Mid-Autumn Festival'],
+  ['2026-10-01', 0, 'National Day'], ['2026-10-02', 0, 'National Day'], ['2026-10-03', 0, 'National Day'],
+  ['2026-10-04', 0, 'National Day'], ['2026-10-05', 0, 'National Day'], ['2026-10-06', 0, 'National Day'],
+  ['2026-10-07', 0, 'National Day'],
+];
+const CN_2027: HolidayDay[] = [
+  ['2027-01-01', 0, 'New Year'], ['2027-01-02', 0, 'New Year'], ['2027-01-03', 0, 'New Year'],
+  ['2027-01-31', 9, 'Make-up working day (Spring Festival)'],
+  ['2027-02-05', 0, 'Spring Festival'], ['2027-02-06', 0, 'Spring Festival'], ['2027-02-07', 0, 'Spring Festival'],
+  ['2027-02-08', 0, 'Spring Festival'], ['2027-02-09', 0, 'Spring Festival'], ['2027-02-10', 0, 'Spring Festival'],
+  ['2027-02-11', 0, 'Spring Festival'], ['2027-02-12', 0, 'Spring Festival'], ['2027-02-13', 0, 'Spring Festival'],
+  ['2027-02-14', 9, 'Make-up working day (Spring Festival)'],
+  ['2027-04-03', 0, 'Qingming Festival'], ['2027-04-04', 0, 'Qingming Festival'], ['2027-04-05', 0, 'Qingming Festival'],
+  ['2027-05-01', 0, 'Labour Day'], ['2027-05-02', 0, 'Labour Day'], ['2027-05-03', 0, 'Labour Day'],
+  ['2027-05-04', 0, 'Labour Day'], ['2027-05-05', 0, 'Labour Day'],
+  ['2027-05-08', 9, 'Make-up working day (Labour Day)'],
+  ['2027-06-09', 0, 'Dragon Boat Festival'],
+  ['2027-09-15', 0, 'Mid-Autumn Festival'],
+  ['2027-09-26', 9, 'Make-up working day (National Day)'],
+  ['2027-10-01', 0, 'National Day'], ['2027-10-02', 0, 'National Day'], ['2027-10-03', 0, 'National Day'],
+  ['2027-10-04', 0, 'National Day'], ['2027-10-05', 0, 'National Day'], ['2027-10-06', 0, 'National Day'],
+  ['2027-10-07', 0, 'National Day'],
+  ['2027-10-09', 9, 'Make-up working day (National Day)'],
+];
+
+/** A China holiday set for one calendar: make-up working days get that calendar's Monday hours. */
+const chinaSet = (key: string, calendar: CalendarSpec, days: HolidayDay[]): HolidaySet => ({
+  key, calendar, days: days.map(([day, hours, name]) => [day, hours > 0 ? calendar.week_hours[0] : 0, name]),
+});
 export const AUSTRALIA: CalendarSpec = {
   name: 'Australia',
   description: 'Mon-Fri 7.6 h (38 h week); national public holidays and King\'s Birthday. Add your state\'s own days (Labour Day, show days).',
@@ -45,27 +97,12 @@ export const UNITED_STATES: CalendarSpec = {
 };
 
 export const HOLIDAY_SETS: HolidaySet[] = [
-  {
-    key: 'CN-2027', calendar: CHINA, days: [
-      ['2027-01-01', 0, 'New Year'], ['2027-01-02', 0, 'New Year'], ['2027-01-03', 0, 'New Year'],
-      ['2027-01-31', 9, 'Make-up working day (Spring Festival)'],
-      ['2027-02-05', 0, 'Spring Festival'], ['2027-02-06', 0, 'Spring Festival'], ['2027-02-07', 0, 'Spring Festival'],
-      ['2027-02-08', 0, 'Spring Festival'], ['2027-02-09', 0, 'Spring Festival'], ['2027-02-10', 0, 'Spring Festival'],
-      ['2027-02-11', 0, 'Spring Festival'], ['2027-02-12', 0, 'Spring Festival'], ['2027-02-13', 0, 'Spring Festival'],
-      ['2027-02-14', 9, 'Make-up working day (Spring Festival)'],
-      ['2027-04-03', 0, 'Qingming Festival'], ['2027-04-04', 0, 'Qingming Festival'], ['2027-04-05', 0, 'Qingming Festival'],
-      ['2027-05-01', 0, 'Labour Day'], ['2027-05-02', 0, 'Labour Day'], ['2027-05-03', 0, 'Labour Day'],
-      ['2027-05-04', 0, 'Labour Day'], ['2027-05-05', 0, 'Labour Day'],
-      ['2027-05-08', 9, 'Make-up working day (Labour Day)'],
-      ['2027-06-09', 0, 'Dragon Boat Festival'],
-      ['2027-09-15', 0, 'Mid-Autumn Festival'],
-      ['2027-09-26', 9, 'Make-up working day (National Day)'],
-      ['2027-10-01', 0, 'National Day'], ['2027-10-02', 0, 'National Day'], ['2027-10-03', 0, 'National Day'],
-      ['2027-10-04', 0, 'National Day'], ['2027-10-05', 0, 'National Day'], ['2027-10-06', 0, 'National Day'],
-      ['2027-10-07', 0, 'National Day'],
-      ['2027-10-09', 9, 'Make-up working day (National Day)'],
-    ],
-  },
+  // China Production's 2026 holidays are seeded with the default calendar in PLANNING_SCHEMA.
+  chinaSet('CN-2027', CHINA_PRODUCTION, CN_2027),
+  chinaSet('CN-OFFICE17-2026', CHINA_OFFICE_17, CN_2026),
+  chinaSet('CN-OFFICE17-2027', CHINA_OFFICE_17, CN_2027),
+  chinaSet('CN-OFFICE18-2026', CHINA_OFFICE_18, CN_2026),
+  chinaSet('CN-OFFICE18-2027', CHINA_OFFICE_18, CN_2027),
   {
     key: 'AU-2026', calendar: AUSTRALIA, days: [
       ['2026-01-01', 0, 'New Year\'s Day'], ['2026-01-26', 0, 'Australia Day'],
@@ -164,7 +201,7 @@ export async function loadHolidaySets(db: Db, sets: HolidaySet[] = HOLIDAY_SETS)
     let calendarId: string | undefined = (await db.query(
       `SELECT id FROM planning_calendars WHERE LOWER(name) = LOWER($1)`, [set.calendar.name],
     )).rows[0]?.id;
-    if (!calendarId && set.calendar === CHINA) {
+    if (!calendarId && set.calendar === CHINA_PRODUCTION) {
       calendarId = (await db.query(`SELECT id FROM planning_calendars WHERE is_default`)).rows[0]?.id;
     }
     if (!calendarId) {
