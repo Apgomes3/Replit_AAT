@@ -2,7 +2,8 @@
 // to projects, enquiries, design books, initiatives and clients, and attach files.
 import { useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Archive, CheckCircle2, Download, History, Paperclip, Pencil, Plus, RotateCcw, Trash2, Undo2, X } from 'lucide-react';
+import { Archive, CheckCircle2, Download, History, Paperclip, Pencil, Plus, Printer, RotateCcw, Trash2, Undo2, X } from 'lucide-react';
+import ArticlePrint from './ArticlePrint';
 import toast from 'react-hot-toast';
 import PageHeader from '../../components/ui/PageHeader';
 import Button from '../../components/ui/Button';
@@ -53,16 +54,18 @@ export default function ArticlePage() {
     <PageHeader crumbs={[{ label: 'Knowledge Library', href: '/knowledge' }, { label: a.pool.name, href: `/knowledge/pools/${a.pool.slug}` }, { label: a.code }]}
       code={a.code} title={a.revision.title}
       subtitle={<span className="inline-flex flex-wrap items-center gap-1.5"><KindChip kind={a.kind} />{a.pool.restricted && <Restricted />}<StatusChips a={a} /></span>}
-      actions={a.rights.write ? <div className="flex flex-wrap gap-2">
-        {a.status === 'archived'
+      actions={<div className="flex flex-wrap gap-2">
+        <Button onClick={() => window.print()} title="Print on AAT letterhead, or save as PDF"><Printer className="w-4 h-4" /> Print</Button>
+        {a.rights.write && <>{a.status === 'archived'
           ? <Button onClick={() => run('restore', 'Restored')}><RotateCcw className="w-4 h-4" /> Restore</Button>
           : <Button variant="primary" onClick={() => navigate(`/knowledge/articles/${a.id}/edit`)}><Pencil className="w-4 h-4" /> Edit</Button>}
         {a.status !== 'archived' && a.published_revision_id && <Button onClick={() => confirm('Archive this article? Readers will no longer see it.') && run('archive', 'Archived')}><Archive className="w-4 h-4" /> Archive</Button>}
         {!a.published_revision_id && <Button variant="danger" onClick={async () => {
           if (!confirm('Delete this draft for good?')) return;
           try { await remove.mutateAsync(a.id); toast.success('Draft deleted'); navigate(`/knowledge/pools/${a.pool.slug}`); } catch (err) { toast.error(apiError(err, 'Could not delete')); }
-        }}><Trash2 className="w-4 h-4" /> Delete draft</Button>}
-      </div> : undefined} />
+        }}><Trash2 className="w-4 h-4" /> Delete draft</Button>}</>}
+      </div>} />
+    <ArticlePrint a={a} />
 
     {a.in_review && <div className="mb-4 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 flex flex-wrap items-center gap-3">
       <div className="text-sm text-violet-900 flex-1 min-w-[240px]"><b>Waiting for approval.</b> {a.rights.approve ? 'Read the new version below, then approve it or send it back with what to change.' : `${a.pool.owner_name ?? 'The pool owner'} approves it before readers see this version.`}</div>

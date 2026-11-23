@@ -1,9 +1,10 @@
-/* Article text, the same in the editor and when reading. */
-.kb-prose { color: #292524; font-size: 0.95rem; line-height: 1.65; overflow-wrap: anywhere; }
-.kb-prose > * + * { margin-top: 0.75em; }
-.kb-prose h1, .kb-prose h2 { font-size: 1.3rem; font-weight: 700; margin-top: 1.4em; line-height: 1.3; color: #1c1917; }
-.kb-prose h3 { font-size: 1.08rem; font-weight: 700; margin-top: 1.2em; color: #1c1917; }
-.kb-prose h4 { font-weight: 700; margin-top: 1em; }
+/* Article text, the same in the editor, when reading and when printed: AAT house style, Arial 10 pt. */
+.kb-prose { color: #1c1917; font-family: Arial, Helvetica, sans-serif; font-size: 10pt; line-height: 1.5; overflow-wrap: anywhere; }
+.kb-prose > * + * { margin-top: 0.7em; }
+.kb-prose h1 { font-size: 16pt; font-weight: 700; margin-top: 1.3em; line-height: 1.25; color: #003f7d; }
+.kb-prose h2 { font-size: 13pt; font-weight: 700; margin-top: 1.3em; line-height: 1.3; color: #003f7d; }
+.kb-prose h3 { font-size: 11pt; font-weight: 700; margin-top: 1.2em; color: #1c1917; }
+.kb-prose h4 { font-size: 10pt; font-weight: 700; margin-top: 1em; }
 .kb-prose a { color: #1d4ed8; text-decoration: underline; text-underline-offset: 2px; }
 .kb-prose ul { list-style: disc; padding-left: 1.5em; }
 .kb-prose ol { list-style: decimal; padding-left: 1.5em; }
@@ -21,6 +22,50 @@
 .kb-prose th { background: #f5f5f4; font-weight: 600; text-align: left; }
 .kb-prose th > p, .kb-prose td > p { margin: 0; }
 .kb-prose .selectedCell { background: #dbeafe; }
+
+/* Printed article on AAT letterhead (ArticlePrint.tsx). A4, 20 mm side margins as in the Word letterhead. */
+.kb-print { display: none; }
+@page kb-article {
+  size: A4;
+  margin: 0 0 9mm 0;
+  @bottom-right { content: "Page " counter(page) " of " counter(pages); font: 8pt Arial, Helvetica, sans-serif; color: #57534e; margin-right: 20mm; vertical-align: top; padding-top: 1mm; }
+}
+@media print {
+  body.kb-print-ready > #root,
+  body.kb-print-ready > div:not(.kb-print) { display: none !important; }
+  body.kb-print-ready { background: #fff !important; }
+  body.kb-print-ready > .kb-print { display: block; page: kb-article; position: relative; width: 210mm; color: #1c1917; font: 10pt Arial, Helvetica, sans-serif;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .kb-print img.kb-print-header { position: fixed; top: 0; left: 0; width: 210mm; z-index: 1; }
+  .kb-print img.kb-print-first { position: absolute; top: 0; left: 0; width: 210mm; z-index: 2; background: #fff; }
+  .kb-print-footer { position: fixed; bottom: 0; left: 0; width: 210mm; background: #fff; }
+  .kb-print-footer img { display: block; width: 210mm; }
+  .kb-print-footer-meta { margin: 0.6mm 20mm 0; font-size: 7pt; color: #78716c; }
+  .kb-print-frame { width: 100%; border-collapse: collapse; }
+  .kb-print-frame > thead { display: table-header-group; }
+  .kb-print-frame > tfoot { display: table-footer-group; }
+  .kb-print-frame td { padding: 0; }
+  .kb-print-top-space { height: 36mm; }
+  .kb-print-bottom-space { height: 16mm; }
+  .kb-print-body { padding: 0 20mm; }
+  /* Page one: the full letterhead is taller than the short header the spacer allows for. */
+  .kb-print-title-block { padding-top: 16mm; break-inside: avoid; }
+  .kb-print-draft { border: 1.5pt solid #b91c1c; color: #b91c1c; font-weight: 700; font-size: 9pt; padding: 1.5mm 3mm; margin-bottom: 4mm; }
+  .kb-print-title { font-size: 18pt; font-weight: 700; color: #003f7d; line-height: 1.2; margin: 0; }
+  .kb-print-summary { font-size: 10pt; font-style: italic; color: #44403c; margin: 2mm 0 0; }
+  .kb-print-meta { width: 100%; border-collapse: collapse; margin: 5mm 0 7mm; font-size: 8.5pt; }
+  .kb-print-meta th, .kb-print-meta td { border: 0.5pt solid #a8a29e; padding: 1.2mm 2mm; text-align: left; vertical-align: top; }
+  .kb-print-meta th { background: #e8eef6; color: #003f7d; font-weight: 700; width: 18%; white-space: nowrap; }
+  .kb-print .kb-prose table { display: table; overflow: visible; }
+  .kb-print .kb-prose th { background: #e8eef6; }
+  .kb-print .kb-prose img { border: 0; border-radius: 0; break-inside: avoid; }
+  .kb-print .kb-prose tr, .kb-print .kb-prose pre, .kb-print .kb-prose blockquote { break-inside: avoid; }
+  .kb-print .kb-prose h1, .kb-print .kb-prose h2, .kb-print .kb-prose h3, .kb-print .kb-prose h4 { break-after: avoid; }
+  .kb-print .kb-prose a { color: inherit; }
+  .kb-print .kb-prose pre { background: #f5f5f4; color: #1c1917; border: 0.5pt solid #d6d3d1; }
+  .kb-print-related { margin-top: 8mm; padding-top: 3mm; border-top: 0.5pt solid #a8a29e; font-size: 8.5pt; color: #44403c; }
+  .kb-print-related p { margin: 0 0 1.5mm; }
+}
 
 .kb-editor { min-height: 320px; padding: 1rem 1.25rem 2rem; outline: none; }
 .kb-editor p.is-editor-empty:first-child::before,
