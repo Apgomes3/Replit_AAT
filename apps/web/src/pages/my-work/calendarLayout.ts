@@ -153,6 +153,54 @@ export function dayAgenda(
   return entries.sort((a, b) => rank(a) - rank(b) || (a.time ?? '').localeCompare(b.time ?? ''));
 }
 
+// ---------- hour by hour ----------
+
+const minutesOf = (time: string) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5));
+
+/** A timed entry placed on the hour grid: minutes from midnight, and its column among overlaps. */
+export type HourBlock = { entry: AgendaEntry; start: number; end: number; col: number; cols: number };
+
+/**
+ * Where a day's timed entries sit on the hour grid. A Google event runs from its start to its end
+ * (the part inside the day); a commitment for its hours; an own task for its effort when it is a
+ * one-day task, else one hour. Overlapping blocks share the width side by side.
+ */
+export function hourBlocks(entries: AgendaEntry[], day: string): HourBlock[] {
+  const dayStart = new Date(`${day}T00:00:00`).getTime();
+  const blocks = entries.filter(e => e.time && !e.allDay).map(e => {
+    const start = minutesOf(e.time!);
+    let end = start + 60;
+    if (e.kind === 'event') end = Math.round((Math.min(new Date(e.event.end).getTime(), dayStart + 86_400_000) - dayStart) / 60_000);
+    else if (e.kind === 'commitment') end = start + Math.round(e.hours * 60);
+    else {
+      const r = taskRange(e.item);
+      if (r && r[0] === r[1] && e.item.planned_hours) end = start + Math.round(Number(e.item.planned_hours) * 60);
+    }
+    return { entry: e, start, end: Math.min(24 * 60, Math.max(end, start + 15)), col: 0, cols: 1 };
+  }).sort((a, b) => a.start - b.start || b.end - a.end);
+
+  // Group blocks that overlap (directly or through each other), then give each the first free column.
+  let group: HourBlock[] = [];
+  let groupEnd = -1;
+  const close = () => { const cols = Math.max(1, ...group.map(b => b.col + 1)); group.forEach(b => { b.cols = cols; }); group = []; };
+  for (const b of blocks) {
+    if (b.start >= groupEnd) { close(); groupEnd = -1; }
+    const taken = new Set(group.filter(o => o.end > b.start).map(o => o.col));
+    while (taken.has(b.col)) b.col++;
+    group.push(b);
+    groupEnd = Math.max(groupEnd, b.end);
+  }
+  close();
+  return blocks;
+}
+
+/** Hours the grid shows: 07:00–19:00, widened to whole hours to fit every block. */
+export function hourSpan(blocks: Array<Pick<HourBlock, 'start' | 'end'>>, from = 7, to = 19): [number, number] {
+  const first = Math.min(from, ...blocks.map(b => Math.floor(b.start / 60)));
+  const last = Math.max(to, ...blocks.map(b => Math.ceil(b.end / 60)));
+  return [first, Math.min(24, last)];
+}
+
 /** The Monday-first 6-week grid that shows a month. */
 export function monthGrid(anyDayInMonth: string): { month: string; days: string[] } {
   const month = anyDayInMonth.slice(0, 7);

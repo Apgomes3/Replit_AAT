@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { commitmentOn, dayAgenda, eventsOn, meetingHours, monthGrid, regularMeetings, shiftDates, stackRows, weekSpan } from './calendarLayout';
+import { commitmentOn, dayAgenda, hourBlocks, hourSpan, eventsOn, meetingHours, monthGrid, regularMeetings, shiftDates, stackRows, weekSpan } from './calendarLayout';
 
 const MON = '2026-11-16';
 
@@ -110,5 +110,32 @@ describe('day agenda', () => {
     ]);
     expect(list[0]).toMatchObject({ hours: 9 });
     expect(dayAgenda([], [], [visit], '2026-11-19').length).toBe(0);
+  });
+});
+
+describe('hour grid', () => {
+  const base = { start_date: '2026-01-01', end_date: null, capacity_pct: null, hours_per_day: 1 };
+  const ev = (id: string, start: string, end: string) => ({ id, title: id, start, end, all_day: false, location: null, link: null, busy: true });
+  const task = (id: string, start_time: string, planned_hours: number | null, start_date: string | null = null) => ({
+    key: `task:${id}`, kind: 'task' as const, id, title: id, status: 'not_started' as const, progress_pct: 0, start_date, due_date: MON,
+    is_milestone: false, project: null, initiative: null, enquiry: null, design_book: null, plan: null, planned_hours, notes: null, start_time,
+  });
+
+  it('places blocks by time and length, side by side when they overlap', () => {
+    const entries = dayAgenda(
+      [ev('call', '2026-11-16T09:30:00', '2026-11-16T10:30:00')],
+      [{ ...base, id: 'c1', title: 'Team meeting', weekdays: [0], hours_per_day: 1.5, start_time: '09:00' }],
+      [task('Report', '14:00', 2), { ...task('Long job', '16:00', 20, MON), due_date: '2026-11-20' }], MON,
+    );
+    const blocks = hourBlocks(entries, MON).map(b => [b.entry.key, b.start, b.end, b.col, b.cols]);
+    expect(blocks).toEqual([
+      ['c:c1', 540, 630, 0, 2], ['e:call', 570, 630, 1, 2],
+      ['t:Report', 840, 960, 0, 1], ['t:Long job', 960, 1020, 0, 1], // a multi-day task shows one hour
+    ]);
+  });
+
+  it('shows 07:00 to 19:00, wider when something falls outside', () => {
+    expect(hourSpan([])).toEqual([7, 19]);
+    expect(hourSpan([{ start: 6 * 60 + 30, end: 7 * 60 }, { start: 19 * 60, end: 20 * 60 + 15 }])).toEqual([6, 21]);
   });
 });

@@ -1,5 +1,5 @@
-// My Work as a calendar: Week (meetings, regular commitments, a capacity bar and task bars per
-// day; drag your own tasks to another day) and Month (due dates and meetings, to look ahead).
+// My Work as a calendar: Week (a capacity bar per day; each day as a list in time order or hour by
+// hour; task bars you can drag to another day) and Month (due dates and meetings, to look ahead).
 import { ReactNode, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronLeft, ChevronRight, Diamond, ExternalLink, Repeat, X } from 'lucide-react';
@@ -10,7 +10,7 @@ import { addDays } from '../drafting/taskTiming';
 import type { WorkloadDay } from '../drafting/planningApi';
 import { addHoursToTime, Commitment, useMyWork, useSavePersonalTask, WorkItem } from './myWorkApi';
 import {
-  CalendarEvent, dayAgenda, eventsOn, isLocalToday, meetingHours, mondayOf, monthGrid, shiftDates, stackRows, taskRange, weekDays, weekSpan,
+  AgendaEntry, CalendarEvent, dayAgenda, hourBlocks, hourSpan, eventsOn, isLocalToday, meetingHours, mondayOf, monthGrid, shiftDates, stackRows, taskRange, weekDays, weekSpan,
 } from './calendarLayout';
 
 const dayName = (iso: string, opts: Intl.DateTimeFormatOptions) => new Date(`${iso}T00:00:00Z`).toLocaleDateString(undefined, { ...opts, timeZone: 'UTC' });
@@ -46,6 +46,58 @@ function TaskPopover({ item, onClose, children }: { item: WorkItem; onClose: () 
   </div>;
 }
 
+const MODE_KEY = 'my-work.week-mode';
+const HOUR_PX = 40;
+const fmtMin = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+
+/** The week hour by hour: timed meetings, commitments and own tasks as blocks at their times. */
+function HourGrid({ dates, agendas, onOpen }: { dates: string[]; agendas: AgendaEntry[][]; onOpen: (item: WorkItem) => void }) {
+  const perDay = dates.map((d, i) => hourBlocks(agendas[i]!, d));
+  const [first, last] = hourSpan(perDay.flat());
+  const hours = Array.from({ length: last - first }, (_, i) => first + i);
+  const now = new Date();
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  const top = (min: number) => ((min - first * 60) / 60) * HOUR_PX;
+
+  return <div className="relative border-x border-t border-stone-200 bg-white" style={{ height: hours.length * HOUR_PX }}>
+    {/* Hour lines, labelled at the left. */}
+    {hours.map(hr => <div key={hr} aria-hidden className="absolute inset-x-0 border-t border-stone-100" style={{ top: top(hr * 60) }}>
+      <span className="absolute left-1 top-0.5 text-[9.5px] tabular-nums text-stone-400">{fmtMin(hr * 60)}</span>
+    </div>)}
+    <div className="absolute inset-0 grid grid-cols-7">
+      {dates.map((d, i) => <div key={d} className={`relative ${i ? 'border-l border-stone-100' : ''} ${isLocalToday(d) ? 'bg-[#eef8f5]/50' : ''}`}>
+        {isLocalToday(d) && nowMin >= first * 60 && nowMin <= last * 60 && <div aria-label="Now" className="absolute inset-x-0 z-10 border-t-2 border-rose-500" style={{ top: top(nowMin) }} />}
+        {perDay[i]!.map(b => {
+          const e = b.entry;
+          // The first column keeps room for the hour labels.
+          const inset = i === 0 ? 34 : 2;
+          const style = {
+            top: top(b.start) + 1, height: Math.max(16, ((b.end - b.start) / 60) * HOUR_PX - 2),
+            left: `calc(${inset}px + (100% - ${inset + 2}px) * ${b.col / b.cols})`, width: `calc((100% - ${inset + 2}px) / ${b.cols} - 2px)`,
+          };
+          const span = `${fmtMin(b.start)}–${fmtMin(b.end)}`;
+          const cls = 'absolute overflow-hidden rounded-md border px-1 py-0.5 text-left text-[10.5px] leading-tight';
+          if (e.kind === 'task') return <button key={e.key} type="button" onClick={() => onOpen(e.item)} style={style}
+            title={`${e.item.title} · ${span}`} className={`${cls} ${tone(e.item)}`}>
+            <span className="block tabular-nums opacity-75">{fmtMin(b.start)}</span><span className="block font-medium">{e.item.title}</span>
+          </button>;
+          if (e.kind === 'commitment') return <div key={e.key} style={style} title={`${e.commitment.title} (regular commitment) · ${span}`}
+            className={`${cls} bg-amber-50 border-amber-200 text-amber-900`}>
+            <span className="block tabular-nums text-amber-700">{fmtMin(b.start)}</span><span className="block font-medium">{e.commitment.title}</span>
+          </div>;
+          const ev = e.event;
+          return <div key={e.key} style={style} title={[ev.title, span, ev.location, e.regular && `Your regular commitment "${e.regular.title}"`].filter(Boolean).join(' · ')}
+            className={`${cls} ${e.regular ? 'bg-violet-50 border-amber-300' : ev.busy ? 'bg-violet-50 border-violet-200' : 'bg-white border-stone-200 text-stone-400'} text-violet-900`}>
+            <span className="flex items-center gap-1 tabular-nums text-violet-700/80">{e.regular && <Repeat className="w-2.5 h-2.5 text-amber-700" />}{fmtMin(b.start)}
+              {ev.link && <a href={ev.link} target="_blank" rel="noreferrer" aria-label={`Open ${ev.title} in Google Calendar`} className="ml-auto text-violet-400 hover:text-violet-700"><ExternalLink className="w-2.5 h-2.5" /></a>}</span>
+            <span className="block font-medium">{ev.title}</span>
+          </div>;
+        })}
+      </div>)}
+    </div>
+  </div>;
+}
+
 type Props = {
   from: string; items: WorkItem[]; commitments: Commitment[]; days: WorkloadDay[];
   onShift: (weeks: number) => void; onToday: () => void; renderRow: (item: WorkItem) => ReactNode;
@@ -59,6 +111,8 @@ export function WeekCalendar({ from, items, commitments, days, onShift, onToday,
   const grid = useRef<HTMLDivElement>(null);
   const grab = useRef<{ item: WorkItem; col: number } | null>(null);
   const [dropCol, setDropCol] = useState<number | null>(null);
+  const [mode, setMode] = useState<'list' | 'hours'>(() => { try { return localStorage.getItem(MODE_KEY) === 'hours' ? 'hours' : 'list'; } catch { return 'list'; } });
+  const pickMode = (m: 'list' | 'hours') => { setMode(m); try { localStorage.setItem(MODE_KEY, m); } catch { /* not stored */ } };
 
   const placed = useMemo(() => items.flatMap(item => {
     const span = weekSpan(item, from);
@@ -88,6 +142,39 @@ export function WeekCalendar({ from, items, commitments, days, onShift, onToday,
     } catch (err) { toast.error(apiErrorMessage(err, 'Could not move the task')); }
   };
   const draggable = (item: WorkItem) => item.kind === 'task' && item.status !== 'done';
+  /** One entry of a day's list (also the all-day strip in Hours). */
+  const renderEntry = (entry: AgendaEntry) => {
+    const row = 'flex items-center gap-1 text-[10.5px] leading-tight rounded px-1 py-0.5';
+    if (entry.kind === 'event') {
+      const { event: e, regular: as } = entry;
+      return <div key={entry.key} title={[e.title, e.location, as && `Your regular commitment "${as.title}": its hours count once`].filter(Boolean).join(' · ')}
+        className={`${row} ${e.all_day ? 'bg-violet-100 text-violet-900' : as ? 'bg-violet-50 text-violet-900 ring-1 ring-inset ring-amber-300' : e.busy ? 'bg-violet-50 text-violet-900' : 'text-stone-400'}`}>
+        {as && <Repeat className="w-2.5 h-2.5 shrink-0 text-amber-700" aria-label="Regular commitment" />}
+        {!e.all_day && <span className="tabular-nums shrink-0 text-violet-700/80">{timeOf(e.start)}</span>}
+        <span className="truncate">{e.title}</span>
+        {e.link && <a href={e.link} target="_blank" rel="noreferrer" aria-label={`Open ${e.title} in Google Calendar`} className="ml-auto shrink-0 text-violet-400 hover:text-violet-700"><ExternalLink className="w-2.5 h-2.5" /></a>}
+      </div>;
+    }
+    if (entry.kind === 'commitment') {
+      const c = entry.commitment;
+      const span = entry.time ? `${entry.time}–${addHoursToTime(entry.time, entry.hours)}` : null;
+      return <div key={entry.key} title={`${c.title} (regular commitment${entry.allDay ? ', all day' : span ? `, ${span}` : ''})`}
+        className={`${row} ${entry.allDay ? 'bg-amber-100 text-amber-950 font-medium' : 'bg-amber-50 text-amber-900'}`}>
+        {entry.allDay ? <span className="shrink-0 text-[9.5px] uppercase tracking-wide text-amber-700">All day</span>
+          : span ? <span className="tabular-nums shrink-0 text-amber-700">{entry.time}</span> : <Repeat className="w-2.5 h-2.5 shrink-0" />}
+        <span className="truncate">{c.title}</span><span className="ml-auto shrink-0 tabular-nums">{h(entry.hours)}</span>
+      </div>;
+    }
+    const t = entry.item;
+    return <button key={entry.key} type="button" onClick={() => setOpen(t)}
+      title={entry.allDay ? `${t.title} · all day` : `${t.title} at ${entry.time}${t.planned_hours ? ` · ${t.planned_hours} h` : ''}`}
+      className={`${row} w-full text-left border ${tone(t)} ${entry.allDay ? 'font-medium' : ''}`}>
+      {entry.allDay ? <span className="shrink-0 text-[9.5px] uppercase tracking-wide opacity-70">All day</span>
+        : <span className="tabular-nums shrink-0 opacity-80">{entry.time}</span>}
+      <span className="truncate">{t.title}</span>
+    </button>;
+  };
+  const agendas = dates.map((d, di) => dayAgenda(google.events, commitments, items, d, days[di]?.capacity ?? 0));
 
   return <div className="p-4">
     <div className="flex items-center gap-2 mb-3">
@@ -95,7 +182,11 @@ export function WeekCalendar({ from, items, commitments, days, onShift, onToday,
       <button aria-label="Next week" onClick={() => onShift(1)} className="p-1.5 rounded-lg border border-stone-200 text-stone-500 hover:text-blue-600"><ChevronRight className="w-4 h-4" /></button>
       <button onClick={onToday} className="px-2.5 py-1 rounded-lg border border-stone-200 text-xs font-bold text-stone-600">Today</button>
       <span className="text-sm font-bold text-stone-800">{dayName(from, { day: 'numeric', month: 'short' })} – {dayName(addDays(from, 6), { day: 'numeric', month: 'short', year: 'numeric' })}</span>
-      <span className="ml-auto text-[11px] text-stone-500 hidden md:inline">Drag your own tasks to another day. Plan tasks move in their plan.</span>
+      <span className="ml-auto text-[11px] text-stone-500 hidden lg:inline">Drag your own tasks to another day. Plan tasks move in their plan.</span>
+      <div role="tablist" aria-label="Day view" className="ml-auto lg:ml-2 inline-flex rounded-lg border border-stone-200 p-0.5 text-[11px] font-bold">
+        {(['list', 'hours'] as const).map(m => <button key={m} role="tab" aria-selected={mode === m} onClick={() => pickMode(m)}
+          className={`px-2 py-0.5 rounded-md ${mode === m ? 'bg-blue-600 text-white' : 'text-stone-500 hover:text-blue-600'}`}>{m === 'list' ? 'List' : 'Hours'}</button>)}
+      </div>
     </div>
 
     <div className="overflow-x-auto"><div className="min-w-[760px]">
@@ -121,42 +212,18 @@ export function WeekCalendar({ from, items, commitments, days, onShift, onToday,
         })}
       </div>
 
-      {/* Each day's list in time order: Google meetings, regular commitments and own tasks with a time. */}
-      <div className="grid grid-cols-7 gap-px bg-stone-200 border-x border-stone-200">
-        {dates.map((d, di) => <div key={d} className="bg-white px-1.5 py-1.5 min-h-[44px] space-y-0.5">
-          {dayAgenda(google.events, commitments, items, d, days[di]?.capacity ?? 0).map(entry => {
-            const row = 'flex items-center gap-1 text-[10.5px] leading-tight rounded px-1 py-0.5';
-            if (entry.kind === 'event') {
-              const { event: e, regular: as } = entry;
-              return <div key={entry.key} title={[e.title, e.location, as && `Your regular commitment "${as.title}": its hours count once`].filter(Boolean).join(' · ')}
-                className={`${row} ${e.all_day ? 'bg-violet-100 text-violet-900' : as ? 'bg-violet-50 text-violet-900 ring-1 ring-inset ring-amber-300' : e.busy ? 'bg-violet-50 text-violet-900' : 'text-stone-400'}`}>
-                {as && <Repeat className="w-2.5 h-2.5 shrink-0 text-amber-700" aria-label="Regular commitment" />}
-                {!e.all_day && <span className="tabular-nums shrink-0 text-violet-700/80">{timeOf(e.start)}</span>}
-                <span className="truncate">{e.title}</span>
-                {e.link && <a href={e.link} target="_blank" rel="noreferrer" aria-label={`Open ${e.title} in Google Calendar`} className="ml-auto shrink-0 text-violet-400 hover:text-violet-700"><ExternalLink className="w-2.5 h-2.5" /></a>}
-              </div>;
-            }
-            if (entry.kind === 'commitment') {
-              const c = entry.commitment;
-              const span = entry.time ? `${entry.time}–${addHoursToTime(entry.time, entry.hours)}` : null;
-              return <div key={entry.key} title={`${c.title} (regular commitment${entry.allDay ? ', all day' : span ? `, ${span}` : ''})`}
-                className={`${row} ${entry.allDay ? 'bg-amber-100 text-amber-950 font-medium' : 'bg-amber-50 text-amber-900'}`}>
-                {entry.allDay ? <span className="shrink-0 text-[9.5px] uppercase tracking-wide text-amber-700">All day</span>
-                  : span ? <span className="tabular-nums shrink-0 text-amber-700">{entry.time}</span> : <Repeat className="w-2.5 h-2.5 shrink-0" />}
-                <span className="truncate">{c.title}</span><span className="ml-auto shrink-0 tabular-nums">{h(entry.hours)}</span>
-              </div>;
-            }
-            const t = entry.item;
-            return <button key={entry.key} type="button" onClick={() => setOpen(t)}
-              title={entry.allDay ? `${t.title} · all day` : `${t.title} at ${entry.time}${t.planned_hours ? ` · ${t.planned_hours} h` : ''}`}
-              className={`${row} w-full text-left border ${tone(t)} ${entry.allDay ? 'font-medium' : ''}`}>
-              {entry.allDay ? <span className="shrink-0 text-[9.5px] uppercase tracking-wide opacity-70">All day</span>
-                : <span className="tabular-nums shrink-0 opacity-80">{entry.time}</span>}
-              <span className="truncate">{t.title}</span>
-            </button>;
-          })}
-        </div>)}
-      </div>
+      {mode === 'list'
+        ? /* Each day's list in time order: all-day items, then meetings, commitments and own tasks by time. */
+          <div className="grid grid-cols-7 gap-px bg-stone-200 border-x border-stone-200">
+            {dates.map((d, di) => <div key={d} className="bg-white px-1.5 py-1.5 min-h-[44px] space-y-0.5">{agendas[di]!.map(renderEntry)}</div>)}
+          </div>
+        : <>
+          {/* All-day items and commitments without a time, above the hours. */}
+          <div className="grid grid-cols-7 gap-px bg-stone-200 border-x border-stone-200">
+            {dates.map((d, di) => <div key={d} className="bg-white px-1.5 py-1 min-h-[28px] space-y-0.5">{agendas[di]!.filter(e => !e.time).map(renderEntry)}</div>)}
+          </div>
+          <HourGrid dates={dates} agendas={agendas} onOpen={setOpen} />
+        </>}
 
       {/* Task bars across the days they cover. */}
       <div ref={grid} className="relative border border-stone-200 rounded-b-xl min-h-[140px]"
