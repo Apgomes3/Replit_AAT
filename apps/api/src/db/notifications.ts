@@ -15,6 +15,7 @@ export const notificationModules: Record<string, string> = {
   enquiry: 'business_development',
   project: 'projects',
   uv_engineering_revision: 'pim',
+  knowledge_article: 'knowledge',
 };
 
 /** Persist a transition and its deliveries in the same transaction as the record change.
@@ -42,6 +43,7 @@ export async function emitNotification(db: PoolClient, opts: {
     design_book: '/design-books',
     enquiry: '/enquiries',
     project: '/projects',
+    knowledge_article: '/knowledge/articles',
   };
   const canonical = opts.entityType === 'uv_engineering_revision'
     ? `/admin/uv-engineering?revision=${encodeURIComponent(opts.entityId)}`

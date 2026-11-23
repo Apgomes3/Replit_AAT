@@ -5,7 +5,7 @@ import { ModuleAccessKey } from '../lib/moduleAccess';
 import { isEditorRole } from '../lib/roles';
 
 const router = Router();
-type RecordType = 'project' | 'system' | 'equipment' | 'product' | 'component' | 'material' | 'document' | 'purchase_order' | 'client' | 'contact' | 'enquiry' | 'design_book' | 'drafting_plan' | 'initiative' | 'person' | 'notification' | 'audit_event';
+type RecordType = 'project' | 'system' | 'equipment' | 'product' | 'component' | 'material' | 'document' | 'purchase_order' | 'client' | 'contact' | 'enquiry' | 'design_book' | 'drafting_plan' | 'initiative' | 'knowledge_article' | 'person' | 'notification' | 'audit_event';
 // 'people' (colleagues) is open to everyone signed in; 'admin' records only to editor roles.
 type Adapter = { type: RecordType; module: ModuleAccessKey | 'admin' | 'people'; sql: string; searchOnly?: boolean };
 
@@ -27,6 +27,8 @@ const adapters: Adapter[] = [
   { type: 'person', module: 'people', sql: `SELECT u.id::text, u.email::text, CONCAT_WS(' · ', NULLIF(TRIM(CONCAT_WS(' ', u.first_name, u.last_name)), ''), u.job_title)::text, NULL::text, NULL::text, NULL::text, NULL::text, NULL::date, u.updated_at FROM users u WHERE u.is_active IS NOT FALSE` },
   { type: 'initiative', module: 'initiatives', sql: `SELECT ini.id::text, ini.code::text, CONCAT_WS(' · ', ini.title, NULLIF(TRIM(CONCAT_WS(' ', o.first_name, o.last_name)), ''))::text, ini.stage::text, NULL::text, NULL::text, ini.created_by::text, ini.target_date::date, ini.updated_at FROM initiatives ini LEFT JOIN users o ON o.id=ini.owner_user_id` },
   { type: 'drafting_plan', module: 'drafting', sql: `SELECT dp.id::text, dp.plan_code::text, dp.name::text, dp.status::text, p.project_code::text, NULL::text, dp.created_by::text, dp.target_date::date, dp.updated_at FROM drafting_plans dp LEFT JOIN projects p ON p.id=dp.project_id` },
+  // Published library articles in pools the person may read (restricted pools: owner, members, admins).
+  { type: 'knowledge_article', module: 'knowledge', sql: `SELECT a.id::text, a.code::text, CONCAT_WS(' · ', r.title, p.name)::text, a.kind::text, NULL::text, NULL::text, a.created_by::text, a.review_by::date, a.updated_at FROM knowledge_articles a JOIN knowledge_pools p ON p.id=a.pool_id AND p.archived_at IS NULL JOIN knowledge_article_revisions r ON r.id=a.published_revision_id WHERE a.status='published' AND ($1::boolean OR TRUE) AND (NOT p.restricted OR p.owner_user_id=$2::uuid OR EXISTS (SELECT 1 FROM users ux WHERE ux.id=$2::uuid AND ux.role='admin') OR EXISTS (SELECT 1 FROM knowledge_pool_members m WHERE m.pool_id=p.id AND (m.user_id=$2::uuid OR m.team_id IN (SELECT tm.team_id FROM drafting_team_members tm WHERE tm.user_id=$2::uuid))))` },
   { type: 'enquiry', module: 'business_development', sql: `SELECT e.id::text, e.enquiry_number::text, e.title::text, e.status::text, NULL::text, NULL::text, e.created_by::text, e.due_date::date, e.updated_at FROM enquiries e` },
   { type: 'design_book', module: 'design_books', sql: `SELECT db.id::text, db.book_code::text, db.book_title::text, db.status::text, p.project_code::text, NULL::text, db.created_by::text, NULL::date, db.updated_at FROM design_books db LEFT JOIN projects p ON p.id=db.project_id` },
   // Only PO notifications whose target is still visible are searchable. A deleted or
@@ -66,7 +68,7 @@ function href(row: any): string {
     project: '/projects', system: '/systems', equipment: '/systems', product: '/products/masters',
     component: '/products/components', material: '/knowledge/materials', document: '/documents',
     purchase_order: '/purchase-orders', client: '/clients', contact: '/clients', enquiry: '/enquiries',
-    design_book: '/design-books', drafting_plan: '/drafting/plans', initiative: '/initiatives', person: '/people',
+    design_book: '/design-books', drafting_plan: '/drafting/plans', initiative: '/initiatives', knowledge_article: '/knowledge/articles', person: '/people',
     notification: '/purchase-orders', audit_event: '/admin/audit-log',
   };
   return row.type === 'equipment' ? row.system_id?.startsWith('project:') ? `/projects/${row.system_id.slice(8)}?equipment=${row.id}` : `/systems/${row.system_id}?equipment=${row.id}` :

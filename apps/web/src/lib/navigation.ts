@@ -74,6 +74,7 @@ export function entityHref(entity: SearchEntity): string {
     case 'client': return `${ROUTES.clients}/${entity.id}`;
     case 'person': return `/people/${entity.id}`;
     case 'initiative': return `/initiatives/${entity.id}`;
+    case 'knowledge_article': return `/knowledge/articles/${entity.id}`;
     case 'enquiry': return `${ROUTES.enquiries}/${entity.id}`;
     default: return ROUTES.search;
   }

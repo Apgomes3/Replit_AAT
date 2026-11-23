@@ -67,6 +67,10 @@ import PersonCard from './pages/people/PersonCard';
 import InitiativesBoard from './pages/initiatives/InitiativesBoard';
 import InitiativeDetail from './pages/initiatives/InitiativeDetail';
 import MaterialDetail from './pages/knowledge/MaterialDetail';
+import LibraryHome from './pages/library/LibraryHome';
+import PoolPage from './pages/library/PoolPage';
+import ArticlePage from './pages/library/ArticlePage';
+import ArticleEditor from './pages/library/ArticleEditor';
 import EnquiriesList from './pages/business-development/EnquiriesList';
 import EnquiryDetail from './pages/business-development/EnquiryDetail';
 import DraftingSetup from './pages/drafting/DraftingSetup';
@@ -142,6 +146,11 @@ const router = createBrowserRouter(createRoutesFromElements(
             <Route path="products/tanks" element={<ModuleGuard moduleKey="pim"><TanksList /></ModuleGuard>} />
             <Route path="products/attributes" element={<ModuleGuard moduleKey="pim"><AttributeLibrary /></ModuleGuard>} />
             <Route path="products/drawings"element={<ModuleGuard moduleKey="pim"><DrawingsLibrary /></ModuleGuard>} />
+            <Route path="knowledge" element={<ModuleGuard moduleKey="knowledge"><LibraryHome /></ModuleGuard>} />
+            <Route path="knowledge/pools/:slug" element={<ModuleGuard moduleKey="knowledge"><PoolPage /></ModuleGuard>} />
+            <Route path="knowledge/pools/:slug/new" element={<ModuleGuard moduleKey="knowledge"><ArticleEditor key="new" /></ModuleGuard>} />
+            <Route path="knowledge/articles/:id" element={<ModuleGuard moduleKey="knowledge"><ArticlePage /></ModuleGuard>} />
+            <Route path="knowledge/articles/:id/edit" element={<ModuleGuard moduleKey="knowledge"><ArticleEditor key="edit" /></ModuleGuard>} />
             <Route path="knowledge/materials" element={<ModuleGuard moduleKey="knowledge"><MaterialsList /></ModuleGuard>} />
              <Route path="knowledge/materials/:id" element={<ModuleGuard moduleKey="knowledge"><MaterialDetail /></ModuleGuard>} />
             <Route path="knowledge/specifications" element={<ModuleGuard moduleKey="knowledge"><SpecificationsList /></ModuleGuard>} />

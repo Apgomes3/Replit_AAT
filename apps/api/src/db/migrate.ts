@@ -13,6 +13,7 @@ import { CLIENTS_SCHEMA } from '../modules/clients/schema';
 import { GOOGLE_CALENDAR_SCHEMA } from '../modules/google-calendar/schema';
 import { INITIATIVES_SCHEMA } from '../modules/initiatives/schema';
 import { BIDS_SCHEMA } from '../modules/bids/schema';
+import { LIBRARY_SCHEMA } from '../modules/library/schema';
 dotenv.config();
 
 // Self-contained module schemas, applied in order after the core schema.
@@ -25,6 +26,7 @@ const MODULE_SCHEMAS: Array<[name: string, sql: string]> = [
   ['google-calendar', GOOGLE_CALENDAR_SCHEMA],
   ['initiatives', INITIATIVES_SCHEMA],
   ['bids', BIDS_SCHEMA],
+  ['library', LIBRARY_SCHEMA],
 ];
 
 const schema = `

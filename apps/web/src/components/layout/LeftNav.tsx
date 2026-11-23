@@ -1,5 +1,5 @@
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
- import { FolderOpen, Package, BookOpen, FileText, Network, Search, Users, Upload, Boxes, Pipette, Container, Settings, ChevronRight, Ruler, ShoppingCart, Home, ClipboardList, Layers, GitBranch, DollarSign, BookMarked, PanelLeftClose, PanelLeftOpen, Fish, Activity, Sun, Wind, SlidersHorizontal, BriefcaseBusiness, ClipboardCheck, CalendarRange, PencilRuler, Gauge, Building2, Lightbulb } from 'lucide-react';
+ import { FolderOpen, Package, BookOpen, FileText, Network, Search, Users, Upload, Boxes, Pipette, Container, Settings, ChevronRight, Ruler, ShoppingCart, Home, ClipboardList, Layers, GitBranch, DollarSign, BookMarked, PanelLeftClose, PanelLeftOpen, Fish, Activity, Sun, Wind, SlidersHorizontal, BriefcaseBusiness, ClipboardCheck, CalendarRange, PencilRuler, Gauge, Building2, Lightbulb, Library } from 'lucide-react';
 import { useState, useRef, useEffect, ReactNode } from 'react';
 import clsx from 'clsx';
 import { useCommandPalette } from '../../store/commandPaletteStore';
@@ -18,6 +18,7 @@ const SHARED_ITEMS: NavItemDef[] = [
   { id: 'clients', to: ROUTES.clients, icon: Building2, label: 'Clients & Contacts', moduleKey: 'clients' },
   { id: 'products', to: ROUTES.products, icon: Package, label: 'Products', moduleKey: 'pim' },
   { id: 'documents', to: ROUTES.documents, icon: FileText, label: 'Documents', moduleKey: 'documents' },
+  { id: 'library', to: '/knowledge', icon: Library, label: 'Knowledge Library', moduleKey: 'knowledge', end: true },
 ];
 
 /** Department areas: collapsible, shown only when the user can see at least one item. */
