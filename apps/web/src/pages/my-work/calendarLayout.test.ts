@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { commitmentOn, eventsOn, meetingHours, monthGrid, regularMeetings, shiftDates, stackRows, weekSpan } from './calendarLayout';
+import { commitmentOn, dayAgenda, eventsOn, meetingHours, monthGrid, regularMeetings, shiftDates, stackRows, weekSpan } from './calendarLayout';
 
 const MON = '2026-11-16';
 
@@ -66,5 +66,49 @@ describe('month grid', () => {
     expect(g.month).toBe('2026-11');
     expect(g.days[0]).toBe('2026-10-26');
     expect(g.days).toHaveLength(42);
+  });
+});
+
+describe('day agenda', () => {
+  const base = { start_date: '2026-01-01', end_date: null, capacity_pct: null, hours_per_day: 1 };
+  const task = (id: string, start_time: string | null, due_date = '2026-11-16') => ({
+    key: `task:${id}`, kind: 'task' as const, id, title: id, status: 'not_started' as const, progress_pct: 0, start_date: null, due_date,
+    is_milestone: false, project: null, initiative: null, enquiry: null, design_book: null, plan: null, planned_hours: null, notes: null, start_time,
+  });
+  const ev = (id: string, title: string, start: string, end: string, all_day = false) => ({ id, title, start, end, all_day, location: null, link: null, busy: true });
+
+  it('lists all-day events, then timed meetings, commitments and tasks by time, then untimed commitments', () => {
+    const list = dayAgenda(
+      [ev('g1', 'Client call', '2026-11-16T14:00:00', '2026-11-16T15:00:00'), ev('g2', 'Holiday', '2026-11-16', '2026-11-17', true)],
+      [
+        { ...base, id: 'c1', title: 'Team meeting', weekdays: [0], start_time: '09:00' },
+        { ...base, id: 'c2', title: 'Admin', weekdays: [0], start_time: null },
+        { ...base, id: 'c3', title: 'Tuesday only', weekdays: [1], start_time: '08:00' },
+      ],
+      [task('Report', '11:30'), task('Untimed', null), task('Tomorrow', '08:00', '2026-11-17')],
+      MON,
+    );
+    expect(list.map(e => [e.kind, e.time])).toEqual([
+      ['event', null], ['commitment', '09:00'], ['task', '11:30'], ['event', '14:00'], ['commitment', null],
+    ]);
+  });
+
+  it('shows a Google meeting that is also a regular commitment once, as the meeting', () => {
+    const list = dayAgenda([ev('g1', 'Weekly team meeting', '2026-11-16T09:00:00', '2026-11-16T10:00:00')],
+      [{ ...base, id: 'c1', title: 'Team meeting', weekdays: [0], start_time: '09:00' }], [], MON);
+    expect(list).toHaveLength(1);
+    expect(list[0]).toMatchObject({ kind: 'event', regular: { id: 'c1' } });
+  });
+
+  it('puts all-day commitments and tasks at the top, on every day a task covers, with the day\'s hours', () => {
+    const visit = { ...task('Site visit', null, '2026-11-18'), start_date: MON, all_day: true };
+    const list = dayAgenda([ev('g1', 'Client call', '2026-11-17T08:00:00', '2026-11-17T09:00:00')],
+      [{ ...base, id: 'c1', title: 'Factory', weekdays: [1], hours_per_day: null, all_day: true, start_time: null }],
+      [visit, task('Report', '07:30', '2026-11-17')], '2026-11-17', 9);
+    expect(list.map(e => [e.kind, e.allDay, e.time])).toEqual([
+      ['commitment', true, null], ['task', true, null], ['task', false, '07:30'], ['event', false, '08:00'],
+    ]);
+    expect(list[0]).toMatchObject({ hours: 9 });
+    expect(dayAgenda([], [], [visit], '2026-11-19').length).toBe(0);
   });
 });

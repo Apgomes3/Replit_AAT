@@ -16,11 +16,19 @@ export type PersonalTask = {
   id: string; title: string; notes: string | null; status: WorkStatus; progress_pct: number;
   start_date: string | null; due_date: string | null; planned_hours: number | null; project: ProjectRef; initiative?: ProjectRef;
   enquiry?: ProjectRef; design_book?: ProjectRef;
+  /** Time of day (HH:MM) it starts on its first day, or null. */
+  start_time?: string | null;
+  /** Takes the whole working day on each day it covers. */
+  all_day?: boolean;
 };
 export type CommitmentKind = 'meeting' | 'role' | 'other';
 export type Commitment = {
   id: string; title: string; kind: CommitmentKind; weekdays: number[] | null; hours_per_day: number | null;
   capacity_pct: number | null; start_date: string; end_date: string | null; project: ProjectRef;
+  /** Time of day (HH:MM) a weekday commitment starts, or null. */
+  start_time?: string | null;
+  /** Takes the whole working day on its weekdays. */
+  all_day?: boolean;
 };
 export type MyWork = {
   from: string; calendar_name: string; capacity_pct: number; weeks: WorkloadWeek[];
@@ -30,11 +38,11 @@ export type MyWork = {
 export type PersonalTaskPayload = Partial<{
   title: string; notes: string | null; project_id: string | null; initiative_id: string | null; enquiry_id: string | null;
   design_book_id: string | null; status: WorkStatus; progress_pct: number;
-  start_date: string | null; due_date: string | null; planned_hours: number | null;
+  start_date: string | null; due_date: string | null; planned_hours: number | null; start_time: string | null; all_day: boolean;
 }>;
 export type CommitmentPayload = {
   title: string; kind: CommitmentKind; start_date: string; end_date: string | null; project_id: string | null;
-  weekdays: number[] | null; hours_per_day: number | null; capacity_pct: number | null;
+  weekdays: number[] | null; hours_per_day: number | null; capacity_pct: number | null; start_time: string | null; all_day: boolean;
 };
 
 const KEY = ['my-work'] as const;
@@ -120,6 +128,10 @@ export type WorkItem = {
   start_date: string | null; due_date: string | null; is_milestone: boolean; project: ProjectRef; initiative: ProjectRef;
   enquiry: ProjectRef; design_book: ProjectRef;
   plan: MyPlanTask['plan'] | null; planned_hours: number | null; notes: string | null;
+  /** Own tasks only: time of day (HH:MM) it starts on its first day. */
+  start_time?: string | null;
+  /** Own tasks only: takes the whole working day on each day it covers. */
+  all_day?: boolean;
 };
 
 export const toWorkItems = (w: Partial<Pick<MyWork, 'plan_tasks' | 'tasks'>>): WorkItem[] => [
@@ -131,7 +143,7 @@ export const toWorkItems = (w: Partial<Pick<MyWork, 'plan_tasks' | 'tasks'>>): W
   ...(w.tasks ?? []).map(t => ({
     key: `task:${t.id}`, kind: 'task' as const, id: t.id, title: t.title, status: t.status, progress_pct: t.progress_pct,
     start_date: t.start_date, due_date: t.due_date, is_milestone: false, project: t.project, initiative: t.initiative ?? null, enquiry: t.enquiry ?? null, design_book: t.design_book ?? null, plan: null,
-    planned_hours: t.planned_hours, notes: t.notes,
+    planned_hours: t.planned_hours, notes: t.notes, start_time: t.start_time ?? null, all_day: !!t.all_day,
   })),
 ];
 
@@ -167,9 +179,18 @@ export function groupWork(items: WorkItem[], today: string): Array<{ id: BucketI
 
 export const WEEKDAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const;
 
-/** "Mon, Wed · 1 h" or "40% of time". */
-export function describeCommitment(c: Pick<Commitment, 'weekdays' | 'hours_per_day' | 'capacity_pct'>): string {
+/** "HH:MM" plus hours, as "HH:MM" (clamped to 24:00). */
+export function addHoursToTime(time: string, hours: number): string {
+  const [h, m] = time.split(':').map(Number);
+  const total = Math.min(24 * 60, h * 60 + m + Math.round(hours * 60));
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+}
+
+/** "Mon, Wed · 1 h", "Mon · 09:00–10:00", "Fri · all day" or "40% of time". */
+export function describeCommitment(c: Pick<Commitment, 'weekdays' | 'hours_per_day' | 'capacity_pct' | 'start_time' | 'all_day'>): string {
   if (c.capacity_pct) return `${c.capacity_pct}% of time`;
   const days = (c.weekdays ?? []).map(d => WEEKDAY_SHORT[d]).join(', ');
+  if (c.all_day) return `${days} · all day`;
+  if (c.start_time && c.hours_per_day) return `${days} · ${c.start_time}–${addHoursToTime(c.start_time, c.hours_per_day)}`;
   return `${days} · ${c.hours_per_day} h`;
 }

@@ -28,4 +28,15 @@ describe('booking own tasks and commitments', () => {
     expect(commitmentHours(role, '2026-12-01', 9)).toBe(0);
     expect(commitmentHours(role, '2026-11-15', 9)).toBe(0);
   });
+
+  it('books the whole working day for all-day tasks and commitments', () => {
+    const visit = { start_date: '2026-11-17', due_date: '2026-11-19', planned_hours: null, all_day: true };
+    expect(personalTaskHours(cal, visit, '2026-11-17', 8)).toBe(8);
+    expect(personalTaskHours(cal, visit, '2026-11-17', 4)).toBe(4); // half a day of leave
+    expect(personalTaskHours(cal, visit, '2026-11-18', 0)).toBe(0); // holiday
+    expect(personalTaskHours(cal, visit, '2026-11-20', 8)).toBe(0);
+    const factory = { start_date: '2026-11-01', end_date: null, weekdays: [4], hours_per_day: null, capacity_pct: null, all_day: true };
+    expect(commitmentHours(factory, '2026-11-20', 9)).toBe(9);
+    expect(commitmentHours(factory, '2026-11-19', 9)).toBe(0);
+  });
 });

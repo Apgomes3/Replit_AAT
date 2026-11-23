@@ -125,6 +125,25 @@ CREATE TABLE IF NOT EXISTS planning_commitments (
 );
 CREATE INDEX IF NOT EXISTS idx_planning_commitments_user ON planning_commitments (user_id);
 
+-- Optional time of day, so the My Work calendar lists them at that time: a weekday commitment
+-- starts then and lasts its hours_per_day; an own task starts then on its first day.
+ALTER TABLE planning_commitments ADD COLUMN IF NOT EXISTS start_time TIME;
+ALTER TABLE planning_personal_tasks ADD COLUMN IF NOT EXISTS start_time TIME;
+
+-- All day: the item takes the whole working day (the person's hours that day on their calendar)
+-- on each day it covers; an all-day commitment has weekdays but no hours_per_day or start time.
+ALTER TABLE planning_personal_tasks ADD COLUMN IF NOT EXISTS all_day BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE planning_commitments ADD COLUMN IF NOT EXISTS all_day BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE planning_commitments DROP CONSTRAINT IF EXISTS planning_commitments_check1;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'planning_commitments_shape') THEN
+    ALTER TABLE planning_commitments ADD CONSTRAINT planning_commitments_shape CHECK (
+      (capacity_pct IS NOT NULL AND weekdays IS NULL AND hours_per_day IS NULL AND NOT all_day)
+      OR (capacity_pct IS NULL AND weekdays IS NOT NULL AND all_day AND hours_per_day IS NULL)
+      OR (capacity_pct IS NULL AND weekdays IS NOT NULL AND NOT all_day AND hours_per_day IS NOT NULL));
+  END IF;
+END $$;
+
 -- Global plans: anyone can make a plan. drafting_plans holds every plan in the company; a plan
 -- may be linked to a project, a design book or an enquiry, or stand alone, and may have no team.
 --   visibility: private  = owner, shared members and task assignees

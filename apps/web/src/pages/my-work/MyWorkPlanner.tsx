@@ -142,7 +142,7 @@ const workForBody = (v: string) => {
 
 function QuickAdd() {
   const save = useSavePersonalTask();
-  const [f, setF] = useState({ title: '', work_for: '', start_date: '', due_date: '', planned_hours: '' });
+  const [f, setF] = useState({ title: '', work_for: '', start_date: '', due_date: '', planned_hours: '', start_time: '', all_day: false });
   const [more, setMore] = useState(false);
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -151,9 +151,9 @@ function QuickAdd() {
     try {
       await save.mutateAsync({ body: {
         title: f.title.trim(), ...workForBody(f.work_for), start_date: f.start_date || null, due_date: f.due_date || null,
-        planned_hours: f.planned_hours ? Number(f.planned_hours) : null,
+        planned_hours: !f.all_day && f.planned_hours ? Number(f.planned_hours) : null, start_time: !f.all_day && f.start_time ? f.start_time : null, all_day: f.all_day,
       } });
-      setF({ title: '', work_for: f.work_for, start_date: '', due_date: '', planned_hours: '' });
+      setF({ title: '', work_for: f.work_for, start_date: '', due_date: '', planned_hours: '', start_time: '', all_day: false });
     } catch (err) { toast.error(apiErrorMessage(err, 'Could not add the task')); }
   };
   return <form onSubmit={submit} className="p-4 flex flex-wrap items-center gap-2">
@@ -166,8 +166,14 @@ function QuickAdd() {
     <button disabled={save.isPending || !f.title.trim()} className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm font-bold disabled:opacity-50">Add</button>
     {more && <div className="basis-full flex flex-wrap items-center gap-2 pl-6">
       <label className="text-xs text-stone-500 flex items-center gap-1">Start<input aria-label="Start date" type="date" value={f.start_date} max={f.due_date || undefined} onChange={e => setF({ ...f, start_date: e.target.value })} className={input} /></label>
-      <label className="text-xs text-stone-500 flex items-center gap-1">Effort<input aria-label="Planned hours" type="number" min={0.5} step={0.5} value={f.planned_hours} onChange={e => setF({ ...f, planned_hours: e.target.value })} placeholder="h" className={`${input} w-20`} /> h</label>
-      <span className="text-[11px] text-stone-400">Effort is spread over the working days from start to due and shows in your week.</span>
+      <label className="text-xs text-stone-500 flex items-center gap-1"><input aria-label="All day" type="checkbox" checked={f.all_day} onChange={e => setF({ ...f, all_day: e.target.checked })} /> All day</label>
+      {!f.all_day && <>
+        <label className="text-xs text-stone-500 flex items-center gap-1">At<input aria-label="Start time" type="time" value={f.start_time} onChange={e => setF({ ...f, start_time: e.target.value })} className={input} /></label>
+        <label className="text-xs text-stone-500 flex items-center gap-1">Effort<input aria-label="Planned hours" type="number" min={0.5} step={0.5} value={f.planned_hours} onChange={e => setF({ ...f, planned_hours: e.target.value })} placeholder="h" className={`${input} w-20`} /> h</label>
+      </>}
+      <span className="text-[11px] text-stone-400">{f.all_day
+        ? 'All day books your whole working day on each day from start to due.'
+        : "Effort is spread over the working days from start to due and shows in your week. A time puts it in order in that day's calendar list."}</span>
     </div>}
   </form>;
 }
@@ -204,6 +210,7 @@ function WorkRow({ item, today }: { item: WorkItem; today: string }) {
         {item.initiative && <> · <Link to={`/initiatives/${item.initiative.id}`} className="hover:text-blue-600"><span className="font-mono">{item.initiative.code}</span> {item.initiative.name}</Link></>}
         {item.enquiry && <> · <Link to={`/enquiries/${item.enquiry.id}`} className="hover:text-blue-600"><span className="font-mono">{item.enquiry.code}</span> {item.enquiry.name}</Link></>}
         {item.design_book && <> · <Link to={`/design-books/${item.design_book.id}`} className="hover:text-blue-600"><span className="font-mono">{item.design_book.code}</span> {item.design_book.name}</Link></>}
+        {item.all_day ? <> · all day</> : item.start_time ? <> · {item.start_time}</> : null}
         {item.planned_hours ? <> · {item.planned_hours} h</> : null}
       </div>
     </div>
@@ -229,7 +236,7 @@ function EditOwnTask({ item, onClose }: { item: WorkItem; onClose: () => void })
   const save = useSavePersonalTask();
   const [f, setF] = useState({
     title: item.title, notes: item.notes ?? '', work_for: workForValue(item), start_date: item.start_date ?? '',
-    due_date: item.due_date ?? '', planned_hours: item.planned_hours ? String(item.planned_hours) : '',
+    due_date: item.due_date ?? '', planned_hours: item.planned_hours ? String(item.planned_hours) : '', start_time: item.start_time ?? '', all_day: !!item.all_day,
   });
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -238,7 +245,8 @@ function EditOwnTask({ item, onClose }: { item: WorkItem; onClose: () => void })
     try {
       await save.mutateAsync({ id: item.id, body: {
         title: f.title.trim(), notes: f.notes.trim() || null, ...workForBody(f.work_for), start_date: f.start_date || null,
-        due_date: f.due_date || null, planned_hours: f.planned_hours ? Number(f.planned_hours) : null,
+        due_date: f.due_date || null, planned_hours: !f.all_day && f.planned_hours ? Number(f.planned_hours) : null,
+        start_time: !f.all_day && f.start_time ? f.start_time : null, all_day: f.all_day,
       } });
       onClose();
     } catch (err) { toast.error(apiErrorMessage(err, 'Could not save the task')); }
@@ -248,7 +256,11 @@ function EditOwnTask({ item, onClose }: { item: WorkItem; onClose: () => void })
     <WorkForPicker value={f.work_for} onChange={v => setF({ ...f, work_for: v })} />
     <input aria-label="Start date" type="date" value={f.start_date} onChange={e => setF({ ...f, start_date: e.target.value })} className={input} />
     <input aria-label="Due date" type="date" value={f.due_date} onChange={e => setF({ ...f, due_date: e.target.value })} className={input} />
-    <input aria-label="Planned hours" type="number" min={0.5} step={0.5} placeholder="h" value={f.planned_hours} onChange={e => setF({ ...f, planned_hours: e.target.value })} className={`${input} w-20`} />
+    <label className="text-xs text-stone-500 flex items-center gap-1"><input aria-label="All day" type="checkbox" checked={f.all_day} onChange={e => setF({ ...f, all_day: e.target.checked })} /> All day</label>
+    {!f.all_day && <>
+      <input aria-label="Start time" type="time" title="Start time (optional)" value={f.start_time} onChange={e => setF({ ...f, start_time: e.target.value })} className={input} />
+      <input aria-label="Planned hours" type="number" min={0.5} step={0.5} placeholder="h" value={f.planned_hours} onChange={e => setF({ ...f, planned_hours: e.target.value })} className={`${input} w-20`} />
+    </>}
     <input aria-label="Notes" value={f.notes} onChange={e => setF({ ...f, notes: e.target.value })} placeholder="Notes" className={`${input} basis-full`} />
     <button disabled={save.isPending} className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm font-bold">Save</button>
     <button type="button" onClick={onClose} className="px-2 py-1.5 text-sm text-stone-500">Cancel</button>
@@ -295,7 +307,7 @@ function CommitmentForm({ initial, onClose }: { initial: Commitment | null; onCl
     title: initial?.title ?? '', kind: initial?.kind ?? 'meeting' as CommitmentKind,
     byShare: !!initial?.capacity_pct, weekdays: initial?.weekdays ?? [0], hours: String(initial?.hours_per_day ?? 1),
     pct: String(initial?.capacity_pct ?? 20), start_date: initial?.start_date ?? todayIso(), end_date: initial?.end_date ?? '',
-    project_id: initial?.project?.id ?? '',
+    project_id: initial?.project?.id ?? '', start_time: initial?.start_time ?? '', all_day: !!initial?.all_day,
   });
   const toggleDay = (d: number) => setF({ ...f, weekdays: f.weekdays.includes(d) ? f.weekdays.filter(x => x !== d) : [...f.weekdays, d].sort() });
   const submit = async (e: FormEvent) => {
@@ -304,7 +316,8 @@ function CommitmentForm({ initial, onClose }: { initial: Commitment | null; onCl
     if (!f.byShare && !f.weekdays.length) return toast.error('Pick at least one day');
     const body: CommitmentPayload = {
       title: f.title.trim(), kind: f.kind, start_date: f.start_date, end_date: f.end_date || null, project_id: f.project_id || null,
-      weekdays: f.byShare ? null : f.weekdays, hours_per_day: f.byShare ? null : Number(f.hours), capacity_pct: f.byShare ? Number(f.pct) : null,
+      weekdays: f.byShare ? null : f.weekdays, hours_per_day: f.byShare || f.all_day ? null : Number(f.hours), capacity_pct: f.byShare ? Number(f.pct) : null,
+      start_time: f.byShare || f.all_day ? null : f.start_time || null, all_day: !f.byShare && f.all_day,
     };
     try { await save.mutateAsync({ id: initial?.id, body }); onClose(); }
     catch (err) { toast.error(apiErrorMessage(err, 'Could not save')); }
@@ -328,7 +341,11 @@ function CommitmentForm({ initial, onClose }: { initial: Commitment | null; onCl
             {WEEKDAY_SHORT.map((d, i) => <button type="button" key={d} aria-pressed={f.weekdays.includes(i)} onClick={() => toggleDay(i)}
               className={`px-2 py-0.5 rounded-md text-xs border ${f.weekdays.includes(i) ? 'bg-blue-600 text-white border-blue-600' : 'bg-white border-stone-200 text-stone-600'}`}>{d}</button>)}
           </div>
+          <label className="text-xs text-stone-600 flex items-center gap-1"><input aria-label="All day" type="checkbox" checked={f.all_day} onChange={e => setF({ ...f, all_day: e.target.checked })} /> All day <span className="text-stone-400">(books the whole working day)</span></label>
+          {!f.all_day && <>
           <label className="text-xs text-stone-600 flex items-center gap-1"><input aria-label="Hours each day" type="number" min={0.25} max={24} step={0.25} value={f.hours} onChange={e => setF({ ...f, hours: e.target.value })} className={`${input} w-20`} /> hours each day</label>
+          <label className="text-xs text-stone-600 flex items-center gap-1">Starts at<input aria-label="Starts at" type="time" value={f.start_time} onChange={e => setF({ ...f, start_time: e.target.value })} className={input} /> <span className="text-stone-400">(optional)</span></label>
+          </>}
         </div>}
     <div className="flex items-center gap-1 text-xs text-stone-600">
       <input aria-label="From" type="date" required value={f.start_date} onChange={e => setF({ ...f, start_date: e.target.value })} className={input} />

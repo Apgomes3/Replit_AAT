@@ -99,8 +99,18 @@ export type TaskLink = typeof TASK_LINKS[number];
 export type PersonalTaskInput = {
   title?: string; notes?: string | null; project_id?: string | null; initiative_id?: string | null;
   enquiry_id?: string | null; design_book_id?: string | null; status?: WorkStatus; progress_pct?: number;
-  start_date?: string | null; due_date?: string | null; planned_hours?: number | null;
+  start_date?: string | null; due_date?: string | null; planned_hours?: number | null; start_time?: string | null;
+  /** Takes the whole working day on each day it covers. */
+  all_day?: boolean;
 };
+
+/** A time of day as HH:MM (24 h), empty for none; undefined when not valid. */
+export function parseTimeOfDay(v: unknown): string | null | undefined {
+  if (v === null || v === '' || v === undefined) return null;
+  if (typeof v !== 'string') return undefined;
+  const m = /^([01]?\d|2[0-3]):([0-5]\d)(:00)?$/.exec(v.trim());
+  return m ? `${m[1].padStart(2, '0')}:${m[2]}` : undefined;
+}
 
 function optionalDate(body: any, key: string, out: Record<string, unknown>): string | null {
   if (!has(body, key)) return null;
@@ -144,6 +154,17 @@ export function validatePersonalTaskInput(body: any, { creating }: { creating: b
     if (v !== null && v !== '' && (typeof v !== 'number' || !Number.isFinite(v) || v <= 0 || v > 2000)) return { error: 'planned_hours must be more than 0 and at most 2000, or empty.' };
     out.planned_hours = v === '' || v === null ? null : Math.round(v * 100) / 100;
   }
+  if (has(body, 'start_time')) {
+    const t = parseTimeOfDay(body.start_time);
+    if (t === undefined) return { error: 'start_time must be a time of day (HH:MM) or empty.' };
+    out.start_time = t;
+  }
+  if (has(body, 'all_day')) {
+    if (typeof body.all_day !== 'boolean') return { error: 'all_day must be true or false.' };
+    out.all_day = body.all_day;
+    // An all-day task takes the whole working day, so it has no effort or start time of its own.
+    if (body.all_day) { out.planned_hours = null; out.start_time = null; }
+  }
   if (!creating && Object.keys(out).length === 0) return { error: 'Nothing to update.' };
   return { value: out };
 }
@@ -155,6 +176,10 @@ export type CommitmentInput = {
   weekdays: number[] | null; hours_per_day: number | null;
   /** ... or a share of the person's capacity. */
   capacity_pct: number | null;
+  /** Optional start time (HH:MM) for weekday commitments; they last hours_per_day. */
+  start_time?: string | null;
+  /** On its weekdays it takes the whole working day (no hours_per_day or start time). */
+  all_day?: boolean;
 };
 
 /** A standing commitment, always sent whole (create and replace). */
@@ -171,8 +196,9 @@ export function validateCommitmentInput(body: any): Result<CommitmentInput> {
   const byShare = body.capacity_pct !== undefined && body.capacity_pct !== null && body.capacity_pct !== '';
   const out: CommitmentInput = {
     title: body.title.trim(), kind, start_date: body.start_date, end_date: end, project_id: project,
-    weekdays: null, hours_per_day: null, capacity_pct: null,
+    weekdays: null, hours_per_day: null, capacity_pct: null, start_time: null, all_day: false,
   };
+  if (body.all_day !== undefined && typeof body.all_day !== 'boolean') return { error: 'all_day must be true or false.' };
   if (byShare) {
     if (!Number.isInteger(body.capacity_pct) || body.capacity_pct < 1 || body.capacity_pct > 100) return { error: 'capacity_pct must be a whole number from 1 to 100.' };
     out.capacity_pct = body.capacity_pct;
@@ -181,9 +207,18 @@ export function validateCommitmentInput(body: any): Result<CommitmentInput> {
     if (!Array.isArray(days) || !days.length || !days.every((d: unknown) => Number.isInteger(d) && (d as number) >= 0 && (d as number) <= 6)) {
       return { error: 'Choose the weekdays (0 = Monday ... 6 = Sunday) and the hours, or a share of time.' };
     }
-    if (!validHours(body.hours_per_day) || body.hours_per_day === 0) return { error: 'hours_per_day must be more than 0 and at most 24.' };
     out.weekdays = [...new Set<number>(days)].sort();
+    if (body.all_day === true) {
+      out.all_day = true;
+      return { value: out };
+    }
+    if (!validHours(body.hours_per_day) || body.hours_per_day === 0) return { error: 'hours_per_day must be more than 0 and at most 24.' };
     out.hours_per_day = Math.round(body.hours_per_day * 100) / 100;
+    // A share of time has no clock time; weekday commitments may start at a set time.
+    const t = parseTimeOfDay(body.start_time);
+    if (t === undefined) return { error: 'start_time must be a time of day (HH:MM) or empty.' };
+    if (t && Number(t.slice(0, 2)) + Number(t.slice(3)) / 60 + out.hours_per_day > 24) return { error: 'The commitment would run past midnight.' };
+    out.start_time = t;
   }
   return { value: out };
 }

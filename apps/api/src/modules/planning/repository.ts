@@ -275,15 +275,15 @@ export async function getWorkload(opts: PeopleScope & { userIds?: string[]; from
   )).rows;
   const leave = await listLeave({ userIds: ids, from: opts.from, to });
   const ownTasks = (await query(
-    `SELECT t.id, t.user_id, t.title, t.planned_hours::float8 AS planned_hours, pr.project_code,
+    `SELECT t.id, t.user_id, t.title, t.planned_hours::float8 AS planned_hours, t.all_day, pr.project_code,
        to_char(t.start_date, 'YYYY-MM-DD') AS start_date, to_char(t.due_date, 'YYYY-MM-DD') AS due_date
      FROM planning_personal_tasks t LEFT JOIN projects pr ON pr.id = t.project_id
-     WHERE t.user_id = ANY($1::uuid[]) AND t.status <> 'done' AND t.planned_hours IS NOT NULL
+     WHERE t.user_id = ANY($1::uuid[]) AND t.status <> 'done' AND (t.planned_hours IS NOT NULL OR t.all_day)
        AND COALESCE(t.start_date, t.due_date) <= $3 AND COALESCE(t.due_date, t.start_date) >= $2`,
     [ids, opts.from, to],
   )).rows;
   const commitments = (await query(
-    `SELECT c.id, c.user_id, c.title, c.weekdays, c.hours_per_day::float8 AS hours_per_day, c.capacity_pct, pr.project_code,
+    `SELECT c.id, c.user_id, c.title, c.weekdays, c.hours_per_day::float8 AS hours_per_day, c.capacity_pct, c.all_day, pr.project_code,
        to_char(c.start_date, 'YYYY-MM-DD') AS start_date, to_char(c.end_date, 'YYYY-MM-DD') AS end_date
      FROM planning_commitments c LEFT JOIN projects pr ON pr.id = c.project_id
      WHERE c.user_id = ANY($1::uuid[]) AND c.start_date <= $3 AND (c.end_date IS NULL OR c.end_date >= $2)`,
@@ -329,7 +329,8 @@ export async function getWorkload(opts: PeopleScope & { userIds?: string[]; from
     }
     for (const t of ownTasks.filter(x => x.user_id === p.user_id)) {
       for (let i = 0; i < opts.weeks * 7; i++) {
-        const h = personalTaskHours(cal, t, addDays(opts.from, i));
+        // An all-day task takes what is left of the day after leave.
+        const h = personalTaskHours(cal, t, addDays(opts.from, i), weeks[Math.floor(i / 7)]!.days[i % 7]!.capacity);
         if (h) book(weeks, i, { id: t.id, title: t.title, kind: 'task', plan_id: null, plan_code: null, project_code: t.project_code }, h);
       }
     }
@@ -338,7 +339,7 @@ export async function getWorkload(opts: PeopleScope & { userIds?: string[]; from
         const day = addDays(opts.from, i);
         // A whole day of leave means the meeting or role is not happening for them that day.
         if (myLeave.some(l => l.hours_per_day === null && l.start_date <= day && day <= l.end_date)) continue;
-        const h = commitmentHours(c, day, hoursOn(cal, day) * factor);
+        const h = commitmentHours(c, day, c.all_day ? weeks[Math.floor(i / 7)]!.days[i % 7]!.capacity : hoursOn(cal, day) * factor);
         if (h) book(weeks, i, { id: c.id, title: c.title, kind: 'commitment', plan_id: null, plan_code: null, project_code: c.project_code }, h);
       }
     }

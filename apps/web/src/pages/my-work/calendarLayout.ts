@@ -43,10 +43,20 @@ export function shiftDates(item: Pick<WorkItem, 'start_date' | 'due_date'>, days
   };
 }
 
-/** A regular commitment on a given day: its hours on its weekdays (share-of-time ones are spread, so shown apart). */
-export function commitmentOn(c: Pick<Commitment, 'weekdays' | 'hours_per_day' | 'capacity_pct' | 'start_date' | 'end_date'>, day: string): number {
-  if (day < c.start_date || (c.end_date && day > c.end_date) || c.capacity_pct) return 0;
-  return c.weekdays?.includes(weekdayOf(day)) && c.hours_per_day ? Number(c.hours_per_day) : 0;
+/** True when a weekday commitment (timed or all day) falls on the day. Share-of-time ones never do. */
+export function commitmentFalls(c: Pick<Commitment, 'weekdays' | 'capacity_pct' | 'start_date' | 'end_date'>, day: string): boolean {
+  if (day < c.start_date || (c.end_date && day > c.end_date) || c.capacity_pct) return false;
+  return !!c.weekdays?.includes(weekdayOf(day));
+}
+
+/**
+ * A regular commitment on a given day: its hours on its weekdays, or for an all-day one the hours
+ * you can work that day (`dayHours`). Share-of-time ones are spread, so shown apart.
+ */
+export function commitmentOn(c: Pick<Commitment, 'weekdays' | 'hours_per_day' | 'capacity_pct' | 'start_date' | 'end_date' | 'all_day'>, day: string, dayHours = 0): number {
+  if (!commitmentFalls(c, day)) return 0;
+  if (c.all_day) return dayHours;
+  return c.hours_per_day ? Number(c.hours_per_day) : 0;
 }
 
 /** Local calendar day (YYYY-MM-DD) of a Date. */
@@ -62,7 +72,7 @@ export function eventsOn(events: CalendarEvent[], day: string): CalendarEvent[] 
   }).sort((a, b) => Number(b.all_day) - Number(a.all_day) || a.start.localeCompare(b.start));
 }
 
-type DayCommitment = Pick<Commitment, 'id' | 'title' | 'weekdays' | 'hours_per_day' | 'capacity_pct' | 'start_date' | 'end_date'>;
+type DayCommitment = Pick<Commitment, 'id' | 'title' | 'weekdays' | 'hours_per_day' | 'capacity_pct' | 'start_date' | 'end_date' | 'all_day'>;
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 const sameName = (a: string, b: string) => {
   const [x, y] = [norm(a), norm(b)].sort((p, q) => p.length - q.length);
@@ -75,7 +85,8 @@ const sameName = (a: string, b: string) => {
  * Each commitment matches at most one event a day. Returns event id → commitment id.
  */
 export function regularMeetings(events: CalendarEvent[], commitments: DayCommitment[], day: string): Map<string, string> {
-  const due = commitments.filter(c => commitmentOn(c, day) > 0);
+  // All-day commitments are not meetings, so they never match a Google event.
+  const due = commitments.filter(c => !c.all_day && commitmentOn(c, day) > 0);
   const matched = new Map<string, string>();
   for (const e of eventsOn(events, day)) {
     if (e.all_day) continue;
@@ -100,6 +111,47 @@ export function meetingHours(events: CalendarEvent[], day: string, commitments: 
 }
 
 export const isLocalToday = (day: string) => day === localDay(new Date());
+
+const hhmm = (d: Date) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+
+export type AgendaEntry =
+  | { kind: 'event'; key: string; time: string | null; allDay: boolean; event: CalendarEvent; regular?: DayCommitment }
+  | { kind: 'commitment'; key: string; time: string | null; allDay: boolean; commitment: DayCommitment & Pick<Commitment, 'start_time'>; hours: number }
+  | { kind: 'task'; key: string; time: string | null; allDay: boolean; item: WorkItem };
+
+/**
+ * One day's list in time order: all-day items first (Google all-day events, all-day commitments and
+ * all-day own tasks on every day they cover), then timed Google events, commitments with a start
+ * time and own tasks with a start time (on their first day), then commitments without a time.
+ * A Google meeting that is also a regular commitment shows once, as the meeting. `dayHours` is what
+ * you can work that day, which an all-day commitment takes.
+ */
+export function dayAgenda(
+  events: CalendarEvent[], commitments: Array<DayCommitment & Pick<Commitment, 'start_time'>>, items: WorkItem[], day: string, dayHours = 0,
+): AgendaEntry[] {
+  const matched = regularMeetings(events, commitments, day);
+  const dayStart = new Date(`${day}T00:00:00`);
+  const entries: AgendaEntry[] = eventsOn(events, day).map(e => ({
+    kind: 'event', key: `e:${e.id}`, event: e, allDay: e.all_day,
+    time: e.all_day ? null : hhmm(new Date(Math.max(dayStart.getTime(), new Date(e.start).getTime()))),
+    regular: matched.has(e.id) ? commitments.find(c => c.id === matched.get(e.id)) : undefined,
+  }));
+  const used = new Set(matched.values());
+  for (const c of commitments) {
+    if (!commitmentFalls(c, day) || used.has(c.id)) continue;
+    entries.push({ kind: 'commitment', key: `c:${c.id}`, time: c.all_day ? null : c.start_time ?? null, allDay: !!c.all_day, commitment: c, hours: commitmentOn(c, day, dayHours) });
+  }
+  for (const i of items) {
+    if (i.kind !== 'task' || i.status === 'done') continue;
+    const range = taskRange(i);
+    if (!range) continue;
+    if (i.all_day && range[0] <= day && day <= range[1]) entries.push({ kind: 'task', key: `t:${i.id}`, time: null, allDay: true, item: i });
+    else if (!i.all_day && i.start_time && range[0] === day) entries.push({ kind: 'task', key: `t:${i.id}`, time: i.start_time, allDay: false, item: i });
+  }
+  // All-day first, then by time; untimed commitments last.
+  const rank = (e: AgendaEntry) => e.allDay ? 0 : e.time ? 1 : 2;
+  return entries.sort((a, b) => rank(a) - rank(b) || (a.time ?? '').localeCompare(b.time ?? ''));
+}
 
 /** The Monday-first 6-week grid that shows a month. */
 export function monthGrid(anyDayInMonth: string): { month: string; days: string[] } {

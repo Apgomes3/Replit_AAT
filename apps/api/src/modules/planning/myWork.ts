@@ -15,11 +15,19 @@ export type MyPlanTask = {
 export type PersonalTask = {
   id: string; title: string; notes: string | null; status: WorkStatus; progress_pct: number;
   start_date: string | null; due_date: string | null; planned_hours: number | null; project: ProjectRef; completed_at: string | null;
+  /** Time of day (HH:MM) it starts on its first day, or null. */
+  start_time: string | null;
+  /** Takes the whole working day on each day it covers. */
+  all_day: boolean;
   initiative: ProjectRef; enquiry: ProjectRef; design_book: ProjectRef;
 };
 export type Commitment = {
   id: string; title: string; kind: 'meeting' | 'role' | 'other'; weekdays: number[] | null; hours_per_day: number | null;
   capacity_pct: number | null; start_date: string; end_date: string | null; project: ProjectRef;
+  /** Time of day (HH:MM) a weekday commitment starts, or null. */
+  start_time: string | null;
+  /** Takes the whole working day on its weekdays. */
+  all_day: boolean;
 };
 export type MyWork = {
   from: string; calendar_name: string; capacity_pct: number; weeks: WorkloadWeek[];
@@ -34,7 +42,7 @@ const RECENTLY_DONE = `(t.status <> 'done' OR t.completed_at >= NOW() - INTERVAL
 
 const PERSONAL_SELECT = `
   SELECT t.id, t.title, t.notes, t.status, t.progress_pct, ${D('t.start_date')} AS start_date, ${D('t.due_date')} AS due_date,
-    t.planned_hours::float8 AS planned_hours, t.completed_at, ${PROJECT} AS project,
+    t.planned_hours::float8 AS planned_hours, t.completed_at, ${PROJECT} AS project, to_char(t.start_time, 'HH24:MI') AS start_time, t.all_day,
     CASE WHEN ini.id IS NULL THEN NULL ELSE json_build_object('id', ini.id, 'code', ini.code, 'name', ini.title) END AS initiative,
     CASE WHEN enq.id IS NULL THEN NULL ELSE json_build_object('id', enq.id, 'code', enq.enquiry_number, 'name', enq.title) END AS enquiry,
     CASE WHEN dbk.id IS NULL THEN NULL ELSE json_build_object('id', dbk.id, 'code', dbk.book_code, 'name', dbk.book_title) END AS design_book
@@ -43,7 +51,7 @@ const PERSONAL_SELECT = `
 
 const COMMITMENT_SELECT = `
   SELECT c.id, c.title, c.kind, c.weekdays, c.hours_per_day::float8 AS hours_per_day, c.capacity_pct,
-    ${D('c.start_date')} AS start_date, ${D('c.end_date')} AS end_date, ${PROJECT} AS project
+    ${D('c.start_date')} AS start_date, ${D('c.end_date')} AS end_date, ${PROJECT} AS project, to_char(c.start_time, 'HH24:MI') AS start_time, c.all_day
   FROM planning_commitments c LEFT JOIN projects pr ON pr.id = c.project_id`;
 
 export async function getMyWork(userId: string, from: string, weeks: number): Promise<MyWork> {
@@ -119,11 +127,11 @@ export async function createPersonalTask(userId: string, input: PersonalTaskInpu
   const done = input.status === 'done';
   const r = await query(
     `INSERT INTO planning_personal_tasks (user_id, title, notes, project_id, status, progress_pct, start_date, due_date, planned_hours, completed_at, created_by,
-       initiative_id, enquiry_id, design_book_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, ${done ? 'NOW()' : 'NULL'}, $10, $11, $12, $13) RETURNING id`,
+       initiative_id, enquiry_id, design_book_id, start_time, all_day)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, ${done ? 'NOW()' : 'NULL'}, $10, $11, $12, $13, $14, $15) RETURNING id`,
     [userId, input.title, input.notes ?? null, input.project_id ?? null, input.status ?? 'not_started',
       input.progress_pct ?? (done ? 100 : 0), input.start_date ?? null, input.due_date ?? null, input.planned_hours ?? null, actorId,
-      input.initiative_id ?? null, input.enquiry_id ?? null, input.design_book_id ?? null],
+      input.initiative_id ?? null, input.enquiry_id ?? null, input.design_book_id ?? null, input.start_time ?? null, input.all_day ?? false],
   );
   return (await getPersonalTask(r.rows[0].id))!;
 }
@@ -135,7 +143,7 @@ export async function getPersonalTask(id: string): Promise<(PersonalTask & { use
 export async function updatePersonalTask(id: string, input: PersonalTaskInput): Promise<PersonalTask | null> {
   const set: string[] = [];
   const values: unknown[] = [id];
-  for (const key of ['title', 'notes', ...TASK_LINKS, 'status', 'progress_pct', 'start_date', 'due_date', 'planned_hours'] as const) {
+  for (const key of ['title', 'notes', ...TASK_LINKS, 'status', 'progress_pct', 'start_date', 'due_date', 'planned_hours', 'start_time', 'all_day'] as const) {
     if (input[key] !== undefined) { values.push(input[key]); set.push(`${key} = $${values.length}`); }
   }
   // A task is for one thing: choosing a project, initiative, enquiry or design book clears the others.
@@ -172,14 +180,14 @@ export async function getCommitment(id: string): Promise<(Commitment & { user_id
 }
 
 export async function saveCommitment(userId: string, input: CommitmentInput, actorId: string, id?: string): Promise<Commitment | null> {
-  const values = [input.title, input.kind, input.weekdays, input.hours_per_day, input.capacity_pct, input.start_date, input.end_date, input.project_id];
+  const values = [input.title, input.kind, input.weekdays, input.hours_per_day, input.capacity_pct, input.start_date, input.end_date, input.project_id, input.start_time ?? null, input.all_day ?? false];
   const r = id
     ? await query(
       `UPDATE planning_commitments SET title = $2, kind = $3, weekdays = $4, hours_per_day = $5, capacity_pct = $6,
-         start_date = $7, end_date = $8, project_id = $9, updated_at = NOW() WHERE id = $1 RETURNING id`, [id, ...values])
+         start_date = $7, end_date = $8, project_id = $9, start_time = $10, all_day = $11, updated_at = NOW() WHERE id = $1 RETURNING id`, [id, ...values])
     : await query(
-      `INSERT INTO planning_commitments (title, kind, weekdays, hours_per_day, capacity_pct, start_date, end_date, project_id, user_id, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`, [...values, userId, actorId]);
+      `INSERT INTO planning_commitments (title, kind, weekdays, hours_per_day, capacity_pct, start_date, end_date, project_id, start_time, all_day, user_id, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`, [...values, userId, actorId]);
   return r.rows[0] ? getCommitment(r.rows[0].id) : null;
 }
 
