@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { commitmentOn, eventsOn, meetingHours, monthGrid, shiftDates, stackRows, weekSpan } from './calendarLayout';
+import { commitmentOn, eventsOn, meetingHours, monthGrid, regularMeetings, shiftDates, stackRows, weekSpan } from './calendarLayout';
 
 const MON = '2026-11-16';
 
@@ -44,6 +44,19 @@ describe('commitments and meetings', () => {
     expect(eventsOn(events, MON).map(e => e.id)).toEqual(['d', 'a', 'c', 'b']);
     expect(eventsOn(events, '2026-11-17').map(e => e.id)).toEqual(['d']);
     expect(eventsOn(events, '2026-11-18')).toEqual([]);
+  });
+
+  it('does not count a Google meeting twice when it is also a regular commitment', () => {
+    const at = (h: number, m = 0) => new Date(2026, 10, 16, h, m).toISOString();
+    const ev = (id: string, title: string, s: number, e: number) => ({ id, title, start: at(s), end: at(e), all_day: false, location: null, link: null, busy: true });
+    const events = [ev('a', 'Daily Standup', 9, 10), ev('b', 'QA sign-off', 14, 15), ev('c', 'Daily standup', 16, 17)];
+    const base = { weekdays: [0], hours_per_day: 1, capacity_pct: null, start_date: '2026-11-01', end_date: null };
+    const commitments = [{ ...base, id: 's', title: 'Standup' }, { ...base, id: 'q', title: 'QA' }];
+    // "Standup" matches the first standup only; "QA" is too short a name to claim "QA sign-off".
+    expect([...regularMeetings(events, commitments, MON)]).toEqual([['a', 's']]);
+    expect(meetingHours(events, MON, commitments)).toBe(2);
+    // On a day the commitment does not fall on, the meeting counts.
+    expect(regularMeetings(events, commitments, '2026-11-17').size).toBe(0);
   });
 });
 

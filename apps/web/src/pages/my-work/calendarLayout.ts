@@ -62,10 +62,37 @@ export function eventsOn(events: CalendarEvent[], day: string): CalendarEvent[] 
   }).sort((a, b) => Number(b.all_day) - Number(a.all_day) || a.start.localeCompare(b.start));
 }
 
-/** Hours of busy, timed meetings on a local day (the part inside that day). All-day events do not count. */
-export function meetingHours(events: CalendarEvent[], day: string): number {
+type DayCommitment = Pick<Commitment, 'id' | 'title' | 'weekdays' | 'hours_per_day' | 'capacity_pct' | 'start_date' | 'end_date'>;
+const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+const sameName = (a: string, b: string) => {
+  const [x, y] = [norm(a), norm(b)].sort((p, q) => p.length - q.length);
+  return !!x && (x === y || (x.length >= 6 && y.includes(x)));
+};
+
+/**
+ * Google events on a day that are a regular commitment already counted in booked hours: a timed
+ * event whose name matches a commitment falling on that day (e.g. "Standup" and "Daily standup").
+ * Each commitment matches at most one event a day. Returns event id → commitment id.
+ */
+export function regularMeetings(events: CalendarEvent[], commitments: DayCommitment[], day: string): Map<string, string> {
+  const due = commitments.filter(c => commitmentOn(c, day) > 0);
+  const matched = new Map<string, string>();
+  for (const e of eventsOn(events, day)) {
+    if (e.all_day) continue;
+    const c = due.find(x => ![...matched.values()].includes(x.id) && sameName(x.title, e.title));
+    if (c) matched.set(e.id, c.id);
+  }
+  return matched;
+}
+
+/**
+ * Hours of busy, timed meetings on a local day (the part inside that day). All-day events do not
+ * count, nor do events that are a regular commitment (those are already in booked hours).
+ */
+export function meetingHours(events: CalendarEvent[], day: string, commitments: DayCommitment[] = []): number {
   const dayStart = new Date(`${day}T00:00:00`).getTime(), dayEnd = new Date(`${addDays(day, 1)}T00:00:00`).getTime();
-  const ms = events.filter(e => e.busy && !e.all_day).reduce((sum, e) => {
+  const regular = regularMeetings(events, commitments, day);
+  const ms = events.filter(e => e.busy && !e.all_day && !regular.has(e.id)).reduce((sum, e) => {
     const s = Math.max(dayStart, new Date(e.start).getTime()), en = Math.min(dayEnd, new Date(e.end).getTime());
     return sum + Math.max(0, en - s);
   }, 0);

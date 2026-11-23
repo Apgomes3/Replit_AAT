@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useParams, useNavigate, Link } from 'react-router-dom';
 import { useState, lazy, Suspense, useRef, useEffect, Fragment } from 'react';
 import api from '../../lib/api';
+import LinkedArticles from '../library/LinkedArticles';
 import PageHeader from '../../components/ui/PageHeader';
 import FollowRecordButton from '../../components/ui/FollowRecordButton';
 import QueryError from '../../components/ui/QueryError';
@@ -1517,6 +1518,8 @@ export default function ProjectDetail() {
             )}
           </div>
         </div>
+
+        <LinkedArticles type="project" id={project.id} className="mb-3" />
 
         {(() => {
           const sysItems: any[] = systems?.items || [];

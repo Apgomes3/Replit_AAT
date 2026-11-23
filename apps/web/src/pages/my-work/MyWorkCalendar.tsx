@@ -10,7 +10,7 @@ import { addDays } from '../drafting/taskTiming';
 import type { WorkloadDay } from '../drafting/planningApi';
 import { Commitment, useMyWork, useSavePersonalTask, WorkItem } from './myWorkApi';
 import {
-  CalendarEvent, commitmentOn, eventsOn, isLocalToday, meetingHours, mondayOf, monthGrid, shiftDates, stackRows, taskRange, weekDays, weekSpan,
+  CalendarEvent, commitmentOn, eventsOn, isLocalToday, meetingHours, mondayOf, monthGrid, regularMeetings, shiftDates, stackRows, taskRange, weekDays, weekSpan,
 } from './calendarLayout';
 
 const dayName = (iso: string, opts: Intl.DateTimeFormatOptions) => new Date(`${iso}T00:00:00Z`).toLocaleDateString(undefined, { ...opts, timeZone: 'UTC' });
@@ -103,7 +103,7 @@ export function WeekCalendar({ from, items, commitments, days, onShift, onToday,
       <div className="grid grid-cols-7 gap-px bg-stone-200 border border-stone-200 rounded-t-xl overflow-hidden">
         {dates.map((d, i) => {
           const day = days[i];
-          const meet = meetingHours(google.events, d);
+          const meet = meetingHours(google.events, d, commitments);
           const used = (day?.booked ?? 0) + meet;
           const cap = day?.capacity ?? 0;
           const pct = cap ? used / cap : used ? 2 : 0;
@@ -125,14 +125,20 @@ export function WeekCalendar({ from, items, commitments, days, onShift, onToday,
       <div className="grid grid-cols-7 gap-px bg-stone-200 border-x border-stone-200">
         {dates.map(d => {
           const evs = eventsOn(google.events, d);
-          const regular = commitments.filter(c => commitmentOn(c, d));
+          // A Google meeting that is also a regular commitment is shown once, as the meeting, marked as regular.
+          const matched = regularMeetings(google.events, commitments, d);
+          const regular = commitments.filter(c => commitmentOn(c, d) && ![...matched.values()].includes(c.id));
           return <div key={d} className="bg-white px-1.5 py-1.5 min-h-[44px] space-y-0.5">
-            {evs.map(e => <div key={e.id} title={[e.title, e.location].filter(Boolean).join(' · ')}
-              className={`flex items-center gap-1 text-[10.5px] leading-tight rounded px-1 py-0.5 ${e.all_day ? 'bg-violet-100 text-violet-900' : e.busy ? 'bg-violet-50 text-violet-900' : 'text-stone-400'}`}>
+            {evs.map(e => {
+              const as = matched.has(e.id) ? commitments.find(c => c.id === matched.get(e.id)) : undefined;
+              return <div key={e.id} title={[e.title, e.location, as && `Your regular commitment "${as.title}": its hours count once`].filter(Boolean).join(' · ')}
+              className={`flex items-center gap-1 text-[10.5px] leading-tight rounded px-1 py-0.5 ${e.all_day ? 'bg-violet-100 text-violet-900' : as ? 'bg-violet-50 text-violet-900 ring-1 ring-inset ring-amber-300' : e.busy ? 'bg-violet-50 text-violet-900' : 'text-stone-400'}`}>
+              {as && <Repeat className="w-2.5 h-2.5 shrink-0 text-amber-700" aria-label="Regular commitment" />}
               {!e.all_day && <span className="tabular-nums shrink-0 text-violet-700/80">{timeOf(e.start)}</span>}
               <span className="truncate">{e.title}</span>
               {e.link && <a href={e.link} target="_blank" rel="noreferrer" aria-label={`Open ${e.title} in Google Calendar`} className="ml-auto shrink-0 text-violet-400 hover:text-violet-700"><ExternalLink className="w-2.5 h-2.5" /></a>}
-            </div>)}
+            </div>;
+            })}
             {regular.map(c => <div key={c.id} title={`${c.title} (regular commitment)`} className="flex items-center gap-1 text-[10.5px] leading-tight rounded px-1 py-0.5 bg-amber-50 text-amber-900">
               <Repeat className="w-2.5 h-2.5 shrink-0" /><span className="truncate">{c.title}</span><span className="ml-auto shrink-0 tabular-nums">{h(commitmentOn(c, d))}</span>
             </div>)}
@@ -228,7 +234,7 @@ export function MonthCalendar({ month, items, onMonth, onPickWeek, renderRow }: 
         const tasks = byDay.get(d) ?? [];
         const evs = eventsOn(google.events, d).filter(e => e.busy || e.all_day);
         const day = load.get(d);
-        const over = day && day.capacity > 0 && day.booked + meetingHours(google.events, d) > day.capacity + 0.01;
+        const over = day && day.capacity > 0 && day.booked + meetingHours(google.events, d, work.data?.commitments ?? []) >day.capacity + 0.01;
         return [
           i % 7 === 0 ? <button key={`w${d}`} onClick={() => onPickWeek(mondayOf(d))} title="Open this week" className="bg-stone-50 text-[10px] text-stone-400 hover:text-blue-600 font-mono">
             {Math.ceil(((Date.parse(`${addDays(d, 3)}T00:00:00Z`) - Date.parse(`${addDays(d, 3).slice(0, 4)}-01-01T00:00:00Z`)) / 86_400_000 + 1) / 7)}</button> : null,

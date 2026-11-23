@@ -8,6 +8,7 @@ import api from '../../lib/api';
 import { useAuthStore } from '../../store/authStore';
 import InitiativeFormModal from './InitiativeFormModal';
 import { LinkedPlans } from '../plans/MyPlansPage';
+import LinkedArticles from '../library/LinkedArticles';
 import {
   apiError, COST_CATEGORIES, CURRENCIES, hours, InitiativeDetail as Detail, LINK_TYPES, money, NEXT_STAGES, Stage, STAGES, STAGE_TONES, TYPES,
   useAddCost, useAddLink, useDeleteCost, useDeleteLink, useDeleteTime, useInitiative, useLogTime, useMoveStage,
@@ -104,6 +105,7 @@ export default function InitiativeDetail() {
         <CostsPanel i={i} />
         <TasksPanel i={i} />
         <LinksPanel i={i} />
+        <LinkedArticles type="initiative" id={i.id} className="rounded-2xl" />
       </div>
     </div>
     {editing && <InitiativeFormModal initiative={i} onClose={() => setEditing(false)} />}
