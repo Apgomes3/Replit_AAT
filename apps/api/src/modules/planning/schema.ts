@@ -147,6 +147,27 @@ ALTER TABLE offices ADD COLUMN IF NOT EXISTS time_zone VARCHAR(64);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS office_id UUID REFERENCES offices(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_users_office ON users (office_id);
 
+-- Departments, managed on Admin -> Departments. users.department holds the department's key (fixed
+-- once created); company teams (drafting_teams.department) hold its name. Both are tied to this
+-- table by foreign keys added in seedDepartments, so a rename carries through. nav_areas: the menu
+-- areas a member sees open by default (NULL = every area).
+CREATE TABLE IF NOT EXISTS departments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  key VARCHAR(40) NOT NULL UNIQUE,
+  name VARCHAR(100) NOT NULL UNIQUE,
+  code VARCHAR(10),
+  colour VARCHAR(20) NOT NULL DEFAULT 'slate',
+  description TEXT,
+  head_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  parent_id UUID REFERENCES departments(id) ON DELETE SET NULL,
+  nav_areas TEXT[],
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (parent_id IS NULL OR parent_id <> id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_departments_name_ci ON departments (LOWER(name));
+
 -- All day: the item takes the whole working day (the person's hours that day on their calendar)
 -- on each day it covers; an all-day commitment has weekdays but no hours_per_day or start time.
 ALTER TABLE planning_personal_tasks ADD COLUMN IF NOT EXISTS all_day BOOLEAN NOT NULL DEFAULT FALSE;

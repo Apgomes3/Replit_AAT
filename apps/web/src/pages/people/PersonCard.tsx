@@ -4,6 +4,7 @@ import { ArrowLeft, Building2, CalendarDays, ChevronRight, Copy, Mail, Settings,
 import toast from 'react-hot-toast';
 import api from '../../lib/api';
 import { useAuthStore } from '../../store/authStore';
+import { colourClasses } from '../../lib/departments';
 
 interface PersonRef { id: string; name: string; job_title: string | null; email?: string; report_count?: number }
 interface Person {
@@ -12,6 +13,7 @@ interface Person {
   teams: Array<{ id: string; name: string; department: string | null; is_manager: boolean; manager_id: string | null; manager_name: string | null }>;
   calendar: string | null;
   office?: string | null;
+  department?: { name: string; colour: string; parent: string | null; head: { id: string; name: string } | null } | null;
 }
 
 const ROLE_LABELS: Record<string, string> = { admin: 'Admin', manager: 'Manager', user: 'User', viewer: 'Viewer', hq_manager: 'HQ manager', pmo: 'PMO', engineer: 'Engineer' };
@@ -53,6 +55,13 @@ export default function PersonCard() {
             <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-600 font-semibold">Access: {ROLE_LABELS[p.role] ?? p.role}</span>
             {!p.is_active && <span className="px-2 py-0.5 rounded bg-rose-50 text-rose-700 font-semibold">Blocked</span>}
             {p.office && <span className="inline-flex items-center gap-1 text-slate-500"><Building2 className="w-3.5 h-3.5" />{p.office}</span>}
+            {p.department && <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-semibold ${colourClasses(p.department.colour).chip}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${colourClasses(p.department.colour).dot}`} />
+              {p.department.parent ? `${p.department.parent} › ${p.department.name}` : p.department.name}
+            </span>}
+            {p.department?.head && p.department.head.id !== p.id && <span className="text-xs text-slate-500">
+              Head of department: <Link to={`/people/${p.department.head.id}`} className="font-semibold text-slate-700 hover:text-blue-700">{p.department.head.name}</Link>
+            </span>}
             {p.calendar && <span className="inline-flex items-center gap-1 text-slate-500"><CalendarDays className="w-3.5 h-3.5" />{p.calendar}</span>}
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">

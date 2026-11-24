@@ -10,6 +10,7 @@ import { PIM_SCHEMA } from '../modules/pim/schema';
 import { PLANNING_SCHEMA } from '../modules/planning/schema';
 import { loadHolidaySets } from '../modules/planning/holidays';
 import { seedOffices } from '../modules/planning/offices';
+import { seedDepartments } from '../modules/people/departments';
 import { CLIENTS_SCHEMA } from '../modules/clients/schema';
 import { GOOGLE_CALENDAR_SCHEMA } from '../modules/google-calendar/schema';
 import { INITIATIVES_SCHEMA } from '../modules/initiatives/schema';
@@ -3747,6 +3748,8 @@ async function migrate() {
   } catch (err) {
     console.error('Migration failed:', err);
     process.exit(1);
+    const departments = await seedDepartments(client);
+    if (departments.length) console.log(`Departments added: ${departments.join(', ')}.`);
   } finally {
     client.release();
     await pool.end();

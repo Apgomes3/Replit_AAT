@@ -18,7 +18,7 @@ import QueryError from '../../components/ui/QueryError';
 import EmptyState from '../../components/ui/EmptyState';
 import SkeletonTable from '../../components/ui/SkeletonTable';
 import { useModalFocus } from '../../hooks/useModalFocus';
-import { DEPARTMENTS, DEPARTMENT_LABELS } from '../../lib/departments';
+import { departmentLabels, useDepartmentOptions } from '../../lib/departments';
 import { useOffices } from '../../lib/officesApi';
 
 interface UserRow {
@@ -718,6 +718,8 @@ export default function AdminUsers() {
   const [roleFilter, setRoleFilter] = useState('');
   // The Offices page links here with ?office=<id> to list who is in an office.
   const [officeFilter, setOfficeFilter] = useState(() => new URLSearchParams(window.location.search).get('office') ?? '');
+  // The Departments page links here with ?department=<key>.
+  const [departmentFilter, setDepartmentFilter] = useState(() => new URLSearchParams(window.location.search).get('department') ?? '');
   const [page, setPage] = useState(1);
   const [sortKey, setSortKey] = useState<SortKey>('created');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
@@ -762,9 +764,9 @@ export default function AdminUsers() {
   const sortParam = `${sortKey === 'name' ? 'name' : sortKey === 'email' ? 'email' : sortKey === 'role' ? 'role' : sortKey === 'status' ? 'status' : sortKey === 'last_login' ? 'last_login' : 'created'}_${sortDir}`;
 
   const { data, isLoading, isError, refetch } = useQuery<{ items: UserRow[]; pagination: { page: number; page_size: number; total: number; pages: number } }>({
-    queryKey: ['admin-users', debouncedQ, roleFilter, officeFilter, page, sortParam],
+    queryKey: ['admin-users', debouncedQ, roleFilter, officeFilter, departmentFilter, page, sortParam],
     queryFn: () => api.get('/admin/users', {
-      params: { q: debouncedQ || undefined, role: roleFilter || undefined, office: officeFilter || undefined, page, page_size: 25, sort: sortParam },
+      params: { q: debouncedQ || undefined, role: roleFilter || undefined, office: officeFilter || undefined, department: departmentFilter || undefined, page, page_size: 25, sort: sortParam },
     }).then(r => r.data),
     placeholderData: keepPreviousData,
   });
@@ -791,6 +793,8 @@ export default function AdminUsers() {
     .map(u => ({ value: u.id, label: `${`${u.first_name || ''} ${u.last_name || ''}`.trim() || u.email}${u.job_title ? ` – ${u.job_title}` : ''}` }));
 
   const offices = useOffices(isAdmin);
+  const departmentList = departmentLabels(useDepartmentOptions().data ?? []);
+  const departmentName = (key: string | null | undefined) => key ? departmentList.find(d => d.key === key)?.name ?? key : null;
   const officeOptions = [{ value: '', label: 'No office' }, ...(offices.data?.data ?? []).map(o => ({ value: o.id, label: o.calendar_name ? `${o.name} (${o.calendar_name})` : o.name }))];
 
   const roleOptions: string[] = rolesData?.items?.map((r: any) => r.name) || ['admin', 'manager', 'user', 'viewer'];
@@ -949,9 +953,19 @@ export default function AdminUsers() {
           <option value="none">No office yet</option>
           {(offices.data?.data ?? []).map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
         </select>}
-        {(searchQ || roleFilter || officeFilter) && (
+        <select
+          aria-label="Department"
+          value={departmentFilter}
+          onChange={e => { setDepartmentFilter(e.target.value); setPage(1); }}
+          className="text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-700"
+        >
+          <option value="">All departments</option>
+          <option value="none">No department yet</option>
+          {departmentList.map(d => <option key={d.key} value={d.key}>{d.label}{d.is_active ? '' : ' (archived)'}</option>)}
+        </select>
+        {(searchQ || roleFilter || officeFilter || departmentFilter) && (
           <button
-            onClick={() => { setSearchQ(''); setRoleFilter(''); setOfficeFilter(''); setPage(1); }}
+            onClick={() => { setSearchQ(''); setRoleFilter(''); setOfficeFilter(''); setDepartmentFilter(''); setPage(1); }}
             className="text-xs text-slate-500 hover:text-slate-700 underline"
           >
             Clear
@@ -970,7 +984,7 @@ export default function AdminUsers() {
           <QueryError message="Could not load users" onRetry={() => refetch()} />
         ) : isLoading ? (
           <SkeletonTable rows={6} columns={isAdmin ? 8 : 7} />
-        ) : users.length === 0 && !debouncedQ && !roleFilter && !officeFilter ? (
+        ) : users.length === 0 && !debouncedQ && !roleFilter && !officeFilter && !departmentFilter ? (
           <EmptyState
             icon={Users}
             title="No users"
@@ -987,6 +1001,7 @@ export default function AdminUsers() {
                 <th className="text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">Job position</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">Reports to</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">Office</th>
+                <th className="text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">Department</th>
                 {sortableHeader('Role', 'role')}
                 {sortableHeader('Status', 'status')}
                 <th className="text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">See All POs</th>
@@ -998,8 +1013,8 @@ export default function AdminUsers() {
             <tbody>
               {users.length === 0 ? (
                 <tr>
-                  <td colSpan={isAdmin ? 11 : 10} className="text-center py-12 text-slate-400 text-sm">
-                    {(debouncedQ || roleFilter || officeFilter) ? 'No users match the current filters' : 'No users found'}
+                  <td colSpan={isAdmin ? 12 : 11} className="text-center py-12 text-slate-400 text-sm">
+                    {(debouncedQ || roleFilter || officeFilter || departmentFilter) ? 'No users match the current filters' : 'No users found'}
                   </td>
                 </tr>
               ) : users.map(user => {
@@ -1014,6 +1029,7 @@ export default function AdminUsers() {
                     <td className="px-4 py-3 text-slate-600">{user.job_title || '—'}</td>
                     <td className="px-4 py-3 text-slate-600">{user.reports_to_name || '—'}</td>
                     <td className="px-4 py-3 text-slate-600">{user.office_name || '—'}</td>
+                    <td className="px-4 py-3 text-slate-600">{departmentName(user.department) || '—'}</td>
                     <td className="px-4 py-3">
                       <span className="bg-slate-100 text-slate-700 text-xs px-2 py-0.5 rounded capitalize">
                         {user.role?.replace(/_/g, ' ')}
@@ -1166,7 +1182,7 @@ export default function AdminUsers() {
             { name: 'reports_to_user_id', label: 'Reports to (direct manager)', options: managerOptions },
             { name: 'role', label: 'Role (access)', options: roleOptions },
             { name: 'office_id', label: 'Office (a new office sets their working calendar)', options: officeOptions },
-            { name: 'department', label: 'Department (opens these menu areas)', options: [{ value: '', label: 'None (all areas open)' }, ...DEPARTMENTS.map(d => ({ value: d, label: DEPARTMENT_LABELS[d] }))] },
+            { name: 'department', label: 'Department (opens these menu areas)', options: [{ value: '', label: 'None (all areas open)' }, ...departmentList.filter(d => d.is_active || d.key === editUser.department).map(d => ({ value: d.key, label: d.label }))] },
           ]}
           onSubmit={async (values) => {
             try {

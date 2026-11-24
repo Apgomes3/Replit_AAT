@@ -8,6 +8,9 @@ export interface User {
   job_title?: string | null;
   /** Department; decides which navigation areas open by default. */
   department?: import('../lib/departments').Department | null;
+  /** The department's name, and the menu areas it opens by default (null = every area). */
+  departmentName?: string | null;
+  departmentAreas?: string[] | null;
   canSeeAllPos?: boolean;
   moduleAccess?: Record<string, 'manage' | 'view' | 'hidden'>;
 }

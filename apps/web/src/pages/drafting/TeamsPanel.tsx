@@ -3,7 +3,8 @@ import { Pencil, Plus, Search, UsersRound } from 'lucide-react';
 import toast from 'react-hot-toast';
 import DraftingModal, { fieldInput, fieldLabel } from './DraftingModal';
 import { apiErrorMessage, initials, Person, Team, TeamPayload, usePeople } from './draftingApi';
-import { byDepartment, SUGGESTED_DEPARTMENTS, useCanManagePlanning, usePlanningScope, useSaveScopedTeam, useScopedTeams } from './planningApi';
+import { departmentLabels, useDepartmentOptions } from '../../lib/departments';
+import { byDepartment, useCanManagePlanning, usePlanningScope, useSaveScopedTeam, useScopedTeams } from './planningApi';
 
 type FormState = TeamPayload & { id?: string };
 
@@ -73,15 +74,17 @@ export default function TeamsPanel() {
         </div>
       </section>)}
 
-    {form && canManage && <TeamForm form={form} setForm={setForm} onClose={() => setForm(null)} departments={byDepartment(teams.data ?? []).map(g => g.department)} />}
+    {form && canManage && <TeamForm form={form} setForm={setForm} onClose={() => setForm(null)} />}
   </div>;
 }
 
-function TeamForm({ form, setForm, onClose, departments }: { form: FormState; setForm: (f: FormState) => void; onClose: () => void; departments: string[] }) {
+function TeamForm({ form, setForm, onClose }: { form: FormState; setForm: (f: FormState) => void; onClose: () => void }) {
   const company = usePlanningScope() === 'company';
   const people = usePeople();
   const save = useSaveScopedTeam();
-  const departmentOptions = [...new Set([...departments, ...SUGGESTED_DEPARTMENTS])];
+  const departmentList = departmentLabels(useDepartmentOptions(company).data ?? []);
+  // Active departments, plus the team's current one if it has since been archived.
+  const departmentOptions = departmentList.filter(d => d.is_active || d.name === form.department);
   const [filter, setFilter] = useState('');
 
   const candidates = useMemo(() => {
@@ -97,7 +100,7 @@ function TeamForm({ form, setForm, onClose, departments }: { form: FormState; se
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name.trim()) return toast.error('Team name is required');
-    if (company && !form.department?.trim()) return toast.error('Choose or type a department');
+    if (company && !form.department?.trim()) return toast.error('Choose a department');
     const { id, ...body } = form;
     try {
       await save.mutateAsync({ id, body: {
@@ -114,8 +117,11 @@ function TeamForm({ form, setForm, onClose, departments }: { form: FormState; se
   return <DraftingModal title={form.id ? 'Edit team' : company ? 'New team' : 'New drafting team'} subtitle="The manager sees all plans and work assigned to this team."
     saving={save.isPending} submitLabel={form.id ? 'Save team' : 'Create team'} onClose={onClose} onSubmit={submit}>
     <label className={fieldLabel}>Team name<input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder={company ? 'e.g. ASW Engineering' : 'e.g. Fabrication Drawing Team'} className={fieldInput} /></label>
-    {company && <label className={fieldLabel}>Department<input required list="team-departments" value={form.department ?? ''} onChange={e => setForm({ ...form, department: e.target.value })} placeholder="e.g. Engineering" className={fieldInput} />
-      <datalist id="team-departments">{departmentOptions.map(d => <option key={d} value={d} />)}</datalist>
+    {company && <label className={fieldLabel}>Department<select required value={form.department ?? ''} onChange={e => setForm({ ...form, department: e.target.value })} className={fieldInput}>
+        <option value="">Choose…</option>
+        {departmentOptions.map(d => <option key={d.id} value={d.name}>{d.label}{d.is_active ? '' : ' (archived)'}</option>)}
+      </select>
+      <span className="block text-[11px] font-normal text-stone-400 mt-1">Departments are managed in Admin › Departments.</span>
       {form.id && form.department?.trim().toLowerCase() !== 'drafting' && <span className="block text-[11px] font-normal text-stone-400 mt-1">Only teams in Drafting show on the Drafting screen.</span>}
     </label>}
     <label className={fieldLabel}>Manager<select value={form.manager_user_id ?? ''} onChange={e => setForm({ ...form, manager_user_id: e.target.value || null })} className={fieldInput}>

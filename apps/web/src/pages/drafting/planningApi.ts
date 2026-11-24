@@ -15,9 +15,6 @@ export type PlanningScope = 'drafting' | 'company';
 export const PlanningScopeContext = createContext<PlanningScope>('drafting');
 export const usePlanningScope = () => useContext(PlanningScopeContext);
 
-/** Departments offered when creating a company team (others can be typed). */
-export const SUGGESTED_DEPARTMENTS = ['Drafting', 'Design', 'Engineering', 'Management', 'Business Development'] as const;
-
 /** Teams grouped by department (case-insensitive), departments in name order. */
 export function byDepartment<T extends { department: string }>(teams: T[]): Array<{ department: string; teams: T[] }> {
   const groups = new Map<string, T[]>();

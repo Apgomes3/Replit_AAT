@@ -125,7 +125,7 @@ describe('LeftNav accessibility behavior', () => {
   it('opens only the department area by default and remembers the person\'s own choice', async () => {
     const user = userEvent.setup();
     useAuthStore.setState({
-      user: { id: 'eng-2', email: 'e@example.com', firstName: 'E', lastName: 'Ng', role: 'engineer', department: 'engineering', moduleAccess: {} },
+      user: { id: 'eng-2', email: 'e@example.com', firstName: 'E', lastName: 'Ng', role: 'engineer', department: 'engineering', departmentAreas: ['engineering'], moduleAccess: {} },
     });
 
     const { unmount } = renderNav();
@@ -143,7 +143,7 @@ describe('LeftNav accessibility behavior', () => {
 
   it('shows the empty Logistics area to logistics people with a placeholder', () => {
     useAuthStore.setState({
-      user: { id: 'log-1', email: 'l@example.com', firstName: 'L', lastName: 'Og', role: 'user', department: 'logistics', moduleAccess: {} },
+      user: { id: 'log-1', email: 'l@example.com', firstName: 'L', lastName: 'Og', role: 'user', department: 'logistics', departmentAreas: ['logistics'], moduleAccess: {} },
     });
 
     renderNav();

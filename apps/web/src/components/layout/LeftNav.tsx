@@ -6,11 +6,10 @@ import { useCommandPalette } from '../../store/commandPaletteStore';
 import { useAuthStore } from '../../store/authStore';
 import { ModuleKey, ROUTES } from '../../lib/navigation';
 import { adminDomainFromSlug, adminPopupGroups, rememberAdminPage, visibleAdminEntries } from '../../lib/adminRegistry';
-import { Department, DEPARTMENT_AREAS } from '../../lib/departments';
 
 type NavItemDef = { id: string; to: string; icon: any; label: string; moduleKey?: ModuleKey; end?: boolean };
-/** `emptyFor`: departments that still see the area while it has no pages yet. */
-type NavArea = { id: string; label: string; items: NavItemDef[]; emptyFor?: Department[] };
+/** `showWhenEmpty`: the area still shows, with no pages yet, to people whose department opens it. */
+type NavArea = { id: string; label: string; items: NavItemDef[]; showWhenEmpty?: boolean };
 
 /** Shared records everyone works from: one click, no sub-menus. */
 const SHARED_ITEMS: NavItemDef[] = [
@@ -49,25 +48,24 @@ const AREAS: NavArea[] = [
     { id: 'initiatives', to: '/initiatives', icon: Lightbulb, label: 'Initiatives', moduleKey: 'initiatives' },
     { id: 'graph', to: ROUTES.graph, icon: Network, label: 'Relationship Graph', moduleKey: 'graph' },
   ] },
-  { id: 'logistics', label: 'Logistics', items: [], emptyFor: ['logistics', 'management'] },
-  { id: 'factory', label: 'Factory', items: [], emptyFor: ['factory', 'management'] },
+  { id: 'logistics', label: 'Logistics', items: [], showWhenEmpty: true },
+  { id: 'factory', label: 'Factory', items: [], showWhenEmpty: true },
 ];
 
 const STORAGE_KEY = 'nav-collapsed-areas';
 
-/** Areas folded by default: everything outside the person's department (none for management or no department). */
-export function defaultCollapsedAreas(department: Department | null | undefined): string[] {
-  const open = department ? DEPARTMENT_AREAS[department] : null;
+/** Areas folded by default: everything outside the areas the person's department opens (null = none folded). */
+export function defaultCollapsedAreas(open: string[] | null | undefined): string[] {
   return open ? AREAS.map(area => area.id).filter(id => !open.includes(id)) : [];
 }
 
 /** The person's own fold/unfold choices win over the department default once they make one. */
-function loadCollapsedAreas(userId: string | undefined, department: Department | null | undefined): string[] {
+function loadCollapsedAreas(userId: string | undefined, departmentAreas: string[] | null | undefined): string[] {
   try {
     const raw = localStorage.getItem(`${STORAGE_KEY}:${userId ?? 'anonymous'}`);
     if (raw) return JSON.parse(raw);
   } catch { /* storage unavailable */ }
-  return defaultCollapsedAreas(department);
+  return defaultCollapsedAreas(departmentAreas);
 }
 
 function NavItemLink({ item, collapsed, indent = false }: { item: NavItemDef; collapsed: boolean; indent?: boolean }) {
@@ -238,16 +236,17 @@ export default function LeftNav({ collapsed, onToggleCollapsed, onNavigate }: Le
   const adminTriggerRef = useRef<HTMLButtonElement>(null);
   const { open: openPalette } = useCommandPalette();
   const user = useAuthStore(state => state.user);
-  const [collapsedAreas, setCollapsedAreas] = useState<string[]>(() => loadCollapsedAreas(user?.id, user?.department));
+  const [collapsedAreas, setCollapsedAreas] = useState<string[]>(() => loadCollapsedAreas(user?.id, user?.departmentAreas));
   // The user record can arrive after the first render (page reload): apply their default then.
-  useEffect(() => { setCollapsedAreas(loadCollapsedAreas(user?.id, user?.department)); }, [user?.id, user?.department]);
+  useEffect(() => { setCollapsedAreas(loadCollapsedAreas(user?.id, user?.departmentAreas)); }, [user?.id, user?.departmentAreas]);
   const itemVisible = (item: NavItemDef) => !item.moduleKey || user?.moduleAccess?.[item.moduleKey] !== 'hidden';
   const adminEntries = visibleAdminEntries(user);
   const canAccessPlatformAdmin = adminEntries.length > 0;
   // Department areas whose ids double as /admin/<slug> get a settings link when the person can manage something there.
   const settingsDomains = new Set(AREAS.map(a => a.id).filter(id => { const d = adminDomainFromSlug(id); return !!d && adminEntries.some(e => e.domain === d); }));
   const sharedItems = SHARED_ITEMS.filter(itemVisible);
-  const showsEmptyArea = (area: NavArea) => user?.role === 'admin' || (!!user?.department && !!area.emptyFor?.includes(user.department));
+  const showsEmptyArea = (area: NavArea) => user?.role === 'admin'
+    || (!!area.showWhenEmpty && !!user?.department && (user.departmentAreas == null || user.departmentAreas.includes(area.id)));
   const visibleAreas = AREAS
     .map(area => ({ area, items: area.items.filter(itemVisible) }))
     .filter(entry => entry.items.length > 0 || (entry.area.items.length === 0 && showsEmptyArea(entry.area)));

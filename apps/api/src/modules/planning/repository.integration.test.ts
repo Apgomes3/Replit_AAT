@@ -29,6 +29,8 @@ describe.skipIf(!process.env.DATABASE_URL)('planning repository (PostgreSQL)', (
     if (ids.team2) await query('DELETE FROM drafting_teams WHERE id = $1', [ids.team2]);
     if (ids.project) await query('DELETE FROM projects WHERE id = $1', [ids.project]);
     if (ids.calendar) await query('DELETE FROM planning_calendars WHERE id = $1', [ids.calendar]);
+    await query('DELETE FROM drafting_teams WHERE department = $1', [`Engineering ${suffix}`]);
+    await query('DELETE FROM departments WHERE name = $1', [`Engineering ${suffix}`]);
     if (ids.user) await query('DELETE FROM users WHERE id = $1', [ids.user]);
   });
 
@@ -122,6 +124,8 @@ describe.skipIf(!process.env.DATABASE_URL)('planning repository (PostgreSQL)', (
 
   it('keeps company teams by department, with people in more than one team', async () => {
     const department = `Engineering ${suffix}`;
+    // Teams belong to a department from Admin › Departments.
+    await query('INSERT INTO departments (key, name) VALUES ($1, $2)', [`eng_${suffix}`.toLowerCase().slice(0, 40), department]);
     const eng = await drafting.createTeam({ name: `ASW engineering ${suffix}`, department, member_ids: [ids.user] }, ids.user);
     ids.team2 = eng.id;
     expect(eng.department).toBe(department);

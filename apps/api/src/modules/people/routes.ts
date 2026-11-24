@@ -4,6 +4,7 @@
 import { Router } from 'express';
 import { authenticate } from '../../middleware/auth';
 import { query } from '../../db';
+import { listDepartmentOptions } from './departments';
 
 const router = Router();
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -17,13 +18,22 @@ router.get('/', authenticate, async (_req, res, next) => {
   } catch (e) { next(e); }
 });
 
+/** Departments for pickers and labels: id, key, name, parent, colour, active. */
+router.get('/departments', authenticate, async (_req, res, next) => {
+  try { res.json({ data: await listDepartmentOptions() }); } catch (e) { next(e); }
+});
+
 router.get('/:id', authenticate, async (req, res, next) => {
   try {
     const id = String(req.params.id);
     if (!UUID.test(id)) return res.status(400).json({ error: { code: 'VALIDATION', message: 'Not a valid person' } });
     const person = (await query(
       `SELECT u.id, u.email, u.first_name, u.last_name, ${NAME} AS name, u.job_title, u.role, u.is_active,
-         u.reports_to_user_id, (SELECT o.name FROM offices o WHERE o.id = u.office_id) AS office
+         u.reports_to_user_id, (SELECT o.name FROM offices o WHERE o.id = u.office_id) AS office,
+         (SELECT json_build_object('name', d.name, 'colour', d.colour, 'parent', p.name,
+            'head', CASE WHEN h.id IS NULL THEN NULL ELSE json_build_object('id', h.id, 'name', COALESCE(NULLIF(TRIM(CONCAT_WS(' ', h.first_name, h.last_name)), ''), h.email)) END)
+          FROM departments d LEFT JOIN departments p ON p.id = d.parent_id LEFT JOIN users h ON h.id = d.head_user_id
+          WHERE d.key = u.department) AS department
        FROM users u WHERE u.id = $1`, [id])).rows[0];
     if (!person) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Person not found' } });
 

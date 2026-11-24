@@ -10,6 +10,7 @@ import { logAudit } from '../../db/audit';
 import * as repo from './repository';
 import * as teams from '../drafting/repository';
 import { validateTeamInput } from '../drafting/validation';
+import { findDepartment } from '../people/departments';
 import { addDays } from './calendar';
 import {
   isIsoDate, isUuid, validateCalendarInput, validateDaysInput, validateLeaveInput, validateResourceInput,
@@ -200,6 +201,9 @@ router.post('/teams', manageCompany, async (req: AuthRequest, res, next) => {
     const { value, error } = validateTeamInput(req.body, { creating: true });
     if (error) return fail(res, 400, 'VALIDATION', error);
     if (!value!.department) return fail(res, 400, 'VALIDATION', 'department is required.');
+    const dept = await findDepartment(value!.department);
+    if (!dept || !dept.is_active) return fail(res, 400, 'VALIDATION', `There is no active department called ${value!.department} (Admin › Departments).`);
+    value!.department = dept.name;
     const peopleError = await checkPeople(value!.manager_user_id, value!.member_ids);
     if (peopleError) return fail(res, 400, 'VALIDATION', peopleError);
     const team = await teams.createTeam(value!, req.user!.id);
@@ -213,6 +217,11 @@ router.patch('/teams/:id', manageCompany, async (req: AuthRequest, res, next) =>
     if (!isUuid(pid(req))) return fail(res, 400, 'VALIDATION', 'id must be a valid id.');
     const { value, error } = validateTeamInput(req.body, { creating: false });
     if (error) return fail(res, 400, 'VALIDATION', error);
+    if (value!.department) {
+      const dept = await findDepartment(value!.department);
+      if (!dept) return fail(res, 400, 'VALIDATION', `There is no department called ${value!.department} (Admin › Departments).`);
+      value!.department = dept.name;
+    }
     const peopleError = await checkPeople(value!.manager_user_id, value!.member_ids);
     if (peopleError) return fail(res, 400, 'VALIDATION', peopleError);
     const team = await teams.updateTeam(pid(req), value!, req.user!.id);

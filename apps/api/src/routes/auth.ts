@@ -5,6 +5,7 @@ import { query } from '../db';
 import { authenticate, AuthRequest, JWT_SECRET } from '../middleware/auth';
 import { logAudit } from '../db/audit';
 import { MODULE_ACCESS_KEYS, ModuleAccessKey, ModuleAccessLevel } from '../lib/moduleAccess';
+import { departmentForUser } from '../modules/people/departments';
 
 const router = Router();
 
@@ -36,11 +37,12 @@ router.post('/login', async (req: Request, res: Response) => {
 
   await query('UPDATE users SET last_login_at=NOW() WHERE id=$1', [user.id]);
   const module_access = await getModuleAccess(user.role);
+  const dept = await departmentForUser(user.department);
 
   const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '8h' });
   res.json({
     token,
-    user: { id: user.id, email: user.email, firstName: user.first_name, lastName: user.last_name, role: user.role, department: user.department ?? null, module_access }
+    user: { id: user.id, email: user.email, firstName: user.first_name, lastName: user.last_name, role: user.role, department: user.department ?? null, departmentName: dept.department_name, departmentAreas: dept.department_areas, module_access }
   });
 });
 
@@ -50,7 +52,7 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response) => {
   const office = (await query(
     `SELECT o.id, o.name, o.address, o.time_zone FROM users u JOIN offices o ON o.id = u.office_id WHERE u.id = $1`, [req.user!.id],
   )).rows[0] ?? null;
-  res.json({ ...result.rows[0], office, module_access: await getModuleAccess(result.rows[0].role) });
+  res.json({ ...result.rows[0], ...(await departmentForUser(result.rows[0].department)), office, module_access: await getModuleAccess(result.rows[0].role) });
 });
 
 router.get('/dashboard-prefs', authenticate, async (req: AuthRequest, res: Response) => {

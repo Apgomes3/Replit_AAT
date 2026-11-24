@@ -14,6 +14,7 @@ import { SUPPORTED_CURRENCIES } from '../lib/currencies';
 import { EDITOR_ROLES } from '../lib/roles';
 import { DirectoryUser, OfficeRef, planReportingImport, usersToCsv } from '../lib/reportingImport';
 import * as offices from '../modules/planning/offices';
+import * as departments from '../modules/people/departments';
 
 const router = Router();
 const uploadUserCsv = multer({
@@ -154,6 +155,13 @@ router.get('/users', authenticate, requireRole(...EDITOR_ROLES), async (req: Aut
   if (role) {
     params.push(role);
     conditions.push(`role = $${params.length}`);
+  }
+  // department: a department key, or 'none' for people without one.
+  const departmentFilter = (req.query.department as string || '').trim();
+  if (departmentFilter === 'none') conditions.push('department IS NULL');
+  else if (departmentFilter) {
+    params.push(departmentFilter);
+    conditions.push(`department = $${params.length}`);
   }
   // office: an office id, or 'none' for people without one.
   const office = (req.query.office as string || '').trim();
@@ -482,8 +490,6 @@ router.post('/users/reporting-import', authenticate, requireRole('admin'), uploa
   }
 });
 
-const DEPARTMENTS = ['engineering', 'business_development', 'procurement', 'management', 'logistics', 'factory'];
-
 router.put('/users/:id', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
   const { first_name, last_name, role, is_active } = req.body;
   if (req.user!.id === req.params.id && is_active !== true) {
@@ -498,8 +504,11 @@ router.put('/users/:id', authenticate, requireRole('admin'), async (req: AuthReq
   // department is optional: left unchanged when absent; null or '' clears it.
   const hasDepartment = Object.prototype.hasOwnProperty.call(req.body, 'department');
   const department = hasDepartment ? (req.body.department || null) : null;
-  if (department !== null && !DEPARTMENTS.includes(department)) {
-    return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: `Department must be one of: ${DEPARTMENTS.join(', ')}` } });
+  if (department !== null) {
+    const found = typeof department === 'string' ? await departments.findDepartment(department) : null;
+    if (!found || found.key !== department) {
+      return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'Department must be the key of a department (Admin › Departments)' } });
+    }
   }
   // reports_to_user_id is optional too: null clears it; a manager cannot be the person or below them.
   const hasReportsTo = Object.prototype.hasOwnProperty.call(req.body, 'reports_to_user_id');
@@ -607,6 +616,59 @@ router.delete('/offices/:id', authenticate, requireRole('admin'), async (req: Au
   if (!office || !(await offices.deleteOffice(office.id))) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Office not found' } });
   await logAudit(req.user!.id, 'office', office.id, 'DELETE', { summary: `Office ${office.name} removed` });
   res.json({ ok: true });
+});
+
+// ---------- departments ----------
+
+const departmentFail = (err: unknown, res: Response) => {
+  if (err instanceof departments.DepartmentError) return res.status(err.status).json({ error: { code: err.status === 409 ? 'CONFLICT' : err.status === 404 ? 'NOT_FOUND' : 'INVALID_REQUEST', message: err.message } }), true;
+  if ((err as any)?.code === '23505') return res.status(409).json({ error: { code: 'CONFLICT', message: 'A department with that name already exists' } }), true;
+  return false;
+};
+const isId = (v: unknown) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(v));
+
+router.get('/departments', authenticate, requireRole('admin'), async (_req, res: Response) => {
+  const people = (await query(
+    `SELECT id, COALESCE(NULLIF(TRIM(CONCAT_WS(' ', first_name, last_name)), ''), email) AS name FROM users WHERE is_active IS NOT FALSE ORDER BY 2`,
+  )).rows;
+  res.json({ data: await departments.listDepartments(), people, nav_areas: departments.NAV_AREAS, colours: departments.COLOURS });
+});
+
+router.post('/departments', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+  const { value, error } = departments.validateDepartmentInput(req.body);
+  if (error) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: error } });
+  try {
+    const d = await departments.saveDepartment(value!);
+    await logAudit(req.user!.id, 'department', d.id, 'CREATE', { summary: `Department ${d.name} added` });
+    res.status(201).json(d);
+  } catch (err) { if (!departmentFail(err, res)) throw err; }
+});
+
+router.put('/departments/:id', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+  if (!isId(req.params.id)) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'id must be a department id' } });
+  const { value, error } = departments.validateDepartmentInput(req.body);
+  if (error) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: error } });
+  try {
+    const before = await departments.getDepartment(String(req.params.id));
+    const d = await departments.saveDepartment(value!, String(req.params.id));
+    const parts = [
+      before && before.name !== d.name ? `renamed from ${before.name}` : null,
+      before && before.is_active !== d.is_active ? (d.is_active ? 'restored' : 'archived') : null,
+      before && before.head_user_id !== d.head_user_id ? `head: ${before.head_name ?? 'none'} → ${d.head_name ?? 'none'}` : null,
+      before && before.parent_id !== d.parent_id ? `under: ${before.parent_name ?? 'nothing'} → ${d.parent_name ?? 'nothing'}` : null,
+    ].filter(Boolean);
+    await logAudit(req.user!.id, 'department', d.id, 'UPDATE', { summary: `Department ${d.name} updated${parts.length ? ` (${parts.join('; ')})` : ''}` });
+    res.json(d);
+  } catch (err) { if (!departmentFail(err, res)) throw err; }
+});
+
+router.delete('/departments/:id', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+  if (!isId(req.params.id)) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'id must be a department id' } });
+  try {
+    const d = await departments.deleteDepartment(String(req.params.id));
+    await logAudit(req.user!.id, 'department', d.id, 'DELETE', { summary: `Department ${d.name} removed` });
+    res.json({ ok: true });
+  } catch (err) { if (!departmentFail(err, res)) throw err; }
 });
 
 router.patch('/users/:id/password', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
