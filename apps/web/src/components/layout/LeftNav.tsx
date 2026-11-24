@@ -1,5 +1,5 @@
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
- import { FolderOpen, Package, BookOpen, FileText, Network, Search, Users, Upload, Boxes, Pipette, Container, Settings, ChevronRight, Ruler, ShoppingCart, Home, ClipboardList, Layers, GitBranch, DollarSign, BookMarked, PanelLeftClose, PanelLeftOpen, Fish, Activity, Sun, Wind, SlidersHorizontal, BriefcaseBusiness, ClipboardCheck, CalendarRange, PencilRuler, Gauge, Building2, Lightbulb, Library } from 'lucide-react';
+ import { FolderOpen, Package, BookOpen, FileText, Network, Search, Users, Upload, Boxes, Pipette, Container, Settings, ChevronRight, Ruler, ShoppingCart, Home, ClipboardList, Layers, GitBranch, DollarSign, BookMarked, PanelLeftClose, PanelLeftOpen, Fish, Activity, Sun, Wind, SlidersHorizontal, BriefcaseBusiness, ClipboardCheck, CalendarRange, PencilRuler, Gauge, Building2, Lightbulb, Library, Thermometer } from 'lucide-react';
 import { useState, useRef, useEffect, ReactNode } from 'react';
 import clsx from 'clsx';
 import { useCommandPalette } from '../../store/commandPaletteStore';
@@ -38,6 +38,7 @@ const AREAS: NavArea[] = [
     { id: 'tanks', to: ROUTES.tanks, icon: Container, label: 'Tanks', moduleKey: 'pim' },
     { id: 'attributes', to: '/products/attributes', icon: SlidersHorizontal, label: 'Attributes', moduleKey: 'pim' },
     { id: 'lss-catalog', to: ROUTES.lssCompactUnits, icon: Layers, label: 'LSS Unit Catalog', moduleKey: 'design_books' },
+    { id: 'plate-heat-exchangers', to: ROUTES.plateHeatExchangers, icon: Thermometer, label: 'Plate Heat Exchangers', moduleKey: 'design_books' },
     { id: 'species-catalog', to: ROUTES.speciesCatalog, icon: Fish, label: 'Species Catalog', moduleKey: 'design_books' },
     { id: 'materials', to: ROUTES.materials, icon: BookOpen, label: 'Materials', moduleKey: 'knowledge' },
     { id: 'specifications', to: ROUTES.specifications, icon: BookOpen, label: 'Specifications', moduleKey: 'knowledge' },

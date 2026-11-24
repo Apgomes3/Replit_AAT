@@ -3571,6 +3571,30 @@ CREATE TABLE IF NOT EXISTS platform_migration_markers (
   completed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Plate heat exchanger sizings (engineering calculator). Inputs and the data sheet header are kept as
+-- entered; result_summary is the headline result at save time, for lists. Optionally linked to a project.
+CREATE TABLE IF NOT EXISTS plate_heat_exchanger_sizings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title VARCHAR(255) NOT NULL,
+  project_id UUID REFERENCES projects(id) ON DELETE SET NULL,
+  inputs JSONB NOT NULL CHECK (jsonb_typeof(inputs) = 'object'),
+  sheet JSONB NOT NULL DEFAULT '{}'::jsonb CHECK (jsonb_typeof(sheet) = 'object'),
+  result_summary JSONB NOT NULL DEFAULT '{}'::jsonb CHECK (jsonb_typeof(result_summary) = 'object'),
+  created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  updated_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_plate_heat_exchanger_sizings_project ON plate_heat_exchanger_sizings(project_id);
+-- Client (from the project, or picked when there is no project), and the design book and LSS system the
+-- exchanger serves, so the sizing can later feed back into that system's design book.
+ALTER TABLE plate_heat_exchanger_sizings ADD COLUMN IF NOT EXISTS client_id UUID REFERENCES clients(id) ON DELETE SET NULL;
+ALTER TABLE plate_heat_exchanger_sizings ADD COLUMN IF NOT EXISTS design_book_id UUID REFERENCES design_books(id) ON DELETE SET NULL;
+ALTER TABLE plate_heat_exchanger_sizings ADD COLUMN IF NOT EXISTS system_id UUID REFERENCES systems(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_plate_heat_exchanger_sizings_system ON plate_heat_exchanger_sizings(system_id);
+-- The project document the selection sheet was last stored as.
+ALTER TABLE plate_heat_exchanger_sizings ADD COLUMN IF NOT EXISTS document_id UUID REFERENCES documents(id) ON DELETE SET NULL;
+
 -- REPLIT SCHEMA DRIFT (columns that existed on the Replit database but were never
 -- declared here). Found by comparing the 2026-11-12 Replit CSV export with this schema.
 ALTER TABLE product_masters ADD COLUMN IF NOT EXISTS cost_price NUMERIC;

@@ -61,6 +61,8 @@ import DesignBookEngineDashboard from './pages/design-books/DesignBookEngineDash
 import ExhibitDetail from './pages/design-books/ExhibitDetail';
 import DesignBookLSSDetail from './pages/design-books/DesignBookLSSDetail';
 import LSSCompactUnitsCatalog from './pages/design-books/LSSCompactUnitsCatalog';
+import PlateHeatExchangers from './pages/design-books/PlateHeatExchangers';
+import PlateHeatExchangerSizer from './pages/design-books/PlateHeatExchangerSizer';
 import SpeciesCatalog from './pages/design-books/SpeciesCatalog';
 import CommercialOverview from './pages/business-development/CommercialOverview';
 import ClientsList from './pages/clients/ClientsList';
@@ -196,6 +198,8 @@ const router = createBrowserRouter(createRoutesFromElements(
             <Route path="design-books/:bookId/exhibits/:exhibitId" element={<ModuleGuard moduleKey="design_books"><ExhibitDetail /></ModuleGuard>} />
             <Route path="design-books/:bookId/lss/:systemId" element={<ModuleGuard moduleKey="design_books"><DesignBookLSSDetail /></ModuleGuard>} />
             <Route path="lss-compact-units" element={<ModuleGuard moduleKey="design_books"><LSSCompactUnitsCatalog /></ModuleGuard>} />
+            <Route path="plate-heat-exchangers" element={<ModuleGuard moduleKey="design_books"><PlateHeatExchangers /></ModuleGuard>} />
+            <Route path="plate-heat-exchangers/:id" element={<ModuleGuard moduleKey="design_books"><PlateHeatExchangerSizer /></ModuleGuard>} />
             <Route path="species-catalog" element={<ModuleGuard moduleKey="design_books"><SpeciesCatalog /></ModuleGuard>} />
               <Route path="business-development" element={<ModuleGuard moduleKey="business_development"><CommercialOverview /></ModuleGuard>} />
               <Route path="clients" element={<ModuleGuard moduleKey="clients"><ClientsList /></ModuleGuard>} />

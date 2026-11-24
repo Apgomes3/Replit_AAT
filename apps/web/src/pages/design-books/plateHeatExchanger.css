@@ -1,0 +1,32 @@
+/* PHE selection sheet: one A4 page on AAT letterhead (layout from the sizer artifact's data sheet). */
+.phe-print { display: none; }
+@page phe-sheet { size: A4; margin: 0; }
+@media print {
+  body.phe-print-ready > #root,
+  body.phe-print-ready > div:not(.phe-print) { display: none !important; }
+  body.phe-print-ready { background: #fff !important; margin: 0 !important; }
+  body.phe-print-ready > .phe-print { display: block; page: phe-sheet; }
+}
+.phe-page { position: relative; width: 210mm; height: 296mm; overflow: hidden; background: #fff; color: #1a1a1a;
+  font: 8pt/1.25 Arial, Helvetica, sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.phe-hdr { position: absolute; top: 0; left: 0; width: 210mm; max-width: none; }
+.phe-ftr { position: absolute; bottom: 4mm; left: 0; width: 210mm; max-width: none; }
+.phe-body { position: absolute; top: 47mm; left: 20mm; right: 20mm; bottom: 14mm; display: flex; flex-direction: column; gap: 2.2mm; }
+.phe-body > * { flex-shrink: 0; }
+.phe-body h1 { font-size: 12.5pt; margin: 0; color: #003f7d; font-weight: 700; letter-spacing: .02em; }
+.phe-body table { border-collapse: collapse; width: 100%; font-size: 7.6pt; }
+.phe-body th, .phe-body td { border: 0.2mm solid #9aa7b4; padding: 0.4mm 1.6mm; text-align: left; color: #1a1a1a; background: #fff; }
+.phe-body td.n { width: 6mm; text-align: center; color: #6b7785; }
+.phe-body td.u { width: 17mm; color: #4a5562; }
+.phe-body td.v { text-align: center; width: 38mm; }
+.phe-body tr.sec td { background: #003f7d; color: #fff; font-weight: 700; letter-spacing: .04em; }
+.phe-body tr.colh td { background: #e6edf4; font-weight: 700; text-align: center; }
+.phe-meta { table-layout: fixed; }
+.phe-meta td.k { background: #e6edf4; font-weight: 700; width: 22mm; }
+.phe-lower { display: flex; gap: 4mm; align-items: flex-start; }
+.phe-chart { margin: 0; flex: 0 0 92mm; border: 0.2mm solid #9aa7b4; padding: 1.2mm 1.5mm; }
+.phe-chart figcaption { font-size: 7.2pt; font-weight: 700; color: #003f7d; margin-bottom: 0.6mm; }
+.phe-notes { font-size: 7.2pt; margin: 0; padding-left: 4mm; flex: 1; min-width: 0; list-style: disc; }
+.phe-notes li { margin: 0 0 0.4mm; }
+.phe-sign td { text-align: center !important; }
+.phe-sign tr:first-child td { background: #e6edf4; font-weight: 700; }

@@ -30,6 +30,7 @@ export const ROUTES = {
   designBookEngine: '/design-book-engine',
   designBooks: '/design-books',
   lssCompactUnits: '/lss-compact-units',
+  plateHeatExchangers: '/plate-heat-exchangers',
   speciesCatalog: '/species-catalog',
   businessDevelopment: '/business-development',
   clients: '/clients',
@@ -84,7 +85,7 @@ export function moduleForPath(path: string): ModuleKey | null {
   if (path === ROUTES.pim || path.startsWith('/products')) return 'pim';
   if (path === ROUTES.orders || path.startsWith(ROUTES.purchaseOrders)) return 'orders';
   if (path === ROUTES.projectManagement || path.startsWith('/projects') || path.startsWith('/systems')) return 'projects';
-  if (path === ROUTES.designBookEngine || path.startsWith('/design-books') || path.startsWith('/lss-compact-units') || path.startsWith('/species-catalog')) return 'design_books';
+  if (path === ROUTES.designBookEngine || path.startsWith('/design-books') || path.startsWith('/lss-compact-units') || path.startsWith('/plate-heat-exchangers') || path.startsWith('/species-catalog')) return 'design_books';
   if (path.startsWith(ROUTES.clients)) return 'clients';
   if (path.startsWith('/initiatives')) return 'initiatives';
   if (path === ROUTES.businessDevelopment || path.startsWith('/enquiries')) return 'business_development';
