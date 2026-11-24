@@ -640,6 +640,14 @@ router.get('/departments', authenticate, requireRole('admin'), async (_req, res:
   res.json({ data: await departments.listDepartments(), people, nav_areas: departments.NAV_AREAS, colours: departments.COLOURS });
 });
 
+/** Workload per department (next weeks) and headcount by department and office. */
+router.get('/departments/overview', authenticate, requireRole('admin'), async (req, res: Response) => {
+  const weeks = req.query.weeks ? Number(req.query.weeks) : 4;
+  if (!Number.isInteger(weeks) || weeks < 1 || weeks > 12) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'weeks must be from 1 to 12' } });
+  const from = typeof req.query.from === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.query.from) ? req.query.from : new Date().toISOString().slice(0, 10);
+  res.json(await departments.getDepartmentOverview(from, weeks));
+});
+
 router.post('/departments', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
   const { value, error } = departments.validateDepartmentInput(req.body);
   if (error) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: error } });

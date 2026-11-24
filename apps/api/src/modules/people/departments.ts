@@ -3,6 +3,8 @@
 // menu areas its people see open by default. People hold its key (users.department); company teams
 // hold its name (drafting_teams.department). Foreign keys keep both in step with this table.
 import { query } from '../../db';
+import { addDays } from '../planning/calendar';
+import { getWorkload } from '../planning/repository';
 
 type Db = { query: (sql: string, params?: unknown[]) => Promise<{ rows: any[] }> };
 
@@ -232,4 +234,42 @@ export async function departmentForUser(key: string | null | undefined): Promise
   if (!key) return { department_name: null, department_areas: null };
   const d = (await query(`SELECT name, nav_areas FROM departments WHERE key = $1`, [key])).rows[0];
   return { department_name: d?.name ?? null, department_areas: d?.nav_areas ?? null };
+}
+
+/** One department's people and their hours per week (key null = people with no department). */
+export type DepartmentLoad = { key: string | null; people: number; weeks: Array<{ capacity: number; booked: number }> };
+export type DepartmentOverview = {
+  weeks: string[];
+  workload: DepartmentLoad[];
+  offices: Array<{ id: string; name: string }>;
+  /** Active people per department and office (office_id null = no office yet). */
+  headcount: Array<{ key: string | null; office_id: string | null; people: number }>;
+};
+
+const round1 = (n: number) => Math.round(n * 10) / 10;
+
+/**
+ * Booked against available hours per department for `weeks` weeks from the Monday of `from`
+ * (each department counts its own people; sub-departments are separate rows), and how many
+ * active people each department has in each office.
+ */
+export async function getDepartmentOverview(from: string, weeks: number): Promise<DepartmentOverview> {
+  const monday = addDays(from, -((new Date(`${from}T00:00:00Z`).getUTCDay() + 6) % 7));
+  const people = (await query(`SELECT id, department FROM users WHERE is_active IS NOT FALSE`)).rows as Array<{ id: string; department: string | null }>;
+  const deptOf = new Map(people.map(p => [p.id, p.department]));
+  const rows = people.length ? await getWorkload({ userIds: people.map(p => p.id), from: monday, weeks }) : [];
+  const byDept = new Map<string | null, DepartmentLoad>();
+  for (const r of rows) {
+    const key = deptOf.get(r.user_id) ?? null;
+    const load = byDept.get(key) ?? { key, people: 0, weeks: Array.from({ length: weeks }, () => ({ capacity: 0, booked: 0 })) };
+    load.people++;
+    r.weeks.forEach((w, i) => { load.weeks[i].capacity += w.capacity; load.weeks[i].booked += w.booked; });
+    byDept.set(key, load);
+  }
+  const workload = [...byDept.values()].map(l => ({ ...l, weeks: l.weeks.map(w => ({ capacity: round1(w.capacity), booked: round1(w.booked) })) }));
+  const offices = (await query(`SELECT id, name FROM offices ORDER BY LOWER(name)`)).rows;
+  const headcount = (await query(
+    `SELECT department AS key, office_id, COUNT(*)::int AS people FROM users WHERE is_active IS NOT FALSE GROUP BY 1, 2`,
+  )).rows;
+  return { weeks: Array.from({ length: weeks }, (_, i) => addDays(monday, i * 7)), workload, offices, headcount };
 }

@@ -9,6 +9,14 @@ import toast from 'react-hot-toast';
 import api from '../../lib/api';
 import PageHeader from '../../components/ui/PageHeader';
 import { colourClasses, DEPARTMENT_OPTIONS_KEY, NAV_AREA_LABELS } from '../../lib/departments';
+import { DepartmentHeadcount, DepartmentWorkload } from './DepartmentOverview';
+
+const TABS = [
+  { id: 'departments', label: 'Departments' },
+  { id: 'workload', label: 'Workload' },
+  { id: 'headcount', label: 'Headcount by office' },
+] as const;
+type Tab = typeof TABS[number]['id'];
 
 type Department = {
   id: string; key: string; name: string; code: string | null; colour: string; description: string | null;
@@ -229,6 +237,16 @@ export default function AdminDepartments() {
   const { data, isLoading, isError } = useQuery({ queryKey: KEY, queryFn: () => api.get('/admin/departments').then(r => r.data as DepartmentsResponse) });
   const [editing, setEditing] = useState<Department | 'new' | null>(null);
   const [showArchived, setShowArchived] = useState(false);
+  const [tab, setTabState] = useState<Tab>(() => {
+    const t = new URLSearchParams(window.location.search).get('tab');
+    return TABS.some(x => x.id === t) ? t as Tab : 'departments';
+  });
+  const setTab = (t: Tab) => {
+    setTabState(t);
+    const url = new URL(window.location.href);
+    if (t === 'departments') url.searchParams.delete('tab'); else url.searchParams.set('tab', t);
+    window.history.replaceState(window.history.state, '', url);
+  };
   const all = data ? treeOrder(data.data) : [];
   const archived = all.filter(d => !d.is_active).length;
   const shown = showArchived ? all : all.filter(d => d.is_active);
@@ -241,7 +259,13 @@ export default function AdminDepartments() {
       actions={<button type="button" onClick={() => setEditing('new')}
         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm font-bold"><Plus className="w-4 h-4" />New department</button>}
     />
-    <div className="flex-1 overflow-auto px-4 py-4">
+    <div role="tablist" aria-label="Departments view" className="flex gap-1 px-4 border-b border-slate-200 bg-white">
+      {TABS.map(t => <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)}
+        className={`px-3 py-2 text-sm font-semibold border-b-2 -mb-px ${tab === t.id ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>{t.label}</button>)}
+    </div>
+    {tab === 'workload' && <div className="flex-1 overflow-auto px-4 py-4"><DepartmentWorkload departments={all} /></div>}
+    {tab === 'headcount' && <div className="flex-1 overflow-auto px-4 py-4"><DepartmentHeadcount departments={all} /></div>}
+    {tab === 'departments' && <div className="flex-1 overflow-auto px-4 py-4">
       <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-500">
         <p className="max-w-3xl">
           Give people a department on the <Link to="/admin/users" className="text-blue-700 hover:underline">Users</Link> page. A department decides which menu areas
@@ -254,7 +278,7 @@ export default function AdminDepartments() {
       {data && (shown.length
         ? <ul className="grid gap-3 max-w-5xl">{shown.map(d => <DepartmentCard key={d.id} d={d} onEdit={() => setEditing(d)} />)}</ul>
         : <p className="py-6 text-sm text-slate-400">No departments yet.</p>)}
-    </div>
+    </div>}
     {editing && data && <DepartmentForm dept={editing === 'new' ? null : editing} data={data} onClose={() => setEditing(null)} />}
   </div>;
 }

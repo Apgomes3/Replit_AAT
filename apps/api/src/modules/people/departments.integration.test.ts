@@ -112,6 +112,20 @@ describe.skipIf(!process.env.DATABASE_URL)('departments (PostgreSQL)', () => {
     expect(audit.s).toMatch(/archived/);
   });
 
+  it('sums workload per department and counts people by department and office', async () => {
+    const o = await call('GET', '/admin/departments/overview?weeks=2&from=2026-11-26');
+    expect(o.status).toBe(200);
+    expect(o.body.weeks).toEqual(['2026-11-23', '2026-11-30']);
+    const mine = o.body.workload.find((w: any) => w.key === ids.topKey);
+    expect(mine).toMatchObject({ people: 1 });
+    expect(mine.weeks).toHaveLength(2);
+    expect(mine.weeks[0].capacity).toBeGreaterThan(0);
+    const active = Number((await query(`SELECT COUNT(*) FROM users WHERE is_active IS NOT FALSE`)).rows[0].count);
+    expect(o.body.headcount.reduce((s: number, h: any) => s + h.people, 0)).toBe(active);
+    expect(o.body.workload.reduce((s: number, w: any) => s + w.people, 0)).toBe(active);
+    expect(o.body.headcount).toContainEqual({ key: ids.topKey, office_id: null, people: 1 });
+  });
+
   it('keeps Drafting named as it is, and removes an unused department', async () => {
     const drafting = (await query(`SELECT id FROM departments WHERE key = 'drafting'`)).rows[0];
     expect((await call('PUT', `/admin/departments/${drafting.id}`, { name: 'Drawings' })).body.error.message).toMatch(/cannot be renamed/);
