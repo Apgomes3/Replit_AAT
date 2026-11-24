@@ -1,6 +1,6 @@
 // User list export and the "update reporting from file" import (Admin › Users).
 // The export is a CSV people can edit offline; the import reads it back and changes only
-// "reports to" and job positions of existing users. Planning is pure so it can be previewed.
+// "reports to", job positions and offices of existing users. Planning is pure so it can be previewed.
 
 export interface DirectoryUser {
   id: string;
@@ -11,10 +11,14 @@ export interface DirectoryUser {
   role: string;
   is_active: boolean;
   reports_to_user_id: string | null;
+  office_id?: string | null;
 }
 
+/** An office a person can be in (matched by name in the file, ignoring case). */
+export interface OfficeRef { id: string; name: string }
+
 export const EXPORT_COLUMNS = [
-  'email', 'first_name', 'last_name', 'job_title', 'role', 'status', 'reports_to_email', 'reports_to_name',
+  'email', 'first_name', 'last_name', 'job_title', 'role', 'status', 'reports_to_email', 'reports_to_name', 'office',
 ] as const;
 
 export function displayName(u: Pick<DirectoryUser, 'first_name' | 'last_name' | 'email'>): string {
@@ -30,8 +34,9 @@ function csvCell(value: string | null | undefined): string {
 }
 
 /** The user list as CSV (with a BOM so Excel reads accents), sorted by name. */
-export function usersToCsv(users: DirectoryUser[]): string {
+export function usersToCsv(users: DirectoryUser[], offices: OfficeRef[] = []): string {
   const byId = new Map(users.map(u => [u.id, u]));
+  const officeName = new Map(offices.map(o => [o.id, o.name]));
   const sorted = [...users].sort((a, b) => displayName(a).localeCompare(displayName(b)));
   const lines = [EXPORT_COLUMNS.join(',')];
   for (const u of sorted) {
@@ -39,6 +44,7 @@ export function usersToCsv(users: DirectoryUser[]): string {
     lines.push([
       u.email, u.first_name, u.last_name, u.job_title, u.role, u.is_active ? 'active' : 'blocked',
       manager?.email ?? '', manager ? displayName(manager) : '',
+      u.office_id ? officeName.get(u.office_id) ?? '' : '',
     ].map(csvCell).join(','));
   }
   return '﻿' + lines.join('\r\n') + '\r\n';
@@ -51,6 +57,7 @@ export interface ReportingChange {
   name: string;
   reports_to?: { from: string | null; to: string | null; to_id: string | null };
   job_title?: { from: string | null; to: string };
+  office?: { from: string | null; to: string; to_id: string };
 }
 
 export interface ReportingPlan {
@@ -66,10 +73,11 @@ const clean = (v: unknown) => (typeof v === 'string' ? v.trim().replace(/\s+/g, 
  * Works out what a reporting file would change. Rows are keyed by lower-case header.
  * - reports_to_email (or, when blank, a unique reports_to_name) sets the manager; both blank clears it.
  * - job_title, when the column is present and the cell is not blank, replaces the job position.
+ * - office, likewise, moves the person to the office with that name (an unknown name is an error).
  * - Unknown people, inactive or ambiguous managers, self-reporting and loops are reported as errors
  *   and leave that row's manager unchanged.
  */
-export function planReportingImport(users: DirectoryUser[], rows: Array<Record<string, string>>, headers: string[]): ReportingPlan {
+export function planReportingImport(users: DirectoryUser[], rows: Array<Record<string, string>>, headers: string[], offices: OfficeRef[] = []): ReportingPlan {
   const plan: ReportingPlan = { total: rows.length, changes: [], unchanged: 0, errors: [] };
   if (!headers.includes('email')) {
     plan.errors.push({ row: 1, message: 'The file must have an email column' });
@@ -77,8 +85,9 @@ export function planReportingImport(users: DirectoryUser[], rows: Array<Record<s
   }
   const hasReporting = headers.includes('reports_to_email') || headers.includes('reports_to_name');
   const hasJobTitle = headers.includes('job_title');
-  if (!hasReporting && !hasJobTitle) {
-    plan.errors.push({ row: 1, message: 'The file needs a reports_to_email, reports_to_name or job_title column' });
+  const hasOffice = headers.includes('office');
+  if (!hasReporting && !hasJobTitle && !hasOffice) {
+    plan.errors.push({ row: 1, message: 'The file needs a reports_to_email, reports_to_name, job_title or office column' });
     return plan;
   }
 
@@ -89,6 +98,8 @@ export function planReportingImport(users: DirectoryUser[], rows: Array<Record<s
     byName.set(key, [...(byName.get(key) ?? []), u]);
   }
   const byId = new Map(users.map(u => [u.id, u]));
+  const officeByName = new Map(offices.map(o => [o.name.toLowerCase(), o]));
+  const officeById = new Map(offices.map(o => [o.id, o]));
   const finalManager = new Map(users.map(u => [u.id, u.reports_to_user_id]));
   const seen = new Set<string>();
   const pending: Array<{ change: ReportingChange; user: DirectoryUser }> = [];
@@ -140,6 +151,15 @@ export function planReportingImport(users: DirectoryUser[], rows: Array<Record<s
       else if (title && title !== (user.job_title ?? '')) change.job_title = { from: user.job_title, to: title };
     }
 
+    if (hasOffice) {
+      const name = clean(raw.office);
+      const office = name ? officeByName.get(name.toLowerCase()) : undefined;
+      if (name && !office) plan.errors.push({ row, email, message: `No office called ${name}` });
+      else if (office && office.id !== (user.office_id ?? null)) {
+        change.office = { from: user.office_id ? officeById.get(user.office_id)?.name ?? null : null, to: office.name, to_id: office.id };
+      }
+    }
+
     pending.push({ change, user });
   });
 
@@ -166,7 +186,7 @@ export function planReportingImport(users: DirectoryUser[], rows: Array<Record<s
   }
 
   for (const p of pending) {
-    if (p.change.reports_to || p.change.job_title) plan.changes.push(p.change);
+    if (p.change.reports_to || p.change.job_title || p.change.office) plan.changes.push(p.change);
     else plan.unchanged++;
   }
   plan.errors.sort((a, b) => a.row - b.row);

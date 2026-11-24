@@ -82,19 +82,21 @@ export async function deleteOffice(id: string): Promise<boolean> {
  * Gives a person an office (or none). When the office changes to one with a calendar, their
  * planning calendar becomes that calendar. Returns false when the office does not exist.
  */
-export async function setUserOffice(userId: string, officeId: string | null, actorId: string): Promise<{ ok: boolean; calendarChanged: boolean }> {
-  const before = (await query(`SELECT office_id FROM users WHERE id = $1`, [userId])).rows[0];
+export async function setUserOffice(
+  userId: string, officeId: string | null, actorId: string, db: Db = { query },
+): Promise<{ ok: boolean; calendarChanged: boolean }> {
+  const before = (await db.query(`SELECT office_id FROM users WHERE id = $1`, [userId])).rows[0];
   if (!before) return { ok: false, calendarChanged: false };
   if (before.office_id === officeId) return { ok: true, calendarChanged: false };
   let calendarId: string | null = null;
   if (officeId) {
-    const office = (await query(`SELECT calendar_id FROM offices WHERE id = $1`, [officeId])).rows[0];
+    const office = (await db.query(`SELECT calendar_id FROM offices WHERE id = $1`, [officeId])).rows[0];
     if (!office) return { ok: false, calendarChanged: false };
     calendarId = office.calendar_id;
   }
-  await query(`UPDATE users SET office_id = $2, updated_at = NOW() WHERE id = $1`, [userId, officeId]);
+  await db.query(`UPDATE users SET office_id = $2, updated_at = NOW() WHERE id = $1`, [userId, officeId]);
   if (!calendarId) return { ok: true, calendarChanged: false };
-  await query(
+  await db.query(
     `INSERT INTO planning_resources (user_id, calendar_id, updated_by) VALUES ($1, $2, $3)
      ON CONFLICT (user_id) DO UPDATE SET calendar_id = EXCLUDED.calendar_id, updated_by = $3, updated_at = NOW()`,
     [userId, calendarId, actorId],

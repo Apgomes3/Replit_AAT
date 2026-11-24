@@ -12,15 +12,16 @@ const people = () => [
   u('3', 'Cai', 'Drafter', { reports_to_user_id: '2' }),
   u('4', 'Dee', 'Gone', { is_active: false }),
 ];
-const H = ['email', 'first_name', 'last_name', 'job_title', 'role', 'status', 'reports_to_email', 'reports_to_name'];
+const H = ['email', 'first_name', 'last_name', 'job_title', 'role', 'status', 'reports_to_email', 'reports_to_name', 'office'];
+const OFFICES = [{ id: 'o1', name: 'Philippines' }, { id: 'o2', name: 'China office' }];
 
 describe('usersToCsv', () => {
-  it('lists people by name with their manager email and name', () => {
-    const csv = usersToCsv(people());
+  it('lists people by name with their manager email and name, and office', () => {
+    const csv = usersToCsv(people().map(p => p.id === '2' ? { ...p, office_id: 'o1' } : p), OFFICES);
     const lines = csv.replace('﻿', '').trim().split('\r\n');
     expect(lines[0]).toBe(H.join(','));
-    expect(lines[1]).toBe('ana@aat.test,Ana,Boss,,user,active,,');
-    expect(lines[2]).toBe('ben@aat.test,Ben,Lead,Lead,user,active,ana@aat.test,Ana Boss');
+    expect(lines[1]).toBe('ana@aat.test,Ana,Boss,,user,active,,,');
+    expect(lines[2]).toBe('ben@aat.test,Ben,Lead,Lead,user,active,ana@aat.test,Ana Boss,Philippines');
     expect(lines[4]).toContain(',blocked,');
   });
 
@@ -89,5 +90,18 @@ describe('planReportingImport', () => {
     const plan = planReportingImport(people(), [{ email: 'cai@aat.test', job_title: 'Drafter' }], ['email', 'job_title']);
     expect(plan.changes).toEqual([expect.objectContaining({ job_title: { from: null, to: 'Drafter' } })]);
     expect(plan.changes[0].reports_to).toBeUndefined();
+  });
+
+  it('moves people to offices by name, leaves blank cells alone and reports unknown offices', () => {
+    const users = people().map(p => p.id === '2' ? { ...p, office_id: 'o1' } : p);
+    const plan = planReportingImport(users, [
+      { email: 'ana@aat.test', office: 'china OFFICE' },
+      { email: 'ben@aat.test', office: 'Philippines' },
+      { email: 'cai@aat.test', office: '' },
+      { email: 'dee@aat.test', office: 'Mars' },
+    ], ['email', 'office'], OFFICES);
+    expect(plan.changes).toEqual([expect.objectContaining({ email: 'ana@aat.test', office: { from: null, to: 'China office', to_id: 'o2' } })]);
+    expect(plan.unchanged).toBe(3); // Ben, Cai, and Dee (whose office is not found)
+    expect(plan.errors).toEqual([{ row: 5, email: 'dee@aat.test', message: 'No office called Mars' }]);
   });
 });

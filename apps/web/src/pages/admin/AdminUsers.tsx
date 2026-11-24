@@ -307,11 +307,12 @@ interface ReportingPlan {
     row: number; email: string; name: string;
     reports_to?: { from: string | null; to: string | null };
     job_title?: { from: string | null; to: string };
+    office?: { from: string | null; to: string };
   }>;
   errors: Array<{ row: number; email?: string; message: string }>;
 }
 
-/** Upload an edited user export: preview the reports-to and job position changes, then apply them. */
+/** Upload an edited user export: preview the reports-to, job position and office changes, then apply them. */
 function ReportingImportModal({ onClose, onApplied }: { onClose: () => void; onApplied: () => void }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -361,8 +362,9 @@ function ReportingImportModal({ onClose, onApplied }: { onClose: () => void; onA
               <h2 id="reporting-import-title" className="text-base font-semibold text-slate-800">Update reporting from file</h2>
               <p className="text-xs text-slate-500 mt-1">
                 Use a file from <span className="font-medium">Export</span>. Fill <span className="font-mono">reports_to_email</span> (or
-                just <span className="font-mono">reports_to_name</span>) and <span className="font-mono">job_title</span>; leave both
-                reports-to cells blank for nobody. Other columns are ignored, and no one is added or removed.
+                just <span className="font-mono">reports_to_name</span>), <span className="font-mono">job_title</span> and <span className="font-mono">office</span> (an
+                office name from Offices; a new office also sets the person's working calendar). Leave both reports-to cells blank for
+                nobody; a blank job title or office is left as it is. Other columns are ignored, and no one is added or removed.
               </p>
             </div>
           </div>
@@ -411,6 +413,7 @@ function ReportingImportModal({ onClose, onApplied }: { onClose: () => void; onA
                         <span className="font-medium text-slate-800">{c.name}</span>
                         {c.reports_to && <div className="mt-0.5">Reports to: {arrow(c.reports_to.from, c.reports_to.to)}</div>}
                         {c.job_title && <div className="mt-0.5">Job position: {arrow(c.job_title.from, c.job_title.to)}</div>}
+                        {c.office && <div className="mt-0.5">Office: {arrow(c.office.from ?? 'none', c.office.to)}</div>}
                       </div>
                     ))}
                   </div>
@@ -898,13 +901,13 @@ export default function AdminUsers() {
         subtitle="Platform users and roles"
         actions={isAdmin ? (
           <div className="flex items-center gap-2">
-            <Button onClick={exportUsers} disabled={exporting} title="Download every user with job position and reports-to, to edit offline">
+            <Button onClick={exportUsers} disabled={exporting} title="Download every user with job position, reports-to and office, to edit offline">
               <Download className="w-4 h-4" />{exporting ? 'Exporting…' : 'Export'}
             </Button>
             <Button onClick={() => setShowOffices(true)} title="Offices and the working calendar each one uses">
               <Building2 className="w-4 h-4" />Offices
             </Button>
-            <Button onClick={() => setShowReportingImport(true)} title="Upload an edited export to update reports-to and job positions">
+            <Button onClick={() => setShowReportingImport(true)} title="Upload an edited export to update reports-to, job positions and offices">
               <Users className="w-4 h-4" />Update reporting
             </Button>
             <Button onClick={() => setShowBulkInvite(true)}>

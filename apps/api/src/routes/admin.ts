@@ -12,7 +12,7 @@ import csv from 'csv-parser';
 import { Readable } from 'stream';
 import { SUPPORTED_CURRENCIES } from '../lib/currencies';
 import { EDITOR_ROLES } from '../lib/roles';
-import { DirectoryUser, planReportingImport, usersToCsv } from '../lib/reportingImport';
+import { DirectoryUser, OfficeRef, planReportingImport, usersToCsv } from '../lib/reportingImport';
 import * as offices from '../modules/planning/offices';
 
 const router = Router();
@@ -412,20 +412,23 @@ router.post('/users/import', authenticate, requireRole('admin'), uploadUserCsv.s
   res.json(result);
 });
 
-const DIRECTORY_SQL = `SELECT id, email, first_name, last_name, job_title, role, is_active, reports_to_user_id FROM users`;
+const DIRECTORY_SQL = `SELECT id, email, first_name, last_name, job_title, role, is_active, reports_to_user_id, office_id FROM users`;
+const OFFICES_SQL = `SELECT id, name FROM offices`;
 
 /** The whole user list as CSV, to update reporting lines offline and bring back with /users/reporting-import. */
 router.get('/users/export', authenticate, requireRole('admin'), async (_req: AuthRequest, res: Response) => {
   const users = (await query(DIRECTORY_SQL)).rows as DirectoryUser[];
+  const officeList = (await query(OFFICES_SQL)).rows as OfficeRef[];
   const date = new Date().toISOString().slice(0, 10);
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="shark-os-users-${date}.csv"`);
   res.setHeader('Cache-Control', 'no-store');
-  res.send(usersToCsv(users));
+  res.send(usersToCsv(users, officeList));
 });
 
 /**
- * Reads an edited export back: changes "reports to" and job positions of existing users only.
+ * Reads an edited export back: changes "reports to", job positions and offices of existing users only
+ * (a new office also sets the person's working calendar).
  * Without ?apply=1 it only previews; with it, every valid change is saved in one transaction.
  */
 router.post('/users/reporting-import', authenticate, requireRole('admin'), uploadUserCsv.single('file'), async (req: AuthRequest, res: Response) => {
@@ -445,7 +448,8 @@ router.post('/users/reporting-import', authenticate, requireRole('admin'), uploa
     // Lock the users table against concurrent reporting edits so the loop check stays true when saving.
     if (apply) await client.query('LOCK TABLE users IN SHARE ROW EXCLUSIVE MODE');
     const users = (await client.query(DIRECTORY_SQL)).rows as DirectoryUser[];
-    const plan = planReportingImport(users, parsed.rows, parsed.headers);
+    const officeList = (await client.query(OFFICES_SQL)).rows as OfficeRef[];
+    const plan = planReportingImport(users, parsed.rows, parsed.headers, officeList);
     if (apply) {
       for (const c of plan.changes) {
         await client.query(
@@ -455,12 +459,14 @@ router.post('/users/reporting-import', authenticate, requireRole('admin'), uploa
            WHERE id = $1`,
           [c.user_id, !!c.reports_to, c.reports_to?.to_id ?? null, c.job_title?.to ?? null],
         );
+        if (c.office) await offices.setUserOffice(c.user_id, c.office.to_id, req.user!.id, client);
       }
       await client.query('COMMIT');
       for (const c of plan.changes) {
         const parts = [
           c.reports_to ? `Reports to: ${c.reports_to.from ?? 'nobody'} → ${c.reports_to.to ?? 'nobody'}` : null,
           c.job_title ? `Job position: ${c.job_title.from ?? 'none'} → ${c.job_title.to}` : null,
+          c.office ? `Office: ${c.office.from ?? 'none'} → ${c.office.to} (working calendar set from the office)` : null,
         ].filter(Boolean);
         await logAudit(req.user!.id, 'user', c.user_id, 'UPDATE', { summary: `${parts.join('; ')} (from file)`, target_email: c.email });
       }

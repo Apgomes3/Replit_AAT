@@ -104,6 +104,32 @@ describe.skipIf(!process.env.DATABASE_URL)('offices (PostgreSQL)', () => {
     expect(audit.s).toMatch(/^Office: .* → Office A/);
   });
 
+  it('exports offices and moves people between offices from a file', async () => {
+    const exported = await fetch(`${base}/api/v1/admin/users/export`, { headers: { Authorization: `Bearer ${token}` } });
+    const csv = await exported.text();
+    expect(csv.split('\r\n')[0]).toMatch(/,office$/);
+    expect(csv).toContain(`offices-person-${tag}@example.test,Moving,Person,,user,active,,,Office A ${tag}`);
+
+    const upload = async (apply: boolean) => {
+      const form = new FormData();
+      form.append('file', new Blob([`email,office\r\noffices-person-${tag}@example.test,office b ${tag}\r\n`], { type: 'text/csv' }), 'users.csv');
+      const res = await fetch(`${base}/api/v1/admin/users/reporting-import${apply ? '?apply=1' : ''}`, {
+        method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form,
+      });
+      return (await res.json()) as any;
+    };
+    const preview = await upload(false);
+    expect(preview.changes).toEqual([expect.objectContaining({ office: { from: `Office A ${tag}`, to: `Office B ${tag}`, to_id: ids.officeB } })]);
+    expect((await query(`SELECT office_id FROM users WHERE id = $1`, [ids.person])).rows[0].office_id).toBe(ids.officeA);
+
+    expect((await upload(true)).applied).toBe(true);
+    expect((await query(`SELECT office_id FROM users WHERE id = $1`, [ids.person])).rows[0].office_id).toBe(ids.officeB);
+    expect((await query(`SELECT calendar_id FROM planning_resources WHERE user_id = $1`, [ids.person])).rows[0].calendar_id).toBe(ids.calB);
+
+    // Back to office A for the next test.
+    await call('PUT', `/users/${ids.person}`, { first_name: 'Moving', last_name: 'Person', role: 'user', is_active: true, office_id: ids.officeA });
+  });
+
   it('leaves people without an office when it is removed, keeping their calendar', async () => {
     expect((await call('DELETE', `/offices/${ids.officeA}`)).status).toBe(200);
     expect((await query(`SELECT office_id FROM users WHERE id = $1`, [ids.person])).rows[0].office_id).toBeNull();
