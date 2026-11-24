@@ -8,6 +8,8 @@ import {
   Network, FileText, Search, Ruler, BookOpen, BookMarked, Plus, X, Settings,
   Users, LayoutGrid, GitBranch, Layers, Wrench, Keyboard, ClipboardCheck, PencilRuler,
 } from 'lucide-react';
+import OfficeBadge from './home/OfficeBadge';
+import TeamWorkloadCard from './home/TeamWorkloadCard';
 import ShortcutMapModal from '../components/ui/ShortcutMapModal';
 import MyWorkPlanner from './my-work/MyWorkPlanner';
 import { NeedsAttentionPanel, RecentRecordsPanel } from './home/HomePanels';
@@ -267,7 +269,8 @@ export default function HomeHub() {
           </div>
         )}
 
-        <div className="mb-6 animate-fade-in-up">
+        <div className="mb-6 animate-fade-in-up flex flex-wrap items-start justify-between gap-3">
+          <div>
           <h1
             className="text-3xl font-bold tracking-tight"
             style={{ background: 'linear-gradient(135deg, #1c1917 0%, #44403c 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}
@@ -285,6 +288,8 @@ export default function HomeHub() {
               Keyboard shortcuts
             </button>
           </div>
+          </div>
+          <OfficeBadge />
         </div>
 
         {shortcutMapOpen && <ShortcutMapModal onClose={() => setShortcutMapOpen(false)} />}
@@ -293,6 +298,8 @@ export default function HomeHub() {
           <div className="lg:col-span-2"><NeedsAttentionPanel /></div>
           <RecentRecordsPanel />
         </div>
+
+        <TeamWorkloadCard />
 
         <MyWorkPlanner />
 

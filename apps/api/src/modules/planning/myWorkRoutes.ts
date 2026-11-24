@@ -5,6 +5,7 @@ import { authenticate, AuthRequest, getModuleAccessLevel } from '../../middlewar
 import type { ModuleAccessKey } from '../../lib/moduleAccess';
 import { logAudit } from '../../db/audit';
 import * as repo from './myWork';
+import { getTeamWorkload } from './teamWorkload';
 import { updateTask } from '../drafting/repository';
 import { addDays } from './calendar';
 import { isIsoDate, isUuid, TASK_LINKS, validateCommitmentInput, validatePersonalTaskInput, WORK_STATUSES, WorkStatus } from './validation';
@@ -30,6 +31,18 @@ router.get('/', async (req: AuthRequest, res, next) => {
     if (!isIsoDate(from)) return fail(res, 400, 'VALIDATION', 'from must be a date (YYYY-MM-DD).');
     from = addDays(from, -((new Date(`${from}T00:00:00Z`).getUTCDay() + 6) % 7)); // weeks start on Monday
     res.json(await repo.getMyWork(me(req), from, weeks));
+  } catch (e) { next(e); }
+});
+
+/** Hours booked against hours available for the person's team, per week (no task details). */
+router.get('/team-workload', async (req: AuthRequest, res, next) => {
+  try {
+    const weeks = req.query.weeks ? Number(req.query.weeks) : 4;
+    if (!Number.isInteger(weeks) || weeks < 1 || weeks > 8) return fail(res, 400, 'VALIDATION', 'weeks must be from 1 to 8.');
+    let from = typeof req.query.from === 'string' ? req.query.from : new Date().toISOString().slice(0, 10);
+    if (!isIsoDate(from)) return fail(res, 400, 'VALIDATION', 'from must be a date (YYYY-MM-DD).');
+    from = addDays(from, -((new Date(`${from}T00:00:00Z`).getUTCDay() + 6) % 7)); // weeks start on Monday
+    res.json(await getTeamWorkload(me(req), from, weeks));
   } catch (e) { next(e); }
 });
 

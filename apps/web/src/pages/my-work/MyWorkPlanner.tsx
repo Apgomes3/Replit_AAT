@@ -276,12 +276,13 @@ function Commitments({ list }: { list: Commitment[] }) {
   const [form, setForm] = useState<Commitment | 'new' | null>(null);
   return <aside className="bg-white rounded-2xl border border-stone-200/70 shadow-sm p-4 self-start">
     <div className="flex items-center justify-between">
-      <h3 className="text-sm font-bold text-stone-800 flex items-center gap-1.5"><Repeat className="w-4 h-4 text-blue-600" /> Regular commitments</h3>
+      <h3 className="text-sm font-bold text-stone-800 flex items-center gap-1.5"><Repeat className="w-4 h-4 text-blue-600" /> Regular commitments{list.length > 0 && <span className="text-xs font-normal text-stone-400">({list.length})</span>}</h3>
       {form === null && <button onClick={() => setForm('new')} className="text-xs font-semibold text-blue-600 inline-flex items-center gap-1"><Plus className="w-3.5 h-3.5" /> Add</button>}
     </div>
     <p className="text-[11px] text-stone-500 mt-1">Meetings and roles that take part of your time every week. They count in your booked hours.</p>
     {form !== null && <CommitmentForm initial={form === 'new' ? null : form} onClose={() => setForm(null)} />}
-    <ul className="mt-3 space-y-2">
+    {/* Three rows show; the rest scroll, so the card keeps its size as the list grows. */}
+    <ul aria-label="Regular commitments list" className="mt-3 space-y-2 max-h-[11.75rem] overflow-y-auto overscroll-contain pr-1">
       {list.map(c => <li key={c.id} className="group rounded-lg border border-stone-100 px-3 py-2">
         <div className="flex items-start gap-2">
           <CalendarClock className="w-4 h-4 mt-0.5 text-stone-400 shrink-0" />

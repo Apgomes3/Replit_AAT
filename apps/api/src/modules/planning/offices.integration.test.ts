@@ -26,8 +26,13 @@ async function call(method: string, path: string, body?: unknown) {
 }
 
 describe('office input', () => {
-  it('needs a name and takes an optional calendar', () => {
-    expect(validateOfficeInput({ name: '  Shanghai ' }).value).toEqual({ name: 'Shanghai', calendar_id: null });
+  it('needs a name and takes an optional calendar, address and time zone', () => {
+    expect(validateOfficeInput({ name: '  Shanghai ' }).value).toEqual({ name: 'Shanghai', calendar_id: null, address: null, time_zone: null });
+    expect(validateOfficeInput({ name: 'x', address: ' 1 Road\r\nShanghai ', time_zone: ' Asia/Shanghai ' }).value)
+      .toMatchObject({ address: '1 Road\nShanghai', time_zone: 'Asia/Shanghai' });
+    expect(validateOfficeInput({ name: 'x', time_zone: 'Mars/Olympus' }).error).toMatch(/not a time zone/);
+    expect(validateOfficeInput({ name: 'x', time_zone: 'EST' }).error).toMatch(/not a time zone/);
+    expect(validateOfficeInput({ name: 'x', address: 'a'.repeat(1001) }).error).toMatch(/address/);
     expect(validateOfficeInput({ name: '' }).error).toMatch(/name/);
     expect(validateOfficeInput({ name: 'x', calendar_id: 'nope' }).error).toMatch(/calendar_id/);
   });
@@ -59,21 +64,30 @@ describe.skipIf(!process.env.DATABASE_URL)('offices (PostgreSQL)', () => {
     await query(`DELETE FROM planning_calendars WHERE id = ANY($1::uuid[])`, [[ids.calA, ids.calB]]);
   });
 
-  it('has the starting offices after migration', async () => {
-    const names = (await query(`SELECT name FROM offices`)).rows.map(r => r.name);
-    expect(names).toEqual(expect.arrayContaining(STARTING_OFFICES.map(o => o.name)));
+  it('has the starting offices after migration, with their time zones', async () => {
+    const rows = (await query(`SELECT name, time_zone FROM offices`)).rows;
+    expect(rows.map(r => r.name)).toEqual(expect.arrayContaining(STARTING_OFFICES.map(o => o.name)));
+    expect(rows.find(r => r.name === 'Philippines')?.time_zone).toBe('Asia/Manila');
   });
 
   it('adds, renames and refuses duplicate offices', async () => {
-    const a = await call('POST', '/offices', { name: `Office A ${tag}`, calendar_id: ids.calA });
+    const a = await call('POST', '/offices', { name: `Office A ${tag}`, calendar_id: ids.calA, address: '1 Test Road\nShanghai', time_zone: 'Asia/Shanghai' });
     expect(a.status).toBe(201);
-    expect(a.body).toMatchObject({ calendar_name: `Cal A ${tag}`, people: 0 });
+    expect(a.body).toMatchObject({ calendar_name: `Cal A ${tag}`, people: 0, address: '1 Test Road\nShanghai', time_zone: 'Asia/Shanghai' });
+    expect((await call('POST', '/offices', { name: `Office Z ${tag}`, time_zone: 'Nowhere/Here' })).status).toBe(400);
     ids.officeA = a.body.id;
     ids.officeB = (await call('POST', '/offices', { name: `Office B ${tag}`, calendar_id: ids.calB })).body.id;
     expect((await call('POST', '/offices', { name: `office a ${tag}` })).status).toBe(409);
     const list = await call('GET', '/offices');
     expect(list.body.data.map((o: any) => o.id)).toEqual(expect.arrayContaining([ids.officeA, ids.officeB]));
     expect(list.body.calendars.map((c: any) => c.id)).toContain(ids.calA);
+  });
+
+  it('edits the address and time zone, and clears them', async () => {
+    const put = await call('PUT', `/offices/${ids.officeB}`, { name: `Office B ${tag}`, calendar_id: ids.calB, address: 'Manila', time_zone: 'Asia/Manila' });
+    expect(put.body).toMatchObject({ address: 'Manila', time_zone: 'Asia/Manila' });
+    const cleared = await call('PUT', `/offices/${ids.officeB}`, { name: `Office B ${tag}`, calendar_id: ids.calB, address: '', time_zone: '' });
+    expect(cleared.body).toMatchObject({ address: null, time_zone: null });
   });
 
   it("sets the person's calendar from their office, and filters people by office", async () => {

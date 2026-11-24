@@ -141,6 +141,9 @@ CREATE TABLE IF NOT EXISTS offices (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_offices_name ON offices (LOWER(name));
+-- Where the office is (free text, several lines) and its IANA time zone, e.g. Asia/Shanghai.
+ALTER TABLE offices ADD COLUMN IF NOT EXISTS address TEXT;
+ALTER TABLE offices ADD COLUMN IF NOT EXISTS time_zone VARCHAR(64);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS office_id UUID REFERENCES offices(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_users_office ON users (office_id);
 

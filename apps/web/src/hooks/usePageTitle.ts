@@ -39,6 +39,7 @@ const ROUTE_TITLES: { path: string; title: string }[] = [
   { path: '/knowledge/materials/:id', title: 'Material' },
   { path: '/admin', title: 'Settings & Data' },
   { path: '/admin/users', title: 'Users' },
+  { path: '/admin/offices', title: 'Offices' },
   { path: '/admin/import', title: 'Import' },
   { path: '/admin/categories', title: 'Categories' },
   { path: '/admin/roles', title: 'Roles' },

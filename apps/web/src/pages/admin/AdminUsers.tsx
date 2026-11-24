@@ -4,7 +4,7 @@ import {
   Pencil, Ban, Trash2, Plus, CheckCircle, KeyRound, Mail,
   Eye, EyeOff, MoreHorizontal, Search, ChevronLeft, ChevronRight,
   ArrowUp, ArrowDown, ChevronsUpDown, UserPlus, AlertTriangle,
-  Users, Upload, Download, X, FileSpreadsheet, Building2,
+  Users, Upload, Download, X, FileSpreadsheet,
 } from 'lucide-react';
 import api from '../../lib/api';
 import { useAuthStore } from '../../store/authStore';
@@ -19,7 +19,7 @@ import EmptyState from '../../components/ui/EmptyState';
 import SkeletonTable from '../../components/ui/SkeletonTable';
 import { useModalFocus } from '../../hooks/useModalFocus';
 import { DEPARTMENTS, DEPARTMENT_LABELS } from '../../lib/departments';
-import OfficesModal, { useOffices } from './OfficesModal';
+import { useOffices } from '../../lib/officesApi';
 
 interface UserRow {
   id: string;
@@ -716,8 +716,8 @@ export default function AdminUsers() {
   // A search result for a person opens this page with ?q=<their email>.
   const [searchQ, setSearchQ] = useState(() => new URLSearchParams(window.location.search).get('q') ?? '');
   const [roleFilter, setRoleFilter] = useState('');
-  const [officeFilter, setOfficeFilter] = useState('');
-  const [showOffices, setShowOffices] = useState(false);
+  // The Offices page links here with ?office=<id> to list who is in an office.
+  const [officeFilter, setOfficeFilter] = useState(() => new URLSearchParams(window.location.search).get('office') ?? '');
   const [page, setPage] = useState(1);
   const [sortKey, setSortKey] = useState<SortKey>('created');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
@@ -903,9 +903,6 @@ export default function AdminUsers() {
           <div className="flex items-center gap-2">
             <Button onClick={exportUsers} disabled={exporting} title="Download every user with job position, reports-to and office, to edit offline">
               <Download className="w-4 h-4" />{exporting ? 'Exporting…' : 'Export'}
-            </Button>
-            <Button onClick={() => setShowOffices(true)} title="Offices and the working calendar each one uses">
-              <Building2 className="w-4 h-4" />Offices
             </Button>
             <Button onClick={() => setShowReportingImport(true)} title="Upload an edited export to update reports-to, job positions and offices">
               <Users className="w-4 h-4" />Update reporting
@@ -1193,7 +1190,6 @@ export default function AdminUsers() {
         />
       )}
 
-      {showOffices && <OfficesModal onClose={() => setShowOffices(false)} />}
 
       {/* Set password modal */}
       {resetPasswordUser && (
