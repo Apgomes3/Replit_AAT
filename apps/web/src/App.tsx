@@ -169,11 +169,11 @@ const router = createBrowserRouter(createRoutesFromElements(
             <Route path="plans/:id" element={<PlanBoard />} />
             <Route element={<AdminLayout />}>
               <Route path="admin/users" element={<AdminUsers />} />
-              <Route path="admin" element={<AdminHome />} />
-              <Route path="admin/:domain" element={<AdminHome />} />
               <Route path="admin/offices" element={<AdminGuard><AdminOffices /></AdminGuard>} />
               <Route path="admin/menus" element={<AdminGuard><AdminMenus /></AdminGuard>} />
               <Route path="admin/departments" element={<AdminGuard><AdminDepartments /></AdminGuard>} />
+              <Route path="admin" element={<AdminHome />} />
+              <Route path="admin/:domain" element={<AdminHome />} />
               <Route path="admin/import" element={<ImportGuard><AdminImport /></ImportGuard>} />
               <Route path="admin/categories" element={<AdminCategories />} />
               <Route path="admin/roles" element={<AdminRoles />} />

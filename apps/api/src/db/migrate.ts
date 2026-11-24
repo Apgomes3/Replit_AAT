@@ -3751,6 +3751,10 @@ async function migrate() {
     console.log(`Public holiday calendars ready (${holidaySets.length ? holidaySets.join(', ') : 'nothing new'}).`);
     const offices = await seedOffices(client);
     if (offices.length) console.log(`Offices added: ${offices.join(', ')}.`);
+    const departments = await seedDepartments(client);
+    if (departments.length) console.log(`Departments added: ${departments.join(', ')}.`);
+    const menus = await seedMenus(client);
+    if (menus.length) console.log(`Menus added: ${menus.join(', ')}.`);
     await backfillLegacyBusinessDevelopment(client);
     await backfillClientContacts(client);
     const movedDocumentFiles = await migrateLegacyDocumentFiles(client);
@@ -3775,10 +3779,6 @@ async function migrate() {
   } catch (err) {
     console.error('Migration failed:', err);
     process.exit(1);
-    const departments = await seedDepartments(client);
-    if (departments.length) console.log(`Departments added: ${departments.join(', ')}.`);
-    const menus = await seedMenus(client);
-    if (menus.length) console.log(`Menus added: ${menus.join(', ')}.`);
   } finally {
     client.release();
     await pool.end();
