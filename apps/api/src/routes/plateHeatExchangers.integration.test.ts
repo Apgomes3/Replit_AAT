@@ -114,6 +114,10 @@ describe.skipIf(!process.env.DATABASE_URL)('plate heat exchanger sizings (Postgr
     expect(next.body.systems[0].next_tag).toBe('HX-01');
     await call('engineer', 'POST', '/plate-heat-exchangers', { title: 'HX-07', project_id: projectId, system_id: refs.system, sheet: { tag: 'HX-07' }, inputs: { duty: 10 } });
     expect((await call('viewer', 'GET', `/plate-heat-exchangers/options/projects/${projectId}`)).body.systems[0].next_tag).toBe('HX-08');
+    // The LSS page lists the system's exchangers by tag.
+    const bySystem = await call('viewer', 'GET', `/plate-heat-exchangers?system_id=${refs.system}`);
+    expect(bySystem.body.map((x: any) => x.title)).toEqual(['HX-07', 'HX-02']);
+    expect((await call('viewer', 'GET', '/plate-heat-exchangers?system_id=nope')).status).toBe(400);
     expect(made.body).toMatchObject({ client_id: refs.client, client_name: `PHE Client ${tag}`, book_code: `DB-PHE-${tag}`, system_code: 'LSS-01', system_name: 'Main exhibit LSS' });
 
     // Without a project the client is picked from the client list, and no book or system can be linked.

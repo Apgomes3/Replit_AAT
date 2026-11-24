@@ -69,10 +69,15 @@ async function parseBody(body: any): Promise<Body | string> {
 
 router.get('/plate-heat-exchangers', async (req: AuthRequest, res: Response) => {
   const projectId = typeof req.query.project_id === 'string' ? req.query.project_id : '';
+  const systemId = typeof req.query.system_id === 'string' ? req.query.system_id : '';
   if (projectId && !UUID.test(projectId)) return bad(res, 'Project is not valid.');
-  const rows = projectId
-    ? (await query(`${SELECT} WHERE s.project_id=$1 ORDER BY s.updated_at DESC`, [projectId])).rows
-    : (await query(`${SELECT} ORDER BY s.updated_at DESC LIMIT 500`)).rows;
+  if (systemId && !UUID.test(systemId)) return bad(res, 'System is not valid.');
+  // The LSS page lists the exchangers sized for its system; the list page filters by project.
+  const rows = systemId
+    ? (await query(`${SELECT} WHERE s.system_id=$1 ORDER BY s.sheet->>'tag', s.updated_at DESC`, [systemId])).rows
+    : projectId
+      ? (await query(`${SELECT} WHERE s.project_id=$1 ORDER BY s.updated_at DESC`, [projectId])).rows
+      : (await query(`${SELECT} ORDER BY s.updated_at DESC LIMIT 500`)).rows;
   res.json(rows);
 });
 

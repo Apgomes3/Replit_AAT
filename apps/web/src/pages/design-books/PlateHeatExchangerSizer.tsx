@@ -2,7 +2,7 @@
 // to a project, and "Print selection sheet" prints the A4 data sheet on AAT letterhead.
 // The calculation is lib/plateHeatExchanger.ts, a tested port of the PHE sizer artifact.
 import { ReactNode, useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { FileText, Printer, Save, Trash2, X } from 'lucide-react';
@@ -97,6 +97,15 @@ export default function PlateHeatExchangerSizer() {
   const [systemId, setSystemId] = useState<string>('');
   const [sheet, setSheet] = useState<SheetHeader>({ rev: 'A' });
   const [saving, setSaving] = useState(false);
+  // Opened from an LSS system's Thermal tab: start with its project, design book and system chosen.
+  const [searchParams] = useSearchParams();
+  const [pendingSystem, setPendingSystem] = useState(() => (isNew ? searchParams.get('system_id') || '' : ''));
+  useEffect(() => {
+    if (!isNew) return;
+    const p = searchParams.get('project_id'), b = searchParams.get('design_book_id');
+    if (p) setProjectId(p);
+    if (b) setBookId(b);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const savedQ = useQuery<Saved>({
     queryKey: ['plate-heat-exchangers', id],
@@ -154,6 +163,11 @@ export default function PlateHeatExchangerSizer() {
       tag: !prev.tag || suggested.has(prev.tag) ? (sys?.next_tag || '') : prev.tag,
     }));
   }
+  useEffect(() => {
+    if (!pendingSystem || !opts) return;
+    if (opts.systems.some(x => x.id === pendingSystem)) chooseSystem(pendingSystem);
+    setPendingSystem('');
+  }, [opts, pendingSystem]); // eslint-disable-line react-hooks/exhaustive-deps
   function chooseClient(next: string) {
     setClientId(next);
     setSheet(prev => ({ ...prev, client: clientsQ.data?.find(c => c.id === next)?.name || '' }));

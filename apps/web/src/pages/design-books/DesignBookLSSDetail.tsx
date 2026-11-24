@@ -27,6 +27,7 @@ import {
 import { summarizeFiltration } from './LSSCompactUnitsCatalog';
 import LSSPumpSelectionPanel from './LSSPumpSelectionPanel';
 import LSSThermalSelectionPanel from './LSSThermalSelectionPanel';
+import LSSPlateHeatExchangersPanel from './LSSPlateHeatExchangersPanel';
 import LSSOzoneCalculationPanel from './LSSOzoneCalculationPanel';
 import NewRevisionModal from './NewRevisionModal';
 import {
@@ -5797,6 +5798,7 @@ export default function DesignBookLSSDetail() {
         hidden={activeTab !== 'thermal'}
       >
         <LSSThermalSelectionPanel bookId={bookId} systemId={systemId} readOnly={readOnly} />
+        {bookId && systemId && <LSSPlateHeatExchangersPanel projectId={book?.project_id} bookId={bookId} systemId={systemId} readOnly={readOnly} />}
       </div>
       <div
         id="lss-panel-ozone"

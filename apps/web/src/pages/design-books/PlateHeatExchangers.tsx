@@ -14,7 +14,7 @@ type Row = {
   updated_at: string; updated_by_name: string | null;
 };
 
-const STATUS: Record<string, [string, string]> = {
+export const PHE_STATUS: Record<string, [string, string]> = {
   feasible: ['Feasible', 'bg-emerald-50 text-emerald-700'],
   warnings: ['Check warnings', 'bg-amber-50 text-amber-700'],
   not_feasible: ['Not feasible', 'bg-red-50 text-red-700'],
@@ -67,7 +67,7 @@ export default function PlateHeatExchangers() {
               { key: 'model', header: 'Selection', sortValue: row => row.result_summary?.model || '', render: row => row.result_summary?.model
                 ? `${(row.result_summary.units ?? 1) > 1 ? `${row.result_summary.units} × ` : ''}${row.result_summary.model}` : '—' },
               { key: 'status', header: 'Status', className: 'w-36', sortValue: row => row.result_summary?.status || '', render: row => {
-                const s = STATUS[row.result_summary?.status || ''];
+                const s = PHE_STATUS[row.result_summary?.status || ''];
                 return s ? <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${s[1]}`}>{s[0]}</span> : '—';
               } },
               { key: 'updated_at', header: 'Updated', className: 'w-44', sortValue: row => row.updated_at, render: row => <span className="text-xs text-stone-500">{new Date(row.updated_at).toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' })}{row.updated_by_name ? ` · ${row.updated_by_name}` : ''}</span> },
