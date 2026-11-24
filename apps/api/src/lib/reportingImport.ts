@@ -12,13 +12,25 @@ export interface DirectoryUser {
   is_active: boolean;
   reports_to_user_id: string | null;
   office_id?: string | null;
+  /** the person's department name (departments.name) and/or the departments of the active teams the person is in. */
+  departments?: string[] | null;
+}
+
+/** Department labels, de-duplicated ignoring case, joined with "; ". */
+export function departmentsCell(departments: string[] | null | undefined): string {
+  const seen = new Map<string, string>();
+  for (const raw of departments ?? []) {
+    const label = (raw ?? '').trim();
+    if (label && !seen.has(label.toLowerCase())) seen.set(label.toLowerCase(), label);
+  }
+  return [...seen.values()].join('; ');
 }
 
 /** An office a person can be in (matched by name in the file, ignoring case). */
 export interface OfficeRef { id: string; name: string }
 
 export const EXPORT_COLUMNS = [
-  'email', 'first_name', 'last_name', 'job_title', 'role', 'status', 'reports_to_email', 'reports_to_name', 'office',
+  'email', 'first_name', 'last_name', 'job_title', 'role', 'status', 'reports_to_email', 'reports_to_name', 'office', 'department',
 ] as const;
 
 export function displayName(u: Pick<DirectoryUser, 'first_name' | 'last_name' | 'email'>): string {
@@ -45,6 +57,7 @@ export function usersToCsv(users: DirectoryUser[], offices: OfficeRef[] = []): s
       u.email, u.first_name, u.last_name, u.job_title, u.role, u.is_active ? 'active' : 'blocked',
       manager?.email ?? '', manager ? displayName(manager) : '',
       u.office_id ? officeName.get(u.office_id) ?? '' : '',
+      departmentsCell(u.departments),
     ].map(csvCell).join(','));
   }
   return '﻿' + lines.join('\r\n') + '\r\n';

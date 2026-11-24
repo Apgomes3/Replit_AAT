@@ -12,16 +12,16 @@ const people = () => [
   u('3', 'Cai', 'Drafter', { reports_to_user_id: '2' }),
   u('4', 'Dee', 'Gone', { is_active: false }),
 ];
-const H = ['email', 'first_name', 'last_name', 'job_title', 'role', 'status', 'reports_to_email', 'reports_to_name', 'office'];
+const H = ['email', 'first_name', 'last_name', 'job_title', 'role', 'status', 'reports_to_email', 'reports_to_name', 'office', 'department'];
 const OFFICES = [{ id: 'o1', name: 'Philippines' }, { id: 'o2', name: 'China office' }];
 
 describe('usersToCsv', () => {
   it('lists people by name with their manager email and name, and office', () => {
-    const csv = usersToCsv(people().map(p => p.id === '2' ? { ...p, office_id: 'o1' } : p), OFFICES);
+    const csv = usersToCsv(people().map(p => p.id === '2' ? { ...p, office_id: 'o1', departments: ['Engineering', 'Drafting', 'engineering'] } : p), OFFICES);
     const lines = csv.replace('﻿', '').trim().split('\r\n');
     expect(lines[0]).toBe(H.join(','));
-    expect(lines[1]).toBe('ana@aat.test,Ana,Boss,,user,active,,,');
-    expect(lines[2]).toBe('ben@aat.test,Ben,Lead,Lead,user,active,ana@aat.test,Ana Boss,Philippines');
+    expect(lines[1]).toBe('ana@aat.test,Ana,Boss,,user,active,,,,');
+    expect(lines[2]).toBe('ben@aat.test,Ben,Lead,Lead,user,active,ana@aat.test,Ana Boss,Philippines,Engineering; Drafting');
     expect(lines[4]).toContain(',blocked,');
   });
 
@@ -93,7 +93,7 @@ describe('planReportingImport', () => {
   });
 
   it('moves people to offices by name, leaves blank cells alone and reports unknown offices', () => {
-    const users = people().map(p => p.id === '2' ? { ...p, office_id: 'o1' } : p);
+    const users = people().map(p => p.id === '2' ? { ...p, office_id: 'o1', departments: ['Engineering', 'Drafting', 'engineering'] } : p);
     const plan = planReportingImport(users, [
       { email: 'ana@aat.test', office: 'china OFFICE' },
       { email: 'ben@aat.test', office: 'Philippines' },

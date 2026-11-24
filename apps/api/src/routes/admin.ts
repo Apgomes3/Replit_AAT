@@ -421,11 +421,17 @@ router.post('/users/import', authenticate, requireRole('admin'), uploadUserCsv.s
 });
 
 const DIRECTORY_SQL = `SELECT id, email, first_name, last_name, job_title, role, is_active, reports_to_user_id, office_id FROM users`;
+const EXPORT_SQL = `SELECT u.id, u.email, u.first_name, u.last_name, u.job_title, u.role, u.is_active, u.reports_to_user_id, u.office_id,
+  ARRAY_REMOVE(ARRAY[COALESCE(d.name, u.department)] || ARRAY(
+    SELECT DISTINCT t.department FROM drafting_teams t
+    WHERE t.active AND (t.manager_user_id = u.id OR EXISTS (SELECT 1 FROM drafting_team_members tm WHERE tm.team_id = t.id AND tm.user_id = u.id))
+    ORDER BY t.department), NULL) AS departments
+  FROM users u LEFT JOIN departments d ON d.key = u.department`;
 const OFFICES_SQL = `SELECT id, name FROM offices`;
 
 /** The whole user list as CSV, to update reporting lines offline and bring back with /users/reporting-import. */
 router.get('/users/export', authenticate, requireRole('admin'), async (_req: AuthRequest, res: Response) => {
-  const users = (await query(DIRECTORY_SQL)).rows as DirectoryUser[];
+  const users = (await query(EXPORT_SQL)).rows as DirectoryUser[];
   const officeList = (await query(OFFICES_SQL)).rows as OfficeRef[];
   const date = new Date().toISOString().slice(0, 10);
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');

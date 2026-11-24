@@ -119,10 +119,11 @@ describe.skipIf(!process.env.DATABASE_URL)('offices (PostgreSQL)', () => {
   });
 
   it('exports offices and moves people between offices from a file', async () => {
+    await query(`UPDATE users SET department = 'engineering' WHERE id = $1`, [ids.person]);
     const exported = await fetch(`${base}/api/v1/admin/users/export`, { headers: { Authorization: `Bearer ${token}` } });
     const csv = await exported.text();
-    expect(csv.split('\r\n')[0]).toMatch(/,office$/);
-    expect(csv).toContain(`offices-person-${tag}@example.test,Moving,Person,,user,active,,,Office A ${tag}`);
+    expect(csv.split('\r\n')[0]).toMatch(/,office,department$/);
+    expect(csv).toContain(`offices-person-${tag}@example.test,Moving,Person,,user,active,,,Office A ${tag},Engineering`);
 
     const upload = async (apply: boolean) => {
       const form = new FormData();
