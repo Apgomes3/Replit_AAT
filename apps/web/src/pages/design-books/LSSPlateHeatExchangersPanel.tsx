@@ -1,5 +1,6 @@
 // The plate heat exchangers sized for one LSS system, on the system's Thermal tab. "New sizing" opens
 // the sizer with the project, design book and system already chosen, so it gets the system's next HX tag.
+import { useId } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
@@ -12,26 +13,28 @@ type Row = {
   updated_at: string;
 };
 
-export function newSizingLink(projectId: string | null | undefined, bookId: string, systemId: string) {
-  const q = new URLSearchParams({ design_book_id: bookId, system_id: systemId });
+export function newSizingLink(projectId: string | null | undefined, bookId: string, systemId: string, returnTab: string) {
+  const q = new URLSearchParams({ design_book_id: bookId, system_id: systemId, return_tab: returnTab });
   if (projectId) q.set('project_id', projectId);
   return `/plate-heat-exchangers/new?${q}`;
 }
 
-export default function LSSPlateHeatExchangersPanel({ projectId, bookId, systemId, readOnly }: { projectId?: string | null; bookId: string; systemId: string; readOnly?: boolean }) {
+export default function LSSPlateHeatExchangersPanel({ projectId, bookId, systemId, readOnly, className = 'mt-4', returnTab = 'thermal' }: { projectId?: string | null; bookId: string; systemId: string; readOnly?: boolean; className?: string; returnTab?: 'overview' | 'thermal' }) {
+  // Shown on both the Overview and Thermal tabs, so each copy needs its own heading id.
+  const titleId = useId();
   const { data = [], isLoading } = useQuery<Row[]>({
     queryKey: ['plate-heat-exchangers', 'system', systemId],
     queryFn: () => api.get('/plate-heat-exchangers', { params: { system_id: systemId } }).then(r => r.data),
   });
   return (
-    <section className="mt-4 overflow-hidden rounded-xl border border-stone-200 bg-white" aria-labelledby="lss-phe-title">
+    <section className={`${className} overflow-hidden rounded-xl border border-stone-200 bg-white`} aria-labelledby={titleId}>
       <div className="flex items-center justify-between gap-3 border-b border-stone-100 bg-stone-50/60 px-5 py-3.5">
         <div>
-          <h2 id="lss-phe-title" className="text-sm font-semibold text-stone-700">Plate heat exchangers</h2>
+          <h2 id={titleId} className="text-sm font-semibold text-stone-700">Plate heat exchangers</h2>
           <p className="mt-0.5 text-xs text-stone-400">Sizings on PHEWORLD plates linked to this system.</p>
         </div>
         {!readOnly && projectId && (
-          <Link to={newSizingLink(projectId, bookId, systemId)} className="inline-flex items-center gap-1.5 rounded-lg bg-[#003f7d] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#00336a]">
+          <Link to={newSizingLink(projectId, bookId, systemId, returnTab)} className="inline-flex items-center gap-1.5 rounded-lg bg-[#003f7d] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#00336a]">
             <Plus className="h-4 w-4" />New sizing
           </Link>
         )}
@@ -46,8 +49,8 @@ export default function LSSPlateHeatExchangersPanel({ projectId, bookId, systemI
           <tbody>{data.map(row => {
             const s = PHE_STATUS[row.result_summary?.status || ''];
             return <tr key={row.id} className="border-t border-stone-100 hover:bg-stone-50">
-              <td className="px-5 py-2 font-mono text-xs"><Link className="text-[#003f7d] hover:underline" to={`/plate-heat-exchangers/${row.id}`}>{row.sheet?.tag || '—'}</Link></td>
-              <td className="px-3 py-2"><Link className="text-stone-800 hover:underline" to={`/plate-heat-exchangers/${row.id}`}>{row.title}</Link></td>
+              <td className="px-5 py-2 font-mono text-xs"><Link className="text-[#003f7d] hover:underline" to={`/plate-heat-exchangers/${row.id}?return_tab=${returnTab}`}>{row.sheet?.tag || '—'}</Link></td>
+              <td className="px-3 py-2"><Link className="text-stone-800 hover:underline" to={`/plate-heat-exchangers/${row.id}?return_tab=${returnTab}`}>{row.title}</Link></td>
               <td className="px-3 py-2 tabular-nums">{row.result_summary?.duty_kw != null ? Math.round(row.result_summary.duty_kw) : '—'}</td>
               <td className="px-3 py-2">{row.result_summary?.model ? `${(row.result_summary.units ?? 1) > 1 ? `${row.result_summary.units} × ` : ''}${row.result_summary.model}` : '—'}</td>
               <td className="px-5 py-2">{s ? <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${s[1]}`}>{s[0]}</span> : '—'}</td>

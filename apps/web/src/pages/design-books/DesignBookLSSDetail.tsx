@@ -3387,6 +3387,7 @@ export default function DesignBookLSSDetail() {
       </div>
 
       <EngineeringTrace calculation={systemCalculation} />
+      {bookId && systemId && <LSSPlateHeatExchangersPanel projectId={book?.project_id} bookId={bookId} systemId={systemId} readOnly={readOnly} className="" returnTab="overview" />}
       </div>
 
       {/* Flow Route panel */}

@@ -224,7 +224,7 @@ export default function PlateHeatExchangerSizer() {
       queryClient.invalidateQueries({ queryKey: ['plate-heat-exchangers'] });
       toast.success('Sizing saved');
       setTitle(t);
-      if (isNew) navigate(`/plate-heat-exchangers/${res.data.id}`, { replace: true });
+      if (isNew) navigate(`/plate-heat-exchangers/${res.data.id}${searchParams.get('return_tab') ? `?return_tab=${searchParams.get('return_tab')}` : ''}`, { replace: true });
       return res.data.id as string;
     } catch { return null; } finally { setSaving(false); }
   }
@@ -237,6 +237,12 @@ export default function PlateHeatExchangerSizer() {
     navigate('/plate-heat-exchangers');
   }
 
+  // Linked to an LSS system: offer the way back to that system in its design book (to the tab it was opened from).
+  const returnTab = searchParams.get('return_tab') === 'overview' ? 'overview' : 'thermal';
+  const lss = opts?.systems.find(x => x.id === systemId);
+  const lssHref = bookId && systemId ? `/design-books/${bookId}/lss/${systemId}?tab=${returnTab}` : '';
+  const lssLabel = lss ? `${lss.system_code} · ${lss.system_name}` : 'LSS system';
+
   const r = 'fatal' in result && result.fatal ? null : result as PheResult;
   const canPrint = !!r?.R;
   const pRole = r ? r.P.role : null, sRole = r ? r.S.role : null;
@@ -245,6 +251,8 @@ export default function PlateHeatExchangerSizer() {
   return (
     <div className="flex h-full flex-col">
       <PageHeader
+        returnTo={lssHref || undefined}
+        returnLabel={lssLabel}
         crumbs={[{ label: 'Plate Heat Exchangers', href: '/plate-heat-exchangers' }, { label: isNew ? 'New sizing' : (savedQ.data?.title || '…') }]}
         title={isNew ? 'New plate heat exchanger sizing' : (savedQ.data?.title || 'Plate heat exchanger sizing')}
         subtitle="Gasketed plate heat exchanger on PHEWORLD (FL-HTEP) plates: single pass, counter-current. Results update as you type; confirm the final selection with PHEWORLD."
