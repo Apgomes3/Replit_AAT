@@ -252,7 +252,7 @@ function Preview({ data }: { data: MenusResponse }) {
 
 export default function AdminMenus() {
   const qc = useQueryClient();
-  const { data, isLoading } = useQuery({ queryKey: MENUS_KEY, queryFn: () => api.get('/admin/menus').then(r => r.data as MenusResponse) });
+  const { data, isLoading, isError, error } = useQuery({ queryKey: MENUS_KEY, retry: false, queryFn: () => api.get('/admin/menus').then(r => r.data as MenusResponse) });
   const [editing, setEditing] = useState<AdminMenu | 'new' | null>(null);
   const menus = useMemo(() => data?.data ?? [], [data]);
 
@@ -275,7 +275,8 @@ export default function AdminMenus() {
     <PageHeader title="Menus" subtitle="The department menus in the left menu, and who sees each one. A role without access to a page still doesn't see it."
       actions={<button type="button" onClick={() => setEditing('new')} className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700">
         <Plus className="w-4 h-4" /> New menu</button>} />
-    {isLoading || !data ? <p className="text-sm text-slate-400">Loading…</p> : <div className="grid grid-cols-1 lg:grid-cols-[1fr_18rem] gap-4 items-start">
+    {isError ? <p role="alert" className="text-sm text-red-600">Could not load the menus{(error as any)?.response?.status === 404 ? ': the API is running older code. Restart it (npm run dev) and reload.' : '.'}</p>
+      : isLoading || !data ? <p className="text-sm text-slate-400">Loading…</p> :<div className="grid grid-cols-1 lg:grid-cols-[1fr_18rem] gap-4 items-start">
       <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs font-semibold text-slate-500">
