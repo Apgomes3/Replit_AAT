@@ -14,7 +14,12 @@ export interface DirectoryUser {
   office_id?: string | null;
   /** the person's department name (departments.name) and/or the departments of the active teams the person is in. */
   departments?: string[] | null;
+  /** users.department: the key of the person's own department. */
+  department?: string | null;
 }
+
+/** A department a person can be in (matched by name or key in the file, ignoring case). */
+export interface DepartmentRef { key: string; name: string; is_active: boolean }
 
 /** Department labels, de-duplicated ignoring case, joined with "; ". */
 export function departmentsCell(departments: string[] | null | undefined): string {
@@ -71,6 +76,7 @@ export interface ReportingChange {
   reports_to?: { from: string | null; to: string | null; to_id: string | null };
   job_title?: { from: string | null; to: string };
   office?: { from: string | null; to: string; to_id: string };
+  department?: { from: string | null; to: string; to_key: string };
 }
 
 export interface ReportingPlan {
@@ -87,10 +93,13 @@ const clean = (v: unknown) => (typeof v === 'string' ? v.trim().replace(/\s+/g, 
  * - reports_to_email (or, when blank, a unique reports_to_name) sets the manager; both blank clears it.
  * - job_title, when the column is present and the cell is not blank, replaces the job position.
  * - office, likewise, moves the person to the office with that name (an unknown name is an error).
+ * - department holds names or keys joined with "; " (the export adds team departments after the
+ *   person's own). Blank, or still listing the current department: unchanged. Otherwise the first
+ *   entry naming an active department becomes the person's department; no match is an error.
  * - Unknown people, inactive or ambiguous managers, self-reporting and loops are reported as errors
  *   and leave that row's manager unchanged.
  */
-export function planReportingImport(users: DirectoryUser[], rows: Array<Record<string, string>>, headers: string[], offices: OfficeRef[] = []): ReportingPlan {
+export function planReportingImport(users: DirectoryUser[], rows: Array<Record<string, string>>, headers: string[], offices: OfficeRef[] = [], departments: DepartmentRef[] = []): ReportingPlan {
   const plan: ReportingPlan = { total: rows.length, changes: [], unchanged: 0, errors: [] };
   if (!headers.includes('email')) {
     plan.errors.push({ row: 1, message: 'The file must have an email column' });
@@ -99,8 +108,9 @@ export function planReportingImport(users: DirectoryUser[], rows: Array<Record<s
   const hasReporting = headers.includes('reports_to_email') || headers.includes('reports_to_name');
   const hasJobTitle = headers.includes('job_title');
   const hasOffice = headers.includes('office');
-  if (!hasReporting && !hasJobTitle && !hasOffice) {
-    plan.errors.push({ row: 1, message: 'The file needs a reports_to_email, reports_to_name, job_title or office column' });
+  const hasDepartment = headers.includes('department');
+  if (!hasReporting && !hasJobTitle && !hasOffice && !hasDepartment) {
+    plan.errors.push({ row: 1, message: 'The file needs a reports_to_email, reports_to_name, job_title, office or department column' });
     return plan;
   }
 
@@ -113,6 +123,9 @@ export function planReportingImport(users: DirectoryUser[], rows: Array<Record<s
   const byId = new Map(users.map(u => [u.id, u]));
   const officeByName = new Map(offices.map(o => [o.name.toLowerCase(), o]));
   const officeById = new Map(offices.map(o => [o.id, o]));
+  const findDept = (v: string) => departments.find(d => d.name.toLowerCase() === v.toLowerCase())
+    ?? departments.find(d => d.key === v.toLowerCase());
+  const deptByKey = new Map(departments.map(d => [d.key, d]));
   const finalManager = new Map(users.map(u => [u.id, u.reports_to_user_id]));
   const seen = new Set<string>();
   const pending: Array<{ change: ReportingChange; user: DirectoryUser }> = [];
@@ -173,6 +186,21 @@ export function planReportingImport(users: DirectoryUser[], rows: Array<Record<s
       }
     }
 
+    if (hasDepartment) {
+      const entries = clean(raw.department).split(';').map(e => e.trim()).filter(Boolean);
+      const matched = entries.map(e => ({ entry: e, dept: findDept(e) }));
+      const current = user.department ?? null;
+      if (entries.length && !matched.some(m => m.dept && m.dept.key === current)) {
+        const target = matched.find(m => m.dept?.is_active)?.dept;
+        if (!target) {
+          const unknown = matched.find(m => !m.dept);
+          plan.errors.push({ row, email, message: unknown ? `No department called ${unknown.entry}` : `${matched[0].dept!.name} is not an active department` });
+        } else {
+          change.department = { from: current ? deptByKey.get(current)?.name ?? current : null, to: target.name, to_key: target.key };
+        }
+      }
+    }
+
     pending.push({ change, user });
   });
 
@@ -199,7 +227,7 @@ export function planReportingImport(users: DirectoryUser[], rows: Array<Record<s
   }
 
   for (const p of pending) {
-    if (p.change.reports_to || p.change.job_title || p.change.office) plan.changes.push(p.change);
+    if (p.change.reports_to || p.change.job_title || p.change.office || p.change.department) plan.changes.push(p.change);
     else plan.unchanged++;
   }
   plan.errors.sort((a, b) => a.row - b.row);

@@ -105,3 +105,34 @@ describe('planReportingImport', () => {
     expect(plan.errors).toEqual([{ row: 5, email: 'dee@aat.test', message: 'No office called Mars' }]);
   });
 });
+
+describe('planReportingImport departments', () => {
+  const DEPTS = [
+    { key: 'engineering', name: 'Engineering', is_active: true },
+    { key: 'drafting', name: 'Drafting', is_active: true },
+    { key: 'logistics', name: 'Logistics', is_active: false },
+  ];
+  const users = () => [u('1', 'Ana', 'Boss', { department: 'engineering' }), u('2', 'Ben', 'Lead')];
+  const plan = (rows: Array<Record<string, string>>) => planReportingImport(users(), rows, ['email', 'department'], [], DEPTS);
+
+  it('keeps the department when the cell is blank or still lists it (team departments after it)', () => {
+    const p = plan([{ email: 'ana@aat.test', department: 'Engineering; Drafting' }, { email: 'ben@aat.test', department: '' }]);
+    expect(p.changes).toEqual([]);
+    expect(p.unchanged).toBe(2);
+  });
+
+  it('moves people to the first active department named, by name or key', () => {
+    const p = plan([{ email: 'ana@aat.test', department: 'drafting' }, { email: 'ben@aat.test', department: 'Logistics; ENGINEERING' }]);
+    expect(p.errors).toEqual([]);
+    expect(p.changes.map(c => c.department)).toEqual([
+      { from: 'Engineering', to: 'Drafting', to_key: 'drafting' },
+      { from: null, to: 'Engineering', to_key: 'engineering' },
+    ]);
+  });
+
+  it('reports unknown and inactive departments', () => {
+    const p = plan([{ email: 'ana@aat.test', department: 'Sales' }, { email: 'ben@aat.test', department: 'Logistics' }]);
+    expect(p.changes).toEqual([]);
+    expect(p.errors.map(e => e.message)).toEqual(['No department called Sales', 'Logistics is not an active department']);
+  });
+});
