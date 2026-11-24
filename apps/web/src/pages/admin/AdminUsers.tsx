@@ -4,7 +4,7 @@ import {
   Pencil, Ban, Trash2, Plus, CheckCircle, KeyRound, Mail,
   Eye, EyeOff, MoreHorizontal, Search, ChevronLeft, ChevronRight,
   ArrowUp, ArrowDown, ChevronsUpDown, UserPlus, AlertTriangle,
-  Users, Upload, Download, X, FileSpreadsheet,
+  Users, Upload, Download, X, FileSpreadsheet, Building2,
 } from 'lucide-react';
 import api from '../../lib/api';
 import { useAuthStore } from '../../store/authStore';
@@ -19,6 +19,7 @@ import EmptyState from '../../components/ui/EmptyState';
 import SkeletonTable from '../../components/ui/SkeletonTable';
 import { useModalFocus } from '../../hooks/useModalFocus';
 import { DEPARTMENTS, DEPARTMENT_LABELS } from '../../lib/departments';
+import OfficesModal, { useOffices } from './OfficesModal';
 
 interface UserRow {
   id: string;
@@ -29,6 +30,8 @@ interface UserRow {
   department?: string | null;
   reports_to_user_id: string | null;
   reports_to_name: string | null;
+  office_id?: string | null;
+  office_name?: string | null;
   role: string;
   is_active: boolean;
   can_see_all_pos: boolean;
@@ -710,6 +713,8 @@ export default function AdminUsers() {
   // A search result for a person opens this page with ?q=<their email>.
   const [searchQ, setSearchQ] = useState(() => new URLSearchParams(window.location.search).get('q') ?? '');
   const [roleFilter, setRoleFilter] = useState('');
+  const [officeFilter, setOfficeFilter] = useState('');
+  const [showOffices, setShowOffices] = useState(false);
   const [page, setPage] = useState(1);
   const [sortKey, setSortKey] = useState<SortKey>('created');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
@@ -754,9 +759,9 @@ export default function AdminUsers() {
   const sortParam = `${sortKey === 'name' ? 'name' : sortKey === 'email' ? 'email' : sortKey === 'role' ? 'role' : sortKey === 'status' ? 'status' : sortKey === 'last_login' ? 'last_login' : 'created'}_${sortDir}`;
 
   const { data, isLoading, isError, refetch } = useQuery<{ items: UserRow[]; pagination: { page: number; page_size: number; total: number; pages: number } }>({
-    queryKey: ['admin-users', debouncedQ, roleFilter, page, sortParam],
+    queryKey: ['admin-users', debouncedQ, roleFilter, officeFilter, page, sortParam],
     queryFn: () => api.get('/admin/users', {
-      params: { q: debouncedQ || undefined, role: roleFilter || undefined, page, page_size: 25, sort: sortParam },
+      params: { q: debouncedQ || undefined, role: roleFilter || undefined, office: officeFilter || undefined, page, page_size: 25, sort: sortParam },
     }).then(r => r.data),
     placeholderData: keepPreviousData,
   });
@@ -781,6 +786,9 @@ export default function AdminUsers() {
   const managerOptions = (allUsers?.items ?? [])
     .filter(u => u.is_active && u.id !== editUser?.id)
     .map(u => ({ value: u.id, label: `${`${u.first_name || ''} ${u.last_name || ''}`.trim() || u.email}${u.job_title ? ` – ${u.job_title}` : ''}` }));
+
+  const offices = useOffices(isAdmin);
+  const officeOptions = [{ value: '', label: 'No office' }, ...(offices.data?.data ?? []).map(o => ({ value: o.id, label: o.calendar_name ? `${o.name} (${o.calendar_name})` : o.name }))];
 
   const roleOptions: string[] = rolesData?.items?.map((r: any) => r.name) || ['admin', 'manager', 'user', 'viewer'];
   const smtpConfigured = emailStatus?.smtp_configured ?? false;
@@ -893,6 +901,9 @@ export default function AdminUsers() {
             <Button onClick={exportUsers} disabled={exporting} title="Download every user with job position and reports-to, to edit offline">
               <Download className="w-4 h-4" />{exporting ? 'Exporting…' : 'Export'}
             </Button>
+            <Button onClick={() => setShowOffices(true)} title="Offices and the working calendar each one uses">
+              <Building2 className="w-4 h-4" />Offices
+            </Button>
             <Button onClick={() => setShowReportingImport(true)} title="Upload an edited export to update reports-to and job positions">
               <Users className="w-4 h-4" />Update reporting
             </Button>
@@ -928,9 +939,19 @@ export default function AdminUsers() {
             <option key={r} value={r}>{r.replace(/_/g, ' ')}</option>
           ))}
         </select>
-        {(searchQ || roleFilter) && (
+        {isAdmin && <select
+          aria-label="Office"
+          value={officeFilter}
+          onChange={e => { setOfficeFilter(e.target.value); setPage(1); }}
+          className="text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-700"
+        >
+          <option value="">All offices</option>
+          <option value="none">No office yet</option>
+          {(offices.data?.data ?? []).map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+        </select>}
+        {(searchQ || roleFilter || officeFilter) && (
           <button
-            onClick={() => { setSearchQ(''); setRoleFilter(''); setPage(1); }}
+            onClick={() => { setSearchQ(''); setRoleFilter(''); setOfficeFilter(''); setPage(1); }}
             className="text-xs text-slate-500 hover:text-slate-700 underline"
           >
             Clear
@@ -949,7 +970,7 @@ export default function AdminUsers() {
           <QueryError message="Could not load users" onRetry={() => refetch()} />
         ) : isLoading ? (
           <SkeletonTable rows={6} columns={isAdmin ? 8 : 7} />
-        ) : users.length === 0 && !debouncedQ && !roleFilter ? (
+        ) : users.length === 0 && !debouncedQ && !roleFilter && !officeFilter ? (
           <EmptyState
             icon={Users}
             title="No users"
@@ -965,6 +986,7 @@ export default function AdminUsers() {
                 {sortableHeader('Name', 'name')}
                 <th className="text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">Job position</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">Reports to</th>
+                <th className="text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">Office</th>
                 {sortableHeader('Role', 'role')}
                 {sortableHeader('Status', 'status')}
                 <th className="text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">See All POs</th>
@@ -976,8 +998,8 @@ export default function AdminUsers() {
             <tbody>
               {users.length === 0 ? (
                 <tr>
-                  <td colSpan={isAdmin ? 10 : 9} className="text-center py-12 text-slate-400 text-sm">
-                    {(debouncedQ || roleFilter) ? 'No users match the current filters' : 'No users found'}
+                  <td colSpan={isAdmin ? 11 : 10} className="text-center py-12 text-slate-400 text-sm">
+                    {(debouncedQ || roleFilter || officeFilter) ? 'No users match the current filters' : 'No users found'}
                   </td>
                 </tr>
               ) : users.map(user => {
@@ -991,6 +1013,7 @@ export default function AdminUsers() {
                     </td>
                     <td className="px-4 py-3 text-slate-600">{user.job_title || '—'}</td>
                     <td className="px-4 py-3 text-slate-600">{user.reports_to_name || '—'}</td>
+                    <td className="px-4 py-3 text-slate-600">{user.office_name || '—'}</td>
                     <td className="px-4 py-3">
                       <span className="bg-slate-100 text-slate-700 text-xs px-2 py-0.5 rounded capitalize">
                         {user.role?.replace(/_/g, ' ')}
@@ -1134,6 +1157,7 @@ export default function AdminUsers() {
           initialValues={{
             first_name: editUser.first_name, last_name: editUser.last_name, job_title: editUser.job_title ?? '',
             reports_to_user_id: editUser.reports_to_user_id ?? '', role: editUser.role, department: editUser.department ?? '',
+            office_id: editUser.office_id ?? '',
           }}
           fields={[
             { name: 'first_name', label: 'First Name' },
@@ -1141,6 +1165,7 @@ export default function AdminUsers() {
             { name: 'job_title', label: 'Job Position' },
             { name: 'reports_to_user_id', label: 'Reports to (direct manager)', options: managerOptions },
             { name: 'role', label: 'Role (access)', options: roleOptions },
+            { name: 'office_id', label: 'Office (a new office sets their working calendar)', options: officeOptions },
             { name: 'department', label: 'Department (opens these menu areas)', options: [{ value: '', label: 'None (all areas open)' }, ...DEPARTMENTS.map(d => ({ value: d, label: DEPARTMENT_LABELS[d] }))] },
           ]}
           onSubmit={async (values) => {
@@ -1152,6 +1177,7 @@ export default function AdminUsers() {
                 reports_to_user_id: values.reports_to_user_id || null,
                 role: values.role,
                 department: values.department || null,
+                office_id: values.office_id || null,
                 is_active: editUser.is_active,
               });
               toast.success('User updated');
@@ -1163,6 +1189,8 @@ export default function AdminUsers() {
           }}
         />
       )}
+
+      {showOffices && <OfficesModal onClose={() => setShowOffices(false)} />}
 
       {/* Set password modal */}
       {resetPasswordUser && (

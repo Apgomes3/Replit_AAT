@@ -130,6 +130,20 @@ CREATE INDEX IF NOT EXISTS idx_planning_commitments_user ON planning_commitments
 ALTER TABLE planning_commitments ADD COLUMN IF NOT EXISTS start_time TIME;
 ALTER TABLE planning_personal_tasks ADD COLUMN IF NOT EXISTS start_time TIME;
 
+-- Offices: where a person works. Each office has a default working calendar; giving someone an
+-- office sets their planning calendar to it (it can still be changed per person afterwards).
+-- The starting offices are added by seedOffices (offices.ts), after the calendars exist.
+CREATE TABLE IF NOT EXISTS offices (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name VARCHAR(100) NOT NULL,
+  calendar_id UUID REFERENCES planning_calendars(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_offices_name ON offices (LOWER(name));
+ALTER TABLE users ADD COLUMN IF NOT EXISTS office_id UUID REFERENCES offices(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_users_office ON users (office_id);
+
 -- All day: the item takes the whole working day (the person's hours that day on their calendar)
 -- on each day it covers; an all-day commitment has weekdays but no hours_per_day or start time.
 ALTER TABLE planning_personal_tasks ADD COLUMN IF NOT EXISTS all_day BOOLEAN NOT NULL DEFAULT FALSE;

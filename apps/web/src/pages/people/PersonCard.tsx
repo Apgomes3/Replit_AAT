@@ -1,6 +1,6 @@
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, CalendarDays, ChevronRight, Copy, Mail, Settings, UsersRound } from 'lucide-react';
+import { ArrowLeft, Building2, CalendarDays, ChevronRight, Copy, Mail, Settings, UsersRound } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../lib/api';
 import { useAuthStore } from '../../store/authStore';
@@ -11,6 +11,7 @@ interface Person {
   reports_to: PersonRef | null; direct_reports: PersonRef[]; chain: PersonRef[];
   teams: Array<{ id: string; name: string; department: string | null; is_manager: boolean; manager_id: string | null; manager_name: string | null }>;
   calendar: string | null;
+  office?: string | null;
 }
 
 const ROLE_LABELS: Record<string, string> = { admin: 'Admin', manager: 'Manager', user: 'User', viewer: 'Viewer', hq_manager: 'HQ manager', pmo: 'PMO', engineer: 'Engineer' };
@@ -51,6 +52,7 @@ export default function PersonCard() {
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
             <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-600 font-semibold">Access: {ROLE_LABELS[p.role] ?? p.role}</span>
             {!p.is_active && <span className="px-2 py-0.5 rounded bg-rose-50 text-rose-700 font-semibold">Blocked</span>}
+            {p.office && <span className="inline-flex items-center gap-1 text-slate-500"><Building2 className="w-3.5 h-3.5" />{p.office}</span>}
             {p.calendar && <span className="inline-flex items-center gap-1 text-slate-500"><CalendarDays className="w-3.5 h-3.5" />{p.calendar}</span>}
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">

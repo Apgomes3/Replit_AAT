@@ -13,6 +13,7 @@ import { Readable } from 'stream';
 import { SUPPORTED_CURRENCIES } from '../lib/currencies';
 import { EDITOR_ROLES } from '../lib/roles';
 import { DirectoryUser, planReportingImport, usersToCsv } from '../lib/reportingImport';
+import * as offices from '../modules/planning/offices';
 
 const router = Router();
 const uploadUserCsv = multer({
@@ -154,6 +155,13 @@ router.get('/users', authenticate, requireRole(...EDITOR_ROLES), async (req: Aut
     params.push(role);
     conditions.push(`role = $${params.length}`);
   }
+  // office: an office id, or 'none' for people without one.
+  const office = (req.query.office as string || '').trim();
+  if (office === 'none') conditions.push('office_id IS NULL');
+  else if (/^[0-9a-f-]{36}$/i.test(office)) {
+    params.push(office);
+    conditions.push(`office_id = $${params.length}`);
+  }
 
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
@@ -179,7 +187,8 @@ router.get('/users', authenticate, requireRole(...EDITOR_ROLES), async (req: Aut
   const [countResult, dataResult] = await Promise.all([
     query(`SELECT COUNT(*) FROM users ${where}`, countParams),
     query(
-      `SELECT id, email, first_name, last_name, job_title, department, reports_to_user_id,
+      `SELECT id, email, first_name, last_name, job_title, department, reports_to_user_id, office_id,
+         (SELECT o.name FROM offices o WHERE o.id = users.office_id) AS office_name,
          (SELECT COALESCE(NULLIF(TRIM(CONCAT_WS(' ', m.first_name, m.last_name)), ''), m.email) FROM users m WHERE m.id = users.reports_to_user_id) AS reports_to_name,
          role, is_active, can_see_all_pos, created_at, last_login_at
        FROM users ${where} ORDER BY ${orderBy} LIMIT $${dataParams.length - 1} OFFSET $${dataParams.length}`,
@@ -496,6 +505,18 @@ router.put('/users/:id', authenticate, requireRole('admin'), async (req: AuthReq
     const problem = await reportsToProblem(String(req.params.id), reportsTo);
     if (problem) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: problem } });
   }
+  // office_id is optional: left unchanged when absent; null or '' clears it. A new office sets the
+  // person's working calendar to the office's calendar.
+  const hasOffice = Object.prototype.hasOwnProperty.call(req.body, 'office_id');
+  const officeId = hasOffice ? (req.body.office_id || null) : null;
+  if (officeId !== null && (typeof officeId !== 'string' || !/^[0-9a-f-]{36}$/i.test(officeId))) {
+    return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'office_id must be an office id' } });
+  }
+  if (officeId && !(await offices.getOffice(officeId))) {
+    return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'That office no longer exists' } });
+  }
+  const officeBefore: string | null = hasOffice
+    ? (await query('SELECT office_id FROM users WHERE id=$1', [req.params.id])).rows[0]?.office_id ?? null : null;
   const existing = await query('SELECT is_active, role FROM users WHERE id=$1', [req.params.id]);
   const result = await query(
     `UPDATE users SET first_name=$1, last_name=$2, role=$3, is_active=$4,
@@ -506,6 +527,14 @@ router.put('/users/:id', authenticate, requireRole('admin'), async (req: AuthReq
     [first_name, last_name, role, is_active, req.params.id, hasJobTitle, jobTitle, hasReportsTo, reportsTo, hasDepartment, department]);
   if (!result.rows[0]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'User not found' } });
   const updated = result.rows[0];
+  let officeChange: { from: string | null; to: string | null; calendarChanged: boolean } | null = null;
+  if (hasOffice && officeBefore !== officeId) {
+    const set = await offices.setUserOffice(updated.id, officeId, req.user!.id);
+    const names = (await query('SELECT id, name FROM offices WHERE id = ANY($1::uuid[])', [[officeBefore, officeId].filter(Boolean)])).rows;
+    const nameOf = (id: string | null) => names.find(n => n.id === id)?.name ?? null;
+    officeChange = { from: nameOf(officeBefore), to: nameOf(officeId), calendarChanged: set.calendarChanged };
+  }
+  if (hasOffice) updated.office_id = officeId;
   let action = 'UPDATE';
   if (existing.rows[0] && is_active !== undefined) {
     if (!existing.rows[0].is_active && is_active === true) action = 'UNBLOCK';
@@ -517,7 +546,9 @@ router.put('/users/:id', authenticate, requireRole('admin'), async (req: AuthReq
       ? 'User account unblocked'
       : existing.rows[0]?.role !== updated.role
         ? `Role changed from ${existing.rows[0]?.role || 'unknown'} → ${updated.role}`
-        : 'User details updated';
+        : officeChange
+          ? `Office: ${officeChange.from ?? 'none'} → ${officeChange.to ?? 'none'}${officeChange.calendarChanged ? ' (working calendar set from the office)' : ''}`
+          : 'User details updated';
   await logAudit(req.user!.id, 'user', updated.id, action, {
     summary,
     target_email: updated.email,
@@ -527,6 +558,49 @@ router.put('/users/:id', authenticate, requireRole('admin'), async (req: AuthReq
     is_active: updated.is_active,
   });
   res.json(updated);
+});
+
+// ---------- offices ----------
+
+router.get('/offices', authenticate, requireRole('admin'), async (_req, res: Response) => {
+  const calendars = (await query(`SELECT id, name FROM planning_calendars ORDER BY LOWER(name)`)).rows;
+  res.json({ data: await offices.listOffices(), calendars });
+});
+
+const officeConflict = (err: any, res: Response) => {
+  if (err?.code === '23505') return res.status(409).json({ error: { code: 'CONFLICT', message: 'An office with that name already exists' } }), true;
+  if (err?.code === '23503') return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'That calendar no longer exists' } }), true;
+  return false;
+};
+
+router.post('/offices', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+  const { value, error } = offices.validateOfficeInput(req.body);
+  if (error) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: error } });
+  try {
+    const office = await offices.saveOffice(value!);
+    await logAudit(req.user!.id, 'office', office!.id, 'CREATE', { summary: `Office ${office!.name} added` });
+    res.status(201).json(office);
+  } catch (err) { if (!officeConflict(err, res)) throw err; }
+});
+
+router.put('/offices/:id', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+  if (!/^[0-9a-f-]{36}$/i.test(String(req.params.id))) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'id must be an office id' } });
+  const { value, error } = offices.validateOfficeInput(req.body);
+  if (error) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: error } });
+  try {
+    const office = await offices.saveOffice(value!, String(req.params.id));
+    if (!office) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Office not found' } });
+    await logAudit(req.user!.id, 'office', office.id, 'UPDATE', { summary: `Office ${office.name} updated`, calendar: office.calendar_name });
+    res.json(office);
+  } catch (err) { if (!officeConflict(err, res)) throw err; }
+});
+
+router.delete('/offices/:id', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+  if (!/^[0-9a-f-]{36}$/i.test(String(req.params.id))) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'id must be an office id' } });
+  const office = await offices.getOffice(String(req.params.id));
+  if (!office || !(await offices.deleteOffice(office.id))) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Office not found' } });
+  await logAudit(req.user!.id, 'office', office.id, 'DELETE', { summary: `Office ${office.name} removed` });
+  res.json({ ok: true });
 });
 
 router.patch('/users/:id/password', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {

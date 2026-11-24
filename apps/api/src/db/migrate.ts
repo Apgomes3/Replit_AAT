@@ -9,6 +9,7 @@ import { DRAFTING_SCHEMA } from '../modules/drafting/schema';
 import { PIM_SCHEMA } from '../modules/pim/schema';
 import { PLANNING_SCHEMA } from '../modules/planning/schema';
 import { loadHolidaySets } from '../modules/planning/holidays';
+import { seedOffices } from '../modules/planning/offices';
 import { CLIENTS_SCHEMA } from '../modules/clients/schema';
 import { GOOGLE_CALENDAR_SCHEMA } from '../modules/google-calendar/schema';
 import { INITIATIVES_SCHEMA } from '../modules/initiatives/schema';
@@ -3720,6 +3721,8 @@ async function migrate() {
     }
     const holidaySets = await loadHolidaySets(client);
     console.log(`Public holiday calendars ready (${holidaySets.length ? holidaySets.join(', ') : 'nothing new'}).`);
+    const offices = await seedOffices(client);
+    if (offices.length) console.log(`Offices added: ${offices.join(', ')}.`);
     await backfillLegacyBusinessDevelopment(client);
     await backfillClientContacts(client);
     const movedDocumentFiles = await migrateLegacyDocumentFiles(client);

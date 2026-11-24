@@ -23,7 +23,7 @@ router.get('/:id', authenticate, async (req, res, next) => {
     if (!UUID.test(id)) return res.status(400).json({ error: { code: 'VALIDATION', message: 'Not a valid person' } });
     const person = (await query(
       `SELECT u.id, u.email, u.first_name, u.last_name, ${NAME} AS name, u.job_title, u.role, u.is_active,
-         u.reports_to_user_id
+         u.reports_to_user_id, (SELECT o.name FROM offices o WHERE o.id = u.office_id) AS office
        FROM users u WHERE u.id = $1`, [id])).rows[0];
     if (!person) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Person not found' } });
 
