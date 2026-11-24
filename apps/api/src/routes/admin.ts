@@ -331,9 +331,14 @@ router.post('/users/import', authenticate, requireRole('admin'), uploadUserCsv.s
   const validRoles = new Set(rolesResult.rows.map(row => String(row.name).toLowerCase()));
   if (!validRoles.has('viewer')) validRoles.add('viewer');
 
+  // send_invites=false only adds people to the database: no setup link and no email (invite them later).
+  const sendInvites = !['false', '0', 'no'].includes(String(req.body?.send_invites ?? req.query.send_invites ?? 'true').toLowerCase());
+
   const result = {
     total: parsed.rows.length,
+    invites_sent: sendInvites,
     invited: 0,
+    added: 0,
     skipped: 0,
     errors: [] as Array<{ row: number; email?: string; message: string }>,
   };
@@ -382,6 +387,15 @@ router.post('/users/import', authenticate, requireRole('admin'), uploadUserCsv.s
         [email, hash, firstName || null, lastName || null, role, jobTitle ?? null]
       );
       userId = inserted.rows[0].id;
+      if (!sendInvites) {
+        await logAudit(req.user!.id, 'user', userId!, 'CREATE', {
+          summary: `Added ${email} from file (no invitation sent)`,
+          target_email: email,
+          role,
+        });
+        result.added++;
+        continue;
+      }
 
       token = crypto.randomBytes(48).toString('hex');
       const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
@@ -404,7 +418,7 @@ router.post('/users/import', authenticate, requireRole('admin'), uploadUserCsv.s
       result.errors.push({
         row: rowNumber,
         email,
-        message: 'Invite could not be sent',
+        message: sendInvites ? 'Invite could not be sent' : 'User could not be added',
       });
       continue;
     }
@@ -415,6 +429,7 @@ router.post('/users/import', authenticate, requireRole('admin'), uploadUserCsv.s
       role,
     });
     result.invited++;
+    result.added++;
   }
 
   res.json(result);

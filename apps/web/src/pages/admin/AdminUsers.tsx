@@ -460,6 +460,8 @@ function ReportingImportModal({ onClose, onApplied }: { onClose: () => void; onA
 interface BulkInviteResult {
   total: number;
   invited: number;
+  added?: number;
+  invites_sent?: boolean;
   skipped: number;
   errors: Array<{ row: number; email?: string; message: string }>;
 }
@@ -480,6 +482,7 @@ function BulkInviteModal({ onClose, onSuccess }: BulkInviteModalProps) {
   const [file, setFile] = useState<File | null>(null);
   const [result, setResult] = useState<BulkInviteResult | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [sendInvites, setSendInvites] = useState(true);
   const modalRef = useModalFocus<HTMLDivElement>({ onClose });
 
   const downloadTemplate = () => {
@@ -507,6 +510,7 @@ function BulkInviteModal({ onClose, onSuccess }: BulkInviteModalProps) {
     try {
       const formData = new FormData();
       formData.append('file', file);
+      formData.append('send_invites', sendInvites ? 'true' : 'false');
       const response = await api.post('/admin/users/import', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
@@ -514,6 +518,8 @@ function BulkInviteModal({ onClose, onSuccess }: BulkInviteModalProps) {
       onSuccess();
       if (response.data.invited > 0) {
         toast.success(`${response.data.invited} invite${response.data.invited === 1 ? '' : 's'} sent`);
+      } else if (response.data.added > 0) {
+        toast.success(`${response.data.added} user${response.data.added === 1 ? '' : 's'} added without invites`);
       }
     } catch (err: any) {
       toast.error(err?.response?.data?.error?.message || 'Could not import users');
@@ -536,7 +542,7 @@ function BulkInviteModal({ onClose, onSuccess }: BulkInviteModalProps) {
             <FileSpreadsheet className="w-4 h-4 text-blue-600 mt-0.5" />
             <div>
               <h2 id="bulk-invite-title" className="text-base font-semibold text-slate-800">Import Users from CSV</h2>
-              <p className="text-xs text-slate-500 mt-1">Invite multiple teammates at once. Each new user receives a password-setup link.</p>
+              <p className="text-xs text-slate-500 mt-1">Add multiple teammates at once. With invitations on, each new user receives a password-setup link.</p>
             </div>
           </div>
           <button onClick={onClose} aria-label="Close dialog" title="Close dialog" className="text-slate-300 hover:text-slate-500">
@@ -569,6 +575,16 @@ function BulkInviteModal({ onClose, onSuccess }: BulkInviteModalProps) {
                 />
               </div>
 
+              <label className="flex items-start gap-2 text-sm text-slate-700 cursor-pointer">
+                <input type="checkbox" className="mt-0.5" checked={sendInvites} onChange={event => setSendInvites(event.target.checked)} />
+                <span>
+                  Send invitation emails
+                  <span className="block text-xs text-slate-500">
+                    {sendInvites ? 'Each new user gets an email with a password-setup link.' : 'New users are only added to Shark OS. No email is sent; invite them later.'}
+                  </span>
+                </span>
+              </label>
+
               <div className="bg-slate-50 rounded-lg p-4">
                 <div className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2">Accepted columns</div>
                 <div className="flex flex-wrap gap-1.5">
@@ -592,8 +608,8 @@ function BulkInviteModal({ onClose, onSuccess }: BulkInviteModalProps) {
               </div>
               <div className="grid grid-cols-3 gap-2">
                 <div className="rounded-lg bg-emerald-50 border border-emerald-100 p-3 text-center">
-                  <div className="text-xl font-semibold text-emerald-700">{result.invited}</div>
-                  <div className="text-xs text-emerald-700">Invites sent</div>
+                  <div className="text-xl font-semibold text-emerald-700">{result.invites_sent === false ? result.added ?? 0 : result.invited}</div>
+                  <div className="text-xs text-emerald-700">{result.invites_sent === false ? 'Added (no invite)' : 'Invites sent'}</div>
                 </div>
                 <div className="rounded-lg bg-amber-50 border border-amber-100 p-3 text-center">
                   <div className="text-xl font-semibold text-amber-700">{result.skipped}</div>
