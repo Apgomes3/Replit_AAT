@@ -152,6 +152,33 @@ describe('LeftNav accessibility behavior', () => {
     expect(screen.queryByRole('button', { name: /Factory/ })).not.toBeInTheDocument();
   });
 
+  it('draws the menus from Admin -> Menus: order, folded state, custom links and module access', () => {
+    useAuthStore.setState({
+      user: { id: 'menu-1', email: 'm@example.com', firstName: 'M', lastName: 'E', role: 'user', department: 'design', moduleAccess: { orders: 'hidden' },
+        menus: [
+          { key: 'custom-quality', label: 'Quality', icon: 'clipboard', is_system: false, state: 'open', member: true, items: [
+            { label: 'Checklists', path: '/documents', icon: 'file', module_key: null },
+            { label: 'Wiki', path: 'https://wiki.example.com', icon: null, module_key: null },
+            { label: 'Hidden orders', path: '/purchase-orders', icon: null, module_key: 'orders' },
+          ] },
+          { key: 'engineering', label: 'Engineering & Design', icon: null, is_system: true, state: 'folded', member: false, items: [] },
+          { key: 'procurement', label: 'Procurement', icon: null, is_system: true, state: 'open', member: true, items: [] },
+          { key: 'custom-empty', label: 'Empty', icon: null, is_system: false, state: 'open', member: false, items: [] },
+        ] },
+    });
+
+    renderNav();
+    const areaButtons = screen.getAllByRole('button', { name: /^(Collapse|Expand) / }).map(b => b.getAttribute('aria-label')).filter(l => !l?.endsWith('sidebar'));
+    expect(areaButtons).toEqual(['Collapse Quality', 'Expand Engineering & Design']);
+    expect(screen.getByRole('link', { name: 'Checklists' })).toHaveAttribute('href', '/documents');
+    expect(screen.getByRole('link', { name: 'Wiki' })).toHaveAttribute('target', '_blank');
+    expect(screen.queryByRole('link', { name: 'Hidden orders' })).not.toBeInTheDocument();
+    // Procurement's pages all need orders access, and Business Development and the rest were not sent.
+    expect(screen.queryByRole('button', { name: /Procurement/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Business Development/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Empty/ })).not.toBeInTheDocument();
+  });
+
   it('shows only Thermal governance to engineers with Design Book manage access', async () => {
     const user = userEvent.setup();
     useAuthStore.setState({

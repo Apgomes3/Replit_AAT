@@ -1,15 +1,25 @@
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
- import { FolderOpen, Package, BookOpen, FileText, Network, Search, Users, Upload, Boxes, Pipette, Container, Settings, ChevronRight, Ruler, ShoppingCart, Home, ClipboardList, Layers, GitBranch, DollarSign, BookMarked, PanelLeftClose, PanelLeftOpen, Fish, Activity, Sun, Wind, SlidersHorizontal, BriefcaseBusiness, ClipboardCheck, CalendarRange, PencilRuler, Gauge, Building2, Lightbulb, Library, Thermometer } from 'lucide-react';
+ import { FolderOpen, Package, BookOpen, FileText, Network, Search, Users, Upload, Boxes, Pipette, Container, Settings, ChevronRight, Ruler, ShoppingCart, Home, ClipboardList, Layers, GitBranch, DollarSign, BookMarked, PanelLeftClose, PanelLeftOpen, Fish, Activity, Sun, Wind, SlidersHorizontal, BriefcaseBusiness, ClipboardCheck, CalendarRange, PencilRuler, Gauge, Building2, Lightbulb, Library, Thermometer, Link2, BarChart3, Wrench, Globe, Truck, Factory, ExternalLink } from 'lucide-react';
 import { useState, useRef, useEffect, ReactNode } from 'react';
 import clsx from 'clsx';
 import { useCommandPalette } from '../../store/commandPaletteStore';
 import { useAuthStore } from '../../store/authStore';
 import { ModuleKey, ROUTES } from '../../lib/navigation';
 import { adminDomainFromSlug, adminPopupGroups, rememberAdminPage, visibleAdminEntries } from '../../lib/adminRegistry';
+import type { NavMenu } from '../../types';
 
-type NavItemDef = { id: string; to: string; icon: any; label: string; moduleKey?: ModuleKey; end?: boolean };
+/** `external`: a full web address, opened in a new tab. */
+type NavItemDef = { id: string; to: string; icon: any; label: string; moduleKey?: ModuleKey; end?: boolean; external?: boolean };
 /** `showWhenEmpty`: the area still shows, with no pages yet, to people whose department opens it. */
 type NavArea = { id: string; label: string; items: NavItemDef[]; showWhenEmpty?: boolean };
+/** A menu from Admin -> Menus, ready to draw. */
+type ResolvedArea = NavArea & { folded: boolean; member: boolean };
+
+/** Icons admins can pick for custom menus and links (names match the API's MENU_ICONS). */
+export const MENU_ICON_MAP: Record<string, any> = {
+  link: Link2, folder: FolderOpen, file: FileText, book: BookOpen, chart: BarChart3, users: Users, box: Boxes, wrench: Wrench,
+  calendar: CalendarRange, globe: Globe, clipboard: ClipboardList, truck: Truck, factory: Factory, lightbulb: Lightbulb,
+};
 
 /** Shared records everyone works from: one click, no sub-menus. */
 const SHARED_ITEMS: NavItemDef[] = [
@@ -53,7 +63,25 @@ const AREAS: NavArea[] = [
   { id: 'factory', label: 'Factory', items: [], showWhenEmpty: true },
 ];
 
+/** The built-in areas and their pages, for Admin -> Menus. */
+export const SYSTEM_AREAS: ReadonlyArray<{ id: string; label: string; items: ReadonlyArray<{ id: string; label: string; moduleKey?: string }> }> = AREAS;
+
 const STORAGE_KEY = 'nav-collapsed-areas';
+
+/** The server's menus as areas: built-in ones take their pages from AREAS, custom ones their own links. */
+export function areasFromMenus(menus: NavMenu[]): ResolvedArea[] {
+  return menus.flatMap((m): ResolvedArea[] => {
+    const base = { label: m.label, folded: m.state === 'folded', member: m.member };
+    if (m.is_system) {
+      const code = AREAS.find(a => a.id === m.key);
+      return code ? [{ ...code, ...base }] : [];
+    }
+    return [{ id: m.key, ...base, showWhenEmpty: true, items: m.items.map((it, i) => ({
+      id: `${m.key}-${i}`, to: it.path, label: it.label, icon: MENU_ICON_MAP[it.icon ?? ''] ?? Link2,
+      moduleKey: (it.module_key ?? undefined) as ModuleKey | undefined, external: /^https?:\/\//i.test(it.path),
+    })) }];
+  });
+}
 
 /** Areas folded by default: everything outside the areas the person's department opens (null = none folded). */
 export function defaultCollapsedAreas(open: string[] | null | undefined): string[] {
@@ -61,16 +89,25 @@ export function defaultCollapsedAreas(open: string[] | null | undefined): string
 }
 
 /** The person's own fold/unfold choices win over the department default once they make one. */
-function loadCollapsedAreas(userId: string | undefined, departmentAreas: string[] | null | undefined): string[] {
+function loadCollapsedAreas(userId: string | undefined, departmentAreas: string[] | null | undefined, menus?: NavMenu[]): string[] {
   try {
     const raw = localStorage.getItem(`${STORAGE_KEY}:${userId ?? 'anonymous'}`);
     if (raw) return JSON.parse(raw);
   } catch { /* storage unavailable */ }
-  return defaultCollapsedAreas(departmentAreas);
+  return menus ? menus.filter(m => m.state === 'folded').map(m => m.key) : defaultCollapsedAreas(departmentAreas);
 }
 
 function NavItemLink({ item, collapsed, indent = false }: { item: NavItemDef; collapsed: boolean; indent?: boolean }) {
   const Icon = item.icon;
+  if (item.external) {
+    return (
+      <a href={item.to} target="_blank" rel="noopener noreferrer" title={collapsed ? item.label : undefined}
+        className={clsx(navLinkClass({ isActive: false }), collapsed ? 'justify-center px-3' : indent && 'pl-5')}>
+        <Icon className="w-4 h-4 shrink-0 text-stone-400 group-hover:text-stone-600" />
+        {!collapsed && <><span className="truncate">{item.label}</span><ExternalLink className="w-3 h-3 ml-auto shrink-0 text-stone-300" aria-hidden /></>}
+      </a>
+    );
+  }
   return (
     <NavLink
       to={item.to}
@@ -237,9 +274,9 @@ export default function LeftNav({ collapsed, onToggleCollapsed, onNavigate }: Le
   const adminTriggerRef = useRef<HTMLButtonElement>(null);
   const { open: openPalette } = useCommandPalette();
   const user = useAuthStore(state => state.user);
-  const [collapsedAreas, setCollapsedAreas] = useState<string[]>(() => loadCollapsedAreas(user?.id, user?.departmentAreas));
+  const [collapsedAreas, setCollapsedAreas] = useState<string[]>(() => loadCollapsedAreas(user?.id, user?.departmentAreas, user?.menus));
   // The user record can arrive after the first render (page reload): apply their default then.
-  useEffect(() => { setCollapsedAreas(loadCollapsedAreas(user?.id, user?.departmentAreas)); }, [user?.id, user?.departmentAreas]);
+  useEffect(() => { setCollapsedAreas(loadCollapsedAreas(user?.id, user?.departmentAreas, user?.menus)); }, [user?.id, user?.departmentAreas, user?.menus]);
   const itemVisible = (item: NavItemDef) => !item.moduleKey || user?.moduleAccess?.[item.moduleKey] !== 'hidden';
   const adminEntries = visibleAdminEntries(user);
   const canAccessPlatformAdmin = adminEntries.length > 0;
@@ -248,9 +285,14 @@ export default function LeftNav({ collapsed, onToggleCollapsed, onNavigate }: Le
   const sharedItems = SHARED_ITEMS.filter(itemVisible);
   const showsEmptyArea = (area: NavArea) => user?.role === 'admin'
     || (!!area.showWhenEmpty && !!user?.department && (user.departmentAreas == null || user.departmentAreas.includes(area.id)));
-  const visibleAreas = AREAS
-    .map(area => ({ area, items: area.items.filter(itemVisible) }))
-    .filter(entry => entry.items.length > 0 || (entry.area.items.length === 0 && showsEmptyArea(entry.area)));
+  // Admin -> Menus decides which menus show and how; an older server sends no menus, so fall back to the department areas.
+  const visibleAreas = user?.menus
+    ? areasFromMenus(user.menus)
+      .map(area => ({ area, items: area.items.filter(itemVisible) }))
+      .filter(entry => entry.items.length > 0 || (entry.area.items.length === 0 && (user.role === 'admin' || entry.area.member)))
+    : AREAS
+      .map(area => ({ area, items: area.items.filter(itemVisible) }))
+      .filter(entry => entry.items.length > 0 || (entry.area.items.length === 0 && showsEmptyArea(entry.area)));
 
   const toggleArea = (areaId: string) => {
     setCollapsedAreas(current => {

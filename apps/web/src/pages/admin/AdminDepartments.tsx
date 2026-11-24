@@ -8,7 +8,7 @@ import { Archive, Layers, Pencil, Plus, Trash2, UserRound, Users, UsersRound, X 
 import toast from 'react-hot-toast';
 import api from '../../lib/api';
 import PageHeader from '../../components/ui/PageHeader';
-import { colourClasses, DEPARTMENT_OPTIONS_KEY, NAV_AREA_LABELS } from '../../lib/departments';
+import { colourClasses, DEPARTMENT_OPTIONS_KEY } from '../../lib/departments';
 import { DepartmentHeadcount, DepartmentWorkload } from './DepartmentOverview';
 
 const TABS = [
@@ -100,7 +100,6 @@ function DepartmentForm({ dept, data, onClose }: { dept: Department | null; data
     onError: err => toast.error(errorText(err, 'Could not save the department')),
   });
   const submit = (e: FormEvent) => { e.preventDefault(); if (f.name.trim()) save.mutate(); };
-  const toggleArea = (a: string) => setF(s => ({ ...s, nav_areas: s.nav_areas.includes(a) ? s.nav_areas.filter(x => x !== a) : [...s.nav_areas, a] }));
 
   return <div role="dialog" aria-modal="true" aria-label={dept ? `Edit ${dept.name}` : 'New department'}
     className="fixed inset-0 z-50 flex items-start justify-center pt-12 px-4 bg-slate-900/30 overflow-y-auto" onClick={onClose}>
@@ -150,18 +149,9 @@ function DepartmentForm({ dept, data, onClose }: { dept: Department | null; data
             </select>
           </div>
         </div>
-        <fieldset className="sm:col-span-2">
-          <legend className={label}>Menu areas its people see open</legend>
-          <label className="flex items-center gap-2 text-sm text-slate-700 mb-1.5">
-            <input type="checkbox" checked={f.allAreas} onChange={e => setF({ ...f, allAreas: e.target.checked })} /> Every area (as for Management)
-          </label>
-          {!f.allAreas && <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-            {data.nav_areas.map(a => <label key={a} className="flex items-center gap-1.5 text-sm text-slate-700">
-              <input type="checkbox" checked={f.nav_areas.includes(a)} onChange={() => toggleArea(a)} /> {NAV_AREA_LABELS[a] ?? a}
-            </label>)}
-          </div>}
-          <p className="mt-1 text-[11px] text-slate-500">The other areas start folded. People can still open them, and their own choice is kept.</p>
-        </fieldset>
+        <p className="sm:col-span-2 text-[11px] text-slate-500">
+          Which menus this department sees is set on <Link to="/admin/menus" className="text-blue-700 hover:underline">Admin › Menus</Link>.
+        </p>
         {dept && !locked && <label className="sm:col-span-2 flex items-center gap-2 text-sm text-slate-700">
           <input type="checkbox" checked={f.is_active} onChange={e => setF({ ...f, is_active: e.target.checked })} /> Active (an archived department keeps its people but is no longer offered)
         </label>}
@@ -215,8 +205,8 @@ function DepartmentCard({ d, onEdit }: { d: Department & { depth: number }; onEd
         </Link>
       </div>
       <div>
-        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Menu areas open</div>
-        <span className="text-slate-700">{d.nav_areas === null ? 'Every area' : d.nav_areas.length ? d.nav_areas.map(a => NAV_AREA_LABELS[a] ?? a).join(', ') : 'None'}</span>
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Menus</div>
+        <Link to="/admin/menus" className="text-blue-700 hover:underline">Set on Admin › Menus</Link>
       </div>
     </div>
     <div className="mt-3">

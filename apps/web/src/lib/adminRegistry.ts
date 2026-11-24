@@ -1,4 +1,4 @@
-import { Package, BookOpen, FileText, Users, Upload, Boxes, Pipette, Container, Ruler, ClipboardList, Layers, GitBranch, DollarSign, Activity, Sun, Wind, SlidersHorizontal, Building2, Network } from 'lucide-react';
+import { Package, BookOpen, FileText, Users, Upload, Boxes, Pipette, Container, Ruler, ClipboardList, Layers, GitBranch, DollarSign, Activity, Sun, Wind, SlidersHorizontal, Building2, Network, ListTree } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { User } from '../types';
 import { isEditorRole } from './roles';
@@ -63,7 +63,8 @@ export const ADMIN_ENTRIES: AdminEntry[] = [
   { id: 'categories', to: '/admin/categories', icon: Boxes, label: 'Categories', description: 'Product categories.', domain: 'platform', group: 'Data', popupGroup: 'System' },
   { id: 'po-stage-roles', to: '/admin/po-stage-roles', icon: GitBranch, label: 'PO Stage Roles', description: 'Who acts at each purchase order stage.', domain: 'procurement', group: 'Workflow', popupGroup: 'Order Management', access: { module: 'orders', level: 'manage' } },
   { id: 'roles', to: '/admin/roles', icon: Users, label: 'Roles', description: 'Access roles and module visibility.', domain: 'platform', group: 'Access', popupGroup: 'System' },
-  { id: 'departments', to: '/admin/departments', icon: Network, label: 'Departments', description: 'Departments, heads, sub-departments and the menu areas they open.', domain: 'platform', group: 'Access', popupGroup: 'System' },
+  { id: 'departments', to: '/admin/departments', icon: Network, label: 'Departments', description: 'Departments, heads and sub-departments.', domain: 'platform', group: 'Access', popupGroup: 'System' },
+  { id: 'menus', to: '/admin/menus', icon: ListTree, label: 'Menus', description: 'Left-menu menus and who sees each one: departments, people or everyone.', domain: 'platform', group: 'Access', popupGroup: 'System', keywords: ['navigation', 'nav', 'sidebar', 'visibility'] },
   { id: 'offices', to: '/admin/offices', icon: Building2, label: 'Offices', description: 'Offices, addresses, time zones and working calendars.', domain: 'platform', group: 'Access', popupGroup: 'System' },
   { id: 'users', to: '/admin/users', icon: Users, label: 'Users', description: 'People, roles, offices and departments.', domain: 'platform', group: 'Access', popupGroup: 'System' },
   { id: 'csv-import', to: '/admin/import', icon: Upload, label: 'CSV Import', description: 'Bulk-load records from spreadsheets.', domain: 'platform', group: 'Data', popupGroup: 'System' },

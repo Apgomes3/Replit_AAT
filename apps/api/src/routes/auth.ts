@@ -6,10 +6,12 @@ import { authenticate, AuthRequest, JWT_SECRET } from '../middleware/auth';
 import { logAudit } from '../db/audit';
 import { MODULE_ACCESS_KEYS, ModuleAccessKey, ModuleAccessLevel } from '../lib/moduleAccess';
 import { departmentForUser } from '../modules/people/departments';
+import { menusForUser } from '../modules/navigation/menus';
 
 const router = Router();
 
-async function getModuleAccess(role: string): Promise<Record<ModuleAccessKey, ModuleAccessLevel>> {
+/** What each module looks like to this role (exported for Admin -> Menus' preview). */
+export async function getModuleAccess(role: string): Promise<Record<ModuleAccessKey, ModuleAccessLevel>> {
   const result = await query(
     `SELECT rma.module_key, rma.access_level
      FROM role_module_access rma
@@ -42,7 +44,7 @@ router.post('/login', async (req: Request, res: Response) => {
   const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '8h' });
   res.json({
     token,
-    user: { id: user.id, email: user.email, firstName: user.first_name, lastName: user.last_name, role: user.role, department: user.department ?? null, departmentName: dept.department_name, departmentAreas: dept.department_areas, module_access }
+    user: { id: user.id, email: user.email, firstName: user.first_name, lastName: user.last_name, role: user.role, department: user.department ?? null, departmentName: dept.department_name, departmentAreas: dept.department_areas, menus: await menusForUser(user.id).catch(() => undefined), module_access }
   });
 });
 
@@ -52,7 +54,7 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response) => {
   const office = (await query(
     `SELECT o.id, o.name, o.address, o.time_zone FROM users u JOIN offices o ON o.id = u.office_id WHERE u.id = $1`, [req.user!.id],
   )).rows[0] ?? null;
-  res.json({ ...result.rows[0], ...(await departmentForUser(result.rows[0].department)), office, module_access: await getModuleAccess(result.rows[0].role) });
+  res.json({ ...result.rows[0], ...(await departmentForUser(result.rows[0].department)), office, menus: await menusForUser(req.user!.id).catch(() => undefined), module_access: await getModuleAccess(result.rows[0].role) });
 });
 
 router.get('/dashboard-prefs', authenticate, async (req: AuthRequest, res: Response) => {

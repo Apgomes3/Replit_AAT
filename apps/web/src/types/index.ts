@@ -1,3 +1,16 @@
+/** One left-menu menu as the server resolved it for the signed-in person. */
+export interface NavMenu {
+  key: string;
+  label: string;
+  icon: string | null;
+  /** Built-in menus take their pages from LeftNav; custom ones carry their own links. */
+  is_system: boolean;
+  state: 'open' | 'folded';
+  /** In the menu's rule by department, by name or by exception (not just "everyone"). */
+  member: boolean;
+  items: Array<{ label: string; path: string; icon: string | null; module_key: string | null }>;
+}
+
 export interface User {
   id: string;
   email: string;
@@ -11,6 +24,8 @@ export interface User {
   /** The department's name, and the menu areas it opens by default (null = every area). */
   departmentName?: string | null;
   departmentAreas?: string[] | null;
+  /** The left-menu menus this person sees, from Admin -> Menus (missing = older server: use departmentAreas). */
+  menus?: NavMenu[];
   canSeeAllPos?: boolean;
   moduleAccess?: Record<string, 'manage' | 'view' | 'hidden'>;
 }

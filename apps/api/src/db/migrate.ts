@@ -16,6 +16,8 @@ import { GOOGLE_CALENDAR_SCHEMA } from '../modules/google-calendar/schema';
 import { INITIATIVES_SCHEMA } from '../modules/initiatives/schema';
 import { BIDS_SCHEMA } from '../modules/bids/schema';
 import { LIBRARY_SCHEMA } from '../modules/library/schema';
+import { NAVIGATION_SCHEMA } from '../modules/navigation/schema';
+import { seedMenus } from '../modules/navigation/menus';
 dotenv.config();
 
 // Self-contained module schemas, applied in order after the core schema.
@@ -29,6 +31,7 @@ const MODULE_SCHEMAS: Array<[name: string, sql: string]> = [
   ['initiatives', INITIATIVES_SCHEMA],
   ['bids', BIDS_SCHEMA],
   ['library', LIBRARY_SCHEMA],
+  ['navigation', NAVIGATION_SCHEMA],
 ];
 
 const schema = `
@@ -3774,6 +3777,8 @@ async function migrate() {
     process.exit(1);
     const departments = await seedDepartments(client);
     if (departments.length) console.log(`Departments added: ${departments.join(', ')}.`);
+    const menus = await seedMenus(client);
+    if (menus.length) console.log(`Menus added: ${menus.join(', ')}.`);
   } finally {
     client.release();
     await pool.end();
