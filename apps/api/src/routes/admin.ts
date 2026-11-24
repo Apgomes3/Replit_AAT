@@ -343,6 +343,11 @@ router.post('/users/import', authenticate, requireRole('admin'), uploadUserCsv.s
     errors: [] as Array<{ row: number; email?: string; message: string }>,
   };
   const emailsInFile = new Set<string>();
+  // Optional office and department columns (names as in the export) for the people this file adds.
+  const officeByName = new Map(((await query(OFFICES_SQL)).rows as OfficeRef[]).map(o => [o.name.toLowerCase(), o]));
+  const departmentList = (await query(DEPARTMENTS_SQL)).rows as DepartmentRef[];
+  const findDept = (v: string) => departmentList.find(d => d.name.toLowerCase() === v.toLowerCase())
+    ?? departmentList.find(d => d.key === v.toLowerCase());
 
   for (const [index, row] of parsed.rows.entries()) {
     const rowNumber = index + 2;
@@ -351,6 +356,11 @@ router.post('/users/import', authenticate, requireRole('admin'), uploadUserCsv.s
     const lastName = csvValue(row.last_name);
     const role = csvValue(row.role).toLowerCase() || 'viewer';
     const jobTitle = cleanJobTitle(csvValue(row.job_title ?? row.job_position ?? row.position));
+    const officeName = csvValue(row.office);
+    const office = officeName ? officeByName.get(officeName.toLowerCase()) : undefined;
+    // The export lists the person's own department first, then team departments: take the first one.
+    const departmentName = csvValue(row.department).split(';')[0].trim();
+    const department = departmentName ? findDept(departmentName) : undefined;
 
     let validationMessage: string | undefined;
     if (!email) validationMessage = 'Email is required';
@@ -359,6 +369,9 @@ router.post('/users/import', authenticate, requireRole('admin'), uploadUserCsv.s
     else if (firstName.length > 100) validationMessage = 'First name must be 100 characters or fewer';
     else if (lastName.length > 100) validationMessage = 'Last name must be 100 characters or fewer';
     else if (!validRoles.has(role)) validationMessage = `Role "${role}" does not exist`;
+    else if (officeName && !office) validationMessage = `No office called ${officeName}`;
+    else if (departmentName && !department) validationMessage = `No department called ${departmentName}`;
+    else if (department && !department.is_active) validationMessage = `${department.name} is not an active department`;
 
     if (validationMessage) {
       result.errors.push({ row: rowNumber, email: email || undefined, message: validationMessage });
@@ -383,10 +396,12 @@ router.post('/users/import', authenticate, requireRole('admin'), uploadUserCsv.s
       const randomPassword = crypto.randomBytes(32).toString('hex');
       const hash = await bcrypt.hash(randomPassword, 10);
       const inserted = await query(
-        'INSERT INTO users (email, password_hash, first_name, last_name, role, job_title) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, email',
-        [email, hash, firstName || null, lastName || null, role, jobTitle ?? null]
+        'INSERT INTO users (email, password_hash, first_name, last_name, role, job_title, department) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, email',
+        [email, hash, firstName || null, lastName || null, role, jobTitle ?? null, department?.key ?? null]
       );
       userId = inserted.rows[0].id;
+      // Also sets the person's working calendar from the office.
+      if (office) await offices.setUserOffice(userId!, office.id, req.user!.id);
       if (!sendInvites) {
         await logAudit(req.user!.id, 'user', userId!, 'CREATE', {
           summary: `Added ${email} from file (no invitation sent)`,
@@ -757,6 +772,37 @@ router.post('/users/:id/send-reset-link', authenticate, requireRole('admin'), as
   await logAudit(req.user!.id, 'user', existing.rows[0].id, 'SEND_RESET_LINK', {
     summary: `Password reset link sent to ${existing.rows[0].email}`,
     target_email: existing.rows[0].email,
+  });
+  res.json({ ok: true });
+});
+
+/** A fresh 24-hour setup link for an active person who has never signed in (e.g. imported without an invite). */
+router.post('/users/:id/resend-invite', authenticate, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+  const existing = await query('SELECT id, email, first_name, last_login_at FROM users WHERE id=$1 AND is_active=true', [req.params.id]);
+  const user = existing.rows[0];
+  if (!user) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'User not found' } });
+  if (user.last_login_at) {
+    return res.status(409).json({ error: { code: 'CONFLICT', message: 'This person has already signed in; send a reset link instead' } });
+  }
+
+  const token = crypto.randomBytes(48).toString('hex');
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  await query('INSERT INTO password_reset_tokens (user_id, token, expires_at) VALUES ($1, $2, $3)', [user.id, token, expiresAt]);
+
+  const appUrl = process.env.APP_URL || `https://${process.env.REPLIT_DEV_DOMAIN || 'localhost:5173'}`;
+  try {
+    await sendInviteEmail(user.email, user.first_name || '', `${appUrl}/reset-password?token=${token}`);
+  } catch (emailErr: any) {
+    console.error('[RESEND INVITE] Failed to send invite email:', emailErr?.message);
+    await query('DELETE FROM password_reset_tokens WHERE token=$1', [token]);
+    return res.status(500).json({
+      error: { code: 'EMAIL_FAILED', message: 'The invite was not sent. Check your SMTP configuration and try again.' },
+    });
+  }
+
+  await logAudit(req.user!.id, 'user', user.id, 'INVITE', {
+    summary: `Invitation sent to ${user.email}`,
+    target_email: user.email,
   });
   res.json({ ok: true });
 });

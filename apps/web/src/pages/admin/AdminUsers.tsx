@@ -1,7 +1,7 @@
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import {
-  Pencil, Ban, Trash2, Plus, CheckCircle, KeyRound, Mail,
+  Pencil, Ban, Trash2, Plus, CheckCircle, KeyRound, Mail, Send,
   Eye, EyeOff, MoreHorizontal, Search, ChevronLeft, ChevronRight,
   ArrowUp, ArrowDown, ChevronsUpDown, UserPlus, AlertTriangle,
   Users, Upload, Download, X, FileSpreadsheet,
@@ -69,12 +69,14 @@ interface ActionMenuProps {
   onEdit: () => void;
   onResetPassword: () => void;
   onSendResetLink: () => void;
+  /** Only for active people who have never signed in. */
+  onResendInvite?: () => void;
   onBlock: () => void;
   onDelete: () => void;
   onTogglePOVisibility: () => void;
 }
 
-function ActionMenu({ user, isSelf, busy, onEdit, onResetPassword, onSendResetLink, onBlock, onDelete, onTogglePOVisibility }: ActionMenuProps) {
+function ActionMenu({ user, isSelf, busy, onEdit, onResetPassword, onSendResetLink, onResendInvite, onBlock, onDelete, onTogglePOVisibility }: ActionMenuProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -119,6 +121,7 @@ function ActionMenu({ user, isSelf, busy, onEdit, onResetPassword, onSendResetLi
           {item('Edit', <Pencil className="w-3.5 h-3.5" />, onEdit, false, isSelf)}
           <div className="my-1 border-t border-slate-100" />
           {item('Set Password', <KeyRound className="w-3.5 h-3.5" />, onResetPassword, false, isSelf)}
+          {onResendInvite && item('Resend Invite', <Send className="w-3.5 h-3.5" />, onResendInvite, false, isSelf)}
           {item('Send Reset Link', <Mail className="w-3.5 h-3.5" />, onSendResetLink, false, isSelf)}
           <div className="my-1 border-t border-slate-100" />
           {item(
@@ -588,13 +591,13 @@ function BulkInviteModal({ onClose, onSuccess }: BulkInviteModalProps) {
               <div className="bg-slate-50 rounded-lg p-4">
                 <div className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2">Accepted columns</div>
                 <div className="flex flex-wrap gap-1.5">
-                  {['email *', 'first_name', 'last_name', 'job_title', 'role'].map(column => (
+                  {['email *', 'first_name', 'last_name', 'job_title', 'role', 'office', 'department'].map(column => (
                     <span key={column} className={`text-xs px-2 py-0.5 rounded font-mono ${column === 'email *' ? 'bg-blue-600/10 text-blue-600 font-semibold' : 'bg-slate-200 text-slate-600'}`}>
                       {column}
                     </span>
                   ))}
                 </div>
-                <p className="text-xs text-slate-500 mt-2">The role defaults to viewer when it is blank or omitted.</p>
+                <p className="text-xs text-slate-500 mt-2">The role defaults to viewer when it is blank or omitted. Office and department use their names, and are set only for people this file adds. People already in Shark OS are skipped: use "Update reporting" to change them.</p>
                 <button onClick={downloadTemplate} className="mt-3 flex items-center gap-1.5 text-xs text-blue-600 hover:underline">
                   <Download className="w-3.5 h-3.5" /> Download template CSV
                 </button>
@@ -874,6 +877,18 @@ export default function AdminUsers() {
     }
   };
 
+  const handleResendInvite = async (user: UserRow) => {
+    setLoadingId(user.id);
+    try {
+      await api.post(`/admin/users/${user.id}/resend-invite`);
+      toast.success(`Invite sent to ${user.email}`);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message || 'Failed to send invite');
+    } finally {
+      setLoadingId(null);
+    }
+  };
+
   const handleTogglePOVisibility = async (user: UserRow) => {
     setLoadingId(user.id);
     try {
@@ -1084,7 +1099,18 @@ export default function AdminUsers() {
                     </td>
                     {isAdmin && (
                       <td className="px-4 py-3">
-                        <div className="flex justify-end">
+                        <div className="flex items-center justify-end gap-1">
+                          {smtpConfigured && user.is_active && !user.last_login_at && !isSelf && (
+                            <button
+                              onClick={() => handleResendInvite(user)}
+                              disabled={busy}
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-blue-600 hover:bg-blue-50 disabled:opacity-40"
+                              title="Never signed in: email a new password-setup link (valid 24 hours)"
+                              aria-label={`Resend invite to ${user.email}`}
+                            >
+                              <Send className="w-3.5 h-3.5" />Resend invite
+                            </button>
+                          )}
                           <ActionMenu
                             user={user}
                             isSelf={isSelf}
@@ -1092,6 +1118,7 @@ export default function AdminUsers() {
                             onEdit={() => setEditUser(user)}
                             onResetPassword={() => { setResetPasswordUser(user); setNewPassword(''); setShowNewPass(false); }}
                             onSendResetLink={() => handleSendResetLink(user)}
+                            onResendInvite={smtpConfigured && user.is_active && !user.last_login_at ? () => handleResendInvite(user) : undefined}
                             onBlock={() => setConfirmBlock(user)}
                             onDelete={() => setConfirmDelete(user)}
                             onTogglePOVisibility={() => handleTogglePOVisibility(user)}
