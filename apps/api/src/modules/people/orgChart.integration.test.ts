@@ -47,5 +47,6 @@ describe.skipIf(!process.env.DATABASE_URL)('org chart (PostgreSQL)', () => {
     expect(mine.map((p: any) => p.name).sort()).toEqual(['Org boss', 'Org orphan', 'Org worker']);
     expect(mine.find((p: any) => p.id === ids.worker)).toMatchObject({ manager_id: ids.boss, job_title: 'worker title' });
     expect(mine.find((p: any) => p.id === ids.orphan).manager_id).toBeNull();
+    expect(mine.find((p: any) => p.id === ids.boss)).toMatchObject({ department_id: null, heads: [] });
   });
 });
