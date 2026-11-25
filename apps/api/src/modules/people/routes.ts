@@ -23,6 +23,22 @@ router.get('/departments', authenticate, async (_req, res, next) => {
   try { res.json({ data: await listDepartmentOptions() }); } catch (e) { next(e); }
 });
 
+/** The org chart: every active person and who they report to (only if that manager is active too). */
+router.get('/org-chart', authenticate, async (_req, res, next) => {
+  try {
+    const rows = await query(
+      `SELECT u.id, ${NAME} AS name, u.job_title,
+         CASE WHEN m.is_active IS NOT FALSE THEN m.id END AS manager_id,
+         d.name AS department, d.colour AS department_colour, o.name AS office
+       FROM users u
+       LEFT JOIN users m ON m.id = u.reports_to_user_id AND m.id <> u.id
+       LEFT JOIN departments d ON d.key = u.department
+       LEFT JOIN offices o ON o.id = u.office_id
+       WHERE u.is_active IS NOT FALSE ORDER BY 2`);
+    res.json({ data: rows.rows });
+  } catch (e) { next(e); }
+});
+
 router.get('/:id', authenticate, async (req, res, next) => {
   try {
     const id = String(req.params.id);

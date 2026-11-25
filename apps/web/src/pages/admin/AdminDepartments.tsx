@@ -10,7 +10,7 @@ import api from '../../lib/api';
 import PageHeader from '../../components/ui/PageHeader';
 import { colourClasses, DEPARTMENT_OPTIONS_KEY } from '../../lib/departments';
 import { DepartmentHeadcount, DepartmentWorkload } from './DepartmentOverview';
-import { DepartmentOrgChart } from './DepartmentOrgChart';
+import OrgChart from './OrgChart';
 
 const TABS = [
   { id: 'departments', label: 'Departments' },
@@ -255,7 +255,7 @@ export default function AdminDepartments() {
       {TABS.map(t => <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)}
         className={`px-3 py-2 text-sm font-semibold border-b-2 -mb-px ${tab === t.id ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>{t.label}</button>)}
     </div>
-    {tab === 'org' && <div className="flex-1 overflow-auto px-4 py-4">{data && <DepartmentOrgChart departments={data.data} showArchived={showArchived} />}</div>}
+    {tab === 'org' && <div className="flex-1 overflow-auto px-4 py-4"><OrgChart /></div>}
     {tab === 'workload' && <div className="flex-1 overflow-auto px-4 py-4"><DepartmentWorkload departments={all} /></div>}
     {tab === 'headcount' && <div className="flex-1 overflow-auto px-4 py-4"><DepartmentHeadcount departments={all} /></div>}
     {tab === 'departments' && <div className="flex-1 overflow-auto px-4 py-4">
