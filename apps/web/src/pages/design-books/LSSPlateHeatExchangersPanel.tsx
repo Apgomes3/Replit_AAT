@@ -6,12 +6,27 @@ import { useQuery } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
 import api from '../../lib/api';
 import { PHE_STATUS } from './PlateHeatExchangers';
+import { DEFAULT_INPUTS, fluidName, fmt, PheInputs, resolveInputs } from '../../lib/plateHeatExchanger';
 
-type Row = {
-  id: string; title: string; sheet: { tag?: string; rev?: string };
-  result_summary: { status?: string; model?: string; units?: number; duty_kw?: number };
-  updated_at: string;
+type Summary = {
+  status?: string; model?: string; units?: number; duty_kw?: number; plates?: number | null; passes?: string | null;
+  area_required_m2?: number | null; area_installed_m2?: number | null; u_service_w_m2k?: number | null; lmtd_k?: number; approach_k?: number;
+  primary_flow_m3h?: number; secondary_flow_m3h?: number; primary_dp_kpa?: number | null; secondary_dp_kpa?: number | null; material?: string; fatal?: string;
 };
+type Row = { id: string; title: string; inputs: Partial<PheInputs>; sheet: { tag?: string; rev?: string }; result_summary: Summary; updated_at: string };
+
+const num = (v: number | null | undefined, d = 1) => (v == null || !Number.isFinite(v) ? '–' : fmt(v, d));
+
+/** Primary and secondary side of a saved sizing: fluid, temperatures in → out, flow and pressure drop. */
+function sides(row: Row) {
+  let I: PheInputs | null = null;
+  try { I = resolveInputs({ ...DEFAULT_INPUTS, ...row.inputs } as PheInputs); } catch { I = null; }
+  const r = row.result_summary || {};
+  return [
+    { label: 'Primary', fluid: I ? fluidName(I.pFl) : '', tin: I?.pTin, tout: I?.pTout, flow: r.primary_flow_m3h, dp: r.primary_dp_kpa },
+    { label: 'Secondary', fluid: I ? fluidName(I.sFl) : '', tin: I?.sTin, tout: I?.sTout, flow: r.secondary_flow_m3h, dp: r.secondary_dp_kpa },
+  ];
+}
 
 export function newSizingLink(projectId: string | null | undefined, bookId: string, systemId: string, returnTab: string) {
   const q = new URLSearchParams({ design_book_id: bookId, system_id: systemId, return_tab: returnTab });
@@ -41,22 +56,38 @@ export default function LSSPlateHeatExchangersPanel({ projectId, bookId, systemI
       </div>
       {isLoading ? <p className="px-5 py-4 text-sm text-stone-400">Loading…</p>
         : data.length === 0 ? <p className="px-5 py-4 text-sm text-stone-400">No plate heat exchangers sized for this system yet.</p>
-        : <table className="w-full text-sm">
-          <thead className="text-left text-xs text-stone-500"><tr>
-            <th className="px-5 py-2 font-medium">Tag</th><th className="px-3 py-2 font-medium">Title</th>
-            <th className="px-3 py-2 font-medium">Duty kW</th><th className="px-3 py-2 font-medium">Selection</th><th className="px-5 py-2 font-medium">Status</th>
-          </tr></thead>
-          <tbody>{data.map(row => {
-            const s = PHE_STATUS[row.result_summary?.status || ''];
-            return <tr key={row.id} className="border-t border-stone-100 hover:bg-stone-50">
-              <td className="px-5 py-2 font-mono text-xs"><Link className="text-[#003f7d] hover:underline" to={`/plate-heat-exchangers/${row.id}?return_tab=${returnTab}`}>{row.sheet?.tag || '—'}</Link></td>
-              <td className="px-3 py-2"><Link className="text-stone-800 hover:underline" to={`/plate-heat-exchangers/${row.id}?return_tab=${returnTab}`}>{row.title}</Link></td>
-              <td className="px-3 py-2 tabular-nums">{row.result_summary?.duty_kw != null ? Math.round(row.result_summary.duty_kw) : '—'}</td>
-              <td className="px-3 py-2">{row.result_summary?.model ? `${(row.result_summary.units ?? 1) > 1 ? `${row.result_summary.units} × ` : ''}${row.result_summary.model}` : '—'}</td>
-              <td className="px-5 py-2">{s ? <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${s[1]}`}>{s[0]}</span> : '—'}</td>
-            </tr>;
-          })}</tbody>
-        </table>}
+        : <ul className="divide-y divide-stone-100">{data.map(row => {
+          const r = row.result_summary || {};
+          const st = PHE_STATUS[r.status || ''];
+          const href = `/plate-heat-exchangers/${row.id}?return_tab=${returnTab}`;
+          return <li key={row.id} className="px-5 py-3 text-sm">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <Link className="font-mono text-xs font-semibold text-[#003f7d] hover:underline" to={href}>{row.sheet?.tag || '—'}</Link>
+              <Link className="font-medium text-stone-800 hover:underline" to={href}>{row.title}</Link>
+              {st && <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${st[1]}`}>{st[0]}</span>}
+              <span className="ml-auto text-stone-700">{r.model ? `${(r.units ?? 1) > 1 ? `${r.units} × ` : ''}PHEWORLD ${r.model}` : ''}</span>
+            </div>
+            {r.fatal ? <p className="mt-1 text-xs text-red-700">{r.fatal}</p> : <>
+              <dl className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 text-xs sm:grid-cols-4">
+                <div><dt className="text-stone-400">Duty</dt><dd className="tabular-nums text-stone-700">{num(r.duty_kw, 1)} kW</dd></div>
+                <div><dt className="text-stone-400">Plates × units · passes</dt><dd className="tabular-nums text-stone-700">{r.plates ?? '–'} × {r.units ?? 1} · {r.passes ?? '–'}</dd></div>
+                <div><dt className="text-stone-400">Area required / installed</dt><dd className="tabular-nums text-stone-700">{num(r.area_required_m2, 2)} / {num(r.area_installed_m2, 2)} m²</dd></div>
+                <div><dt className="text-stone-400">LMTD · approach · U</dt><dd className="tabular-nums text-stone-700">{num(r.lmtd_k, 2)} K · {num(r.approach_k, 1)} K · {num(r.u_service_w_m2k, 0)} W/m²K</dd></div>
+              </dl>
+              <table className="mt-2 w-full text-xs">
+                <thead className="text-left text-stone-400"><tr>
+                  <th className="py-0.5 pr-3 font-normal">Side</th><th className="py-0.5 pr-3 font-normal">Fluid</th><th className="py-0.5 pr-3 font-normal">In → out °C</th>
+                  <th className="py-0.5 pr-3 font-normal">Flow m³/h</th><th className="py-0.5 font-normal">ΔP kPa</th>
+                </tr></thead>
+                <tbody className="tabular-nums text-stone-700">{sides(row).map(x => <tr key={x.label}>
+                  <td className="py-0.5 pr-3 text-stone-500">{x.label}</td><td className="py-0.5 pr-3">{x.fluid}</td>
+                  <td className="py-0.5 pr-3">{num(x.tin)} → {num(x.tout)}</td><td className="py-0.5 pr-3">{num(x.flow, 2)}</td><td className="py-0.5">{num(x.dp, 1)}</td>
+                </tr>)}</tbody>
+              </table>
+              {r.material && <p className="mt-1 text-xs text-stone-400">Plates: {r.material}</p>}
+            </>}
+          </li>;
+        })}</ul>}
     </section>
   );
 }
